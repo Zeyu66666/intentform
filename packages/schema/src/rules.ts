@@ -27,7 +27,13 @@ export type ValidationResult =
   | { readonly ok: true; readonly data: FormSchema }
   | { readonly ok: false; readonly errors: readonly SchemaError[] };
 
-/** 判分型字段：R6 的分值合计与 survey 检查都靠它。 */
+/**
+ * 「可判分题型」：选择题 / 填空 / 数值。
+ *
+ * 注意它与「这道题**带不带**答案、带不带分值」是两件事——《计划 v3.0》附录 A 之后
+ * 结构上四项都可选，一道 single 可能既没 score 也没 answer（survey 里的选择题就该这样）。
+ * 所以判断 kind 约束时要同时看 `type` 与字段是否存在，不能只看 type。
+ */
 function isScoredItem(item: FormItem): item is ScoredField {
   return (
     item.type === "single" ||
@@ -35,6 +41,11 @@ function isScoredItem(item: FormItem): item is ScoredField {
     item.type === "fill" ||
     item.type === "number"
   );
+}
+
+/** 取值：没有分值的题按 0 计（survey 无分值语义）。 */
+function scoreOf(item: FormItem): number {
+  return isScoredItem(item) ? (item.score ?? 0) : 0;
 }
 
 /** 需要做 LaTeX 校验的文本片段（题干、分节描述、选项文本、量表锚点）。 */
@@ -111,8 +122,10 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
 
   const objectiveIds = new Set(schema.meta.objectives.map((objective) => objective.id));
 
+  const survey = schema.meta.kind === "survey";
+
   schema.items.forEach((item, index) => {
-    // R4 + R2/R3：选项与答案的关系
+    // R4：选项自身的重复（与答案无关，两种 kind 都要查）
     if (item.type === "single" || item.type === "multi") {
       const optionIds = new Set<string>();
       const optionTexts = new Set<string>();
@@ -140,44 +153,49 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
         optionTexts.add(option.text);
       });
 
-      if (item.type === "single") {
-        if (!optionIds.has(item.answer)) {
-          errors.push(
-            schemaError(
-              "E_ANSWER_NOT_IN_OPTIONS",
-              `items[${index}].answer`,
-              `answer「${item.answer}」不在选项 id [${[...optionIds].join(", ")}] 中`,
-            ),
+      // R2/R3：答案必须落在选项集合内。survey 的答案本身就被下面那条 kind 规则禁掉了，
+      // 这里不再重复报——同一处错误给 repairer 两条互相干扰的提示，等于没有提示。
+      if (!survey && item.answer !== undefined) {
+        if (item.type === "single") {
+          if (!optionIds.has(item.answer)) {
+            errors.push(
+              schemaError(
+                "E_ANSWER_NOT_IN_OPTIONS",
+                `items[${index}].answer`,
+                `answer「${item.answer}」不在选项 id [${[...optionIds].join(", ")}] 中`,
+              ),
+            );
+          }
+        } else {
+          const answer = item.answer;
+          const duplicates = answer.filter(
+            (candidate, position) => answer.indexOf(candidate) !== position,
           );
-        }
-      } else {
-        const duplicates = item.answer.filter(
-          (answer, position) => item.answer.indexOf(answer) !== position,
-        );
-        if (duplicates.length > 0) {
-          errors.push(
-            schemaError(
-              "E_MULTI_ANSWER_INVALID",
-              `items[${index}].answer`,
-              `答案 id 重复：${[...new Set(duplicates)].join(", ")}`,
-            ),
-          );
-        }
-        const unknown = item.answer.filter((answer) => !optionIds.has(answer));
-        if (unknown.length > 0) {
-          errors.push(
-            schemaError(
-              "E_MULTI_ANSWER_INVALID",
-              `items[${index}].answer`,
-              `答案 id 不在选项中：${unknown.join(", ")}`,
-            ),
-          );
+          if (duplicates.length > 0) {
+            errors.push(
+              schemaError(
+                "E_MULTI_ANSWER_INVALID",
+                `items[${index}].answer`,
+                `答案 id 重复：${[...new Set(duplicates)].join(", ")}`,
+              ),
+            );
+          }
+          const unknown = answer.filter((candidate) => !optionIds.has(candidate));
+          if (unknown.length > 0) {
+            errors.push(
+              schemaError(
+                "E_MULTI_ANSWER_INVALID",
+                `items[${index}].answer`,
+                `答案 id 不在选项中：${unknown.join(", ")}`,
+              ),
+            );
+          }
         }
       }
     }
 
     // R5：填空题答案不能是空白串（Zod 只挡住了空串，挡不住纯空格）
-    if (item.type === "fill") {
+    if (item.type === "fill" && item.answer !== undefined) {
       const blank = item.answer.filter((answer) => answer.trim().length === 0);
       if (blank.length > 0) {
         errors.push(
@@ -190,8 +208,52 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
       }
     }
 
-    // R8：知识点必须已声明（bloom 的枚举校验在结构层，见 shapeErrors 的映射）
+    // kind 约束（附录 A 表第 1 行）：quiz 判分题必有答案；survey 既不许答案也不许分值。
+    // 这两条正是审查问题 10 说"永远不可能触发"的规则——结构放开之后才真正生效。
     if (isScoredItem(item)) {
+      if (survey) {
+        if (item.answer !== undefined) {
+          errors.push(
+            schemaError(
+              "E_SURVEY_HAS_ANSWER",
+              `items[${index}].answer`,
+              "survey 只收集不判分，题目不该带答案",
+            ),
+          );
+        }
+        if (item.score !== undefined) {
+          errors.push(
+            schemaError(
+              "E_SURVEY_HAS_ANSWER",
+              `items[${index}].score`,
+              "survey 没有分值语义，题目不该带 score",
+            ),
+          );
+        }
+      } else {
+        if (item.answer === undefined) {
+          errors.push(
+            schemaError(
+              "E_ANSWER_MISSING",
+              `items[${index}].answer`,
+              "quiz 的判分题必须给出答案，否则无法自动判分",
+            ),
+          );
+        }
+        if (item.score === undefined) {
+          errors.push(
+            schemaError(
+              "E_SCORE_SUM",
+              `items[${index}].score`,
+              "quiz 的判分题必须给出分值，否则总分合计无从谈起",
+            ),
+          );
+        }
+      }
+    }
+
+    // R8：知识点必须已声明（可选字段，有则校验；bloom 的枚举在结构层）
+    if (isScoredItem(item) && item.knowledgePoint !== undefined) {
       if (!objectiveIds.has(item.knowledgePoint)) {
         errors.push(
           schemaError(
@@ -206,15 +268,14 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
     }
   });
 
-  // R6：分值合计 / survey 不得含判分题
+  // R6：分值合计（quiz 必须有 totalScore 且等于合计；survey 不该声明总分）
   const scoredItems = schema.items.filter(isScoredItem);
-  const scoreSum = scoredItems.reduce((total, item) => total + item.score, 0);
+  const scoreSum = scoredItems.reduce((total, item) => total + scoreOf(item), 0);
 
-  if (schema.meta.kind === "survey") {
-    if (scoredItems.length > 0) {
-      const paths = scoredItems.map((item) => item.id).join(", ");
+  if (survey) {
+    if (schema.meta.totalScore !== undefined) {
       errors.push(
-        schemaError("E_SURVEY_HAS_ANSWER", "meta.kind", `survey 里出现了判分题：${paths}`),
+        schemaError("E_SCORE_SUM", "meta.totalScore", "survey 没有分值语义，不应声明 totalScore"),
       );
     }
   } else if (schema.meta.totalScore === undefined) {

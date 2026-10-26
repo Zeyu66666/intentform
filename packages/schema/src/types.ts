@@ -53,11 +53,18 @@ const baseFieldSchema = z.object({
   required: z.boolean().default(true),
 });
 
-/** 判分型字段：分值、布鲁姆层级、知识点，外加教师侧解析。 */
+/**
+ * 判分型字段的公共部分：分值、布鲁姆层级、知识点，外加教师侧解析。
+ *
+ * 《计划 v3.0》附录 A：这四项一律**可选**。"quiz 的判分题必须带分值/答案、survey 一律
+ * 不许带"是**语义规则**（`rules.ts` 的 R5/R6 与 kind 规则），不是结构约束。
+ * 把它们写成必填会让"survey 里不带答案的选择题"根本无法表达，于是
+ * `E_ANSWER_MISSING` 与 `E_SURVEY_HAS_ANSWER` 永远不会触发——审查问题 10 的根因。
+ */
 const scoredFieldSchema = baseFieldSchema.extend({
-  score: z.number().int().min(0).max(LIMITS.scoreMax),
-  bloom: z.enum(BLOOM_LEVELS),
-  knowledgePoint: shortIdSchema,
+  score: z.number().int().min(0).max(LIMITS.scoreMax).optional(),
+  bloom: z.enum(BLOOM_LEVELS).optional(),
+  knowledgePoint: shortIdSchema.optional(),
   /** 教师侧解析，`publicView` 会剥掉。 */
   explanation: z.string().max(LIMITS.explanationMax).optional(),
 });
@@ -65,26 +72,28 @@ const scoredFieldSchema = baseFieldSchema.extend({
 export const singleFieldSchema = scoredFieldSchema.extend({
   type: z.literal("single"),
   options: z.array(choiceOptionSchema).min(LIMITS.optionsMin).max(LIMITS.optionsMax),
-  answer: z.string().min(1),
+  answer: z.string().min(1).optional(),
 });
 
 export const multiFieldSchema = scoredFieldSchema.extend({
   type: z.literal("multi"),
   options: z.array(choiceOptionSchema).min(LIMITS.optionsMin).max(LIMITS.optionsMax),
-  answer: z.array(z.string().min(1)).min(1),
+  answer: z.array(z.string().min(1)).min(1).optional(),
 });
 
 export const fillFieldSchema = scoredFieldSchema.extend({
   type: z.literal("fill"),
-  answer: z.array(z.string().min(1)).min(1),
+  answer: z.array(z.string().min(1)).min(1).optional(),
 });
 
 export const numberFieldSchema = scoredFieldSchema.extend({
   type: z.literal("number"),
-  answer: z.object({
-    value: z.number().finite(),
-    tolerance: z.number().min(0),
-  }),
+  answer: z
+    .object({
+      value: z.number().finite(),
+      tolerance: z.number().min(0),
+    })
+    .optional(),
 });
 
 export const shortFieldSchema = baseFieldSchema.extend({

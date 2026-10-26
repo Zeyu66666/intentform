@@ -83,9 +83,11 @@ function projectOption(option: ChoiceOption): ChoiceOption {
  * （见 `types.ts` 的 `collectFieldSchema`），所以这里只接受判分型。
  */
 function projectScored(item: SingleField | MultiField | FillField | NumberField): {
-  readonly score: number;
+  readonly score?: number;
 } {
-  return { score: item.score };
+  // 附录 A 之后 score 可选：没有分值就**不出现**这个键，而不是补一个 0 冒充。
+  // 学生端显示"0 分"和"没有分值"是两件事（§2.6 第 4 条：未知值不伪填）。
+  return item.score === undefined ? {} : { score: item.score };
 }
 
 function projectItem(item: FormItem): PublicFormItem {

@@ -72,9 +72,10 @@ function metaOf(item: FormItem): FieldMeta {
       return {
         ...base,
         required: item.required,
-        score: item.score,
-        bloom: BLOOM_LABELS[item.bloom],
-        knowledgePoint: item.knowledgePoint,
+        // 附录 A 之后这三项都可选：没有就显示"没有"，不补 0 分、不补层级（§2.6 第 4 条）。
+        score: item.score ?? null,
+        bloom: item.bloom === undefined ? null : BLOOM_LABELS[item.bloom],
+        knowledgePoint: item.knowledgePoint ?? null,
         explanation: item.explanation ?? null,
       };
     case "short":
@@ -158,32 +159,46 @@ function AnswerLine({ label, children }: { readonly label: string; readonly chil
 const EDIT_REGISTRY: {
   readonly [K in FormItem["type"]]: (item: Extract<FormItem, { readonly type: K }>) => JSX.Element;
 } = {
-  single: (item) => (
-    <>
-      <OptionList options={item.options} answers={[item.answer]} />
-      <AnswerLine label="答案">
-        {item.answer}（{item.options.find((option) => option.id === item.answer)?.text ?? "选项不存在"}）
-      </AnswerLine>
-    </>
-  ),
-  multi: (item) => (
-    <>
-      <OptionList options={item.options} answers={item.answer} />
-      <AnswerLine label="答案">{item.answer.join("、")}</AnswerLine>
-    </>
-  ),
-  fill: (item) => (
-    <>
-      <AnswerLine label="答案">{item.answer.join(" ／ ")}</AnswerLine>
-      <p className="mt-1 text-xs text-muted">共 {item.answer.length} 个空，按空序作答。</p>
-    </>
-  ),
-  number: (item) => (
-    <>
-      <AnswerLine label="答案">{item.answer.value}</AnswerLine>
-      <p className="mt-1 text-xs text-muted">允许容差 ±{item.answer.tolerance}</p>
-    </>
-  ),
+  // answer 可选之后，四种判分题型都要能表达"没有答案"：
+  // survey 里这是**合法**的（只收集不判分），quiz 里则由门禁拦下并给可读原因。
+  single: (item) =>
+    item.answer === undefined ? (
+      <AnswerLine label="答案">未设置</AnswerLine>
+    ) : (
+      <>
+        <OptionList options={item.options} answers={[item.answer]} />
+        <AnswerLine label="答案">
+          {item.answer}（{item.options.find((option) => option.id === item.answer)?.text ?? "选项不存在"}）
+        </AnswerLine>
+      </>
+    ),
+  multi: (item) =>
+    item.answer === undefined ? (
+      <AnswerLine label="答案">未设置</AnswerLine>
+    ) : (
+      <>
+        <OptionList options={item.options} answers={item.answer} />
+        <AnswerLine label="答案">{item.answer.join("、")}</AnswerLine>
+      </>
+    ),
+  fill: (item) =>
+    item.answer === undefined ? (
+      <AnswerLine label="答案">未设置</AnswerLine>
+    ) : (
+      <>
+        <AnswerLine label="答案">{item.answer.join(" ／ ")}</AnswerLine>
+        <p className="mt-1 text-xs text-muted">共 {item.answer.length} 个空，按空序作答。</p>
+      </>
+    ),
+  number: (item) =>
+    item.answer === undefined ? (
+      <AnswerLine label="答案">未设置</AnswerLine>
+    ) : (
+      <>
+        <AnswerLine label="答案">{item.answer.value}</AnswerLine>
+        <p className="mt-1 text-xs text-muted">允许容差 ±{item.answer.tolerance}</p>
+      </>
+    ),
   short: (item) => (
     <p className="mt-1 text-xs text-muted">
       简答题不自动判分，学生作答上限 {item.maxLength} 字（人工/AI 评分在 I4 落地）。

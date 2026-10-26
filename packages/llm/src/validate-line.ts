@@ -107,6 +107,63 @@ function codesFromIssues(
 
 const SCORED_OR_ANSWERED: ReadonlySet<string> = new Set(["single", "multi", "fill", "number"]);
 
+/** 题型是否属于可判分的一类（与"带不带答案"是两件事）。 */
+function isScoredNode(
+  node: Extract<GeneratedNode, { type: "single" | "multi" | "fill" | "number" }> | GeneratedNode,
+): node is Extract<GeneratedNode, { type: "single" | "multi" | "fill" | "number" }> {
+  return SCORED_OR_ANSWERED.has(node.type);
+}
+
+/** 这一行是否带了答案或分值——survey 里两者都不该出现。 */
+function carriesAnswerOrScore(node: GeneratedNode): boolean {
+  if (node.type === "section" || node.type === "short" || node.type === "scale") return false;
+  return node.answer !== undefined || node.score !== undefined;
+}
+
+/**
+ * 答案与选项的一致性（附录 A 表第 2、3 行：行级）。
+ *
+ * 结构与语义的分界：`types.ts` 现在允许 `answer` 缺席，于是"答案指向不存在的选项"
+ * 不再由 Zod 顶掉，必须在这里判——否则这种错会一路滑到整表门禁才被发现。
+ */
+function answerCodeOf(
+  node: Extract<GeneratedNode, { type: "single" | "multi" | "fill" | "number" }>,
+): readonly ErrorCode[] {
+  const codes: ErrorCode[] = [];
+  switch (node.type) {
+    case "single": {
+      const answer = node.answer;
+      if (answer !== undefined && !node.options.some((option) => option.id === answer)) {
+        codes.push("E_ANSWER_NOT_IN_OPTIONS");
+      }
+      break;
+    }
+    case "multi": {
+      const answer = node.answer;
+      if (answer !== undefined) {
+        const optionIds = new Set(node.options.map((option) => option.id));
+        const duplicated = answer.filter((candidate, position) => answer.indexOf(candidate) !== position);
+        if (duplicated.length > 0 || answer.some((candidate) => !optionIds.has(candidate))) {
+          codes.push("E_MULTI_ANSWER_INVALID");
+        }
+      }
+      break;
+    }
+    case "fill": {
+      const answer = node.answer;
+      if (answer !== undefined && answer.some((candidate) => candidate.trim().length === 0)) {
+        codes.push("E_ANSWER_MISSING");
+      }
+      break;
+    }
+    case "number":
+      break;
+    default:
+      break;
+  }
+  return codes;
+}
+
 /** 逐行判定。纯函数，不读时钟、不碰 IO，所以能直接在单测里穷举输入。 */
 export function validateLine(raw: string, options: ValidateLineOptions = {}): LineValidation {
   const parsed = tryParseJson(raw);
@@ -137,8 +194,19 @@ export function validateLine(raw: string, options: ValidateLineOptions = {}): Li
   const node = result.data;
   const extra: ErrorCode[] = [];
   if (options.seenIds?.has(node.id) === true) extra.push("E_DUP_ID");
-  if (options.kind === "survey" && SCORED_OR_ANSWERED.has(node.type)) {
-    extra.push("E_SURVEY_HAS_ANSWER");
+
+  // 附录 A 的 kind 约束在行级也要有一条，才能"边流边标红"而不是等整表。
+  // 注意判据是「这一行**带了没带**答案/分值」，不是「它是什么题型」：
+  // survey 里可以有不带答案的选择题（这正是问题 10 要修的）。
+  const kind = options.kind ?? "quiz";
+  if (kind === "survey") {
+    if (carriesAnswerOrScore(node)) extra.push("E_SURVEY_HAS_ANSWER");
+  } else if (isScoredNode(node)) {
+    if (node.answer === undefined) {
+      extra.push("E_ANSWER_MISSING");
+    } else {
+      extra.push(...answerCodeOf(node));
+    }
   }
 
   if (extra.length > 0) {

@@ -75,8 +75,10 @@ export function buildCandidateForm(
   let totalScore = 0;
   for (const node of items) {
     if (!isScored(node)) continue;
-    totalScore += node.score;
-    objectiveIds.add(node.knowledgePoint);
+    // 附录 A 之后 score / knowledgePoint 都可选：缺了就按 0 分记、就不进 objectives。
+    // 缺分值本身由 `rules.ts` 报 `E_SCORE_SUM`（items[i].score），这里不替它下判断。
+    totalScore += node.score ?? 0;
+    if (node.knowledgePoint !== undefined) objectiveIds.add(node.knowledgePoint);
   }
   const objectives = [...objectiveIds].map((id) => ({ id, name: id }));
   if (objectives.length > LIMITS.fieldsMax) objectives.length = LIMITS.fieldsMax;
@@ -105,6 +107,22 @@ export function runPublishGate(
           path: "items",
           message: "整表没有任何节点",
           repair: "至少产出一个表单节点后再发布",
+        },
+      ],
+    };
+  }
+
+  // §2.5「空表」判据：字段数 ≥ 1 **且**至少一个可判分题。只有分节的整表不算表。
+  if (kind === "quiz" && !fields.some((field) => isScored(field.node))) {
+    return {
+      ok: false,
+      itemErrors: [],
+      formErrors: [
+        {
+          code: "E_ANSWER_MISSING",
+          path: "items",
+          message: "整表没有任何可判分题，无法发布为测验",
+          repair: "至少要产出一道选择题、填空题或数值题",
         },
       ],
     };
