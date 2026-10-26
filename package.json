@@ -6,14 +6,17 @@
   "description": "意卷 IntentForm — 自然语言驱动的表单 / 考卷生成引擎",
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=20.11.0"
+    "node": ">=20.11.0",
+    "pnpm": ">=9"
   },
+  "packageManager": "pnpm@11.24.0",
   "scripts": {
     "setup:hooks": "git config core.hooksPath .githooks",
     "typecheck": "pnpm -r typecheck",
     "lint": "oxlint --deny-warnings packages server web scripts",
     "test": "vitest run --passWithNoTests",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "verify": "node scripts/verify.mjs",
     "secret-scan": "node scripts/secret-scan.mjs",
     "secret-scan:history": "node scripts/secret-scan.mjs --history",
     "dev:server": "node --experimental-strip-types server/src/main.ts"
