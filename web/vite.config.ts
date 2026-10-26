@@ -19,6 +19,15 @@ const proxyTarget = process.env["VITE_DEV_PROXY_TARGET"] ?? "http://127.0.0.1:87
  */
 const WATCH_IGNORED = ["**/.*.tmpdir/**", "**/*.tmp", "**/*.swp", "**/*~"] as const;
 
+/**
+ * 浏览器地址栏的导航请求带 `Accept: text/html,...`；`fetch()` 默认发通配的 Accept。
+ * 同一个 `/f/:slug` 因此有两种形态，靠这个判据分流（与服务端同路径双形态的规则一致）。
+ */
+function acceptsHtml(accept: string | string[] | undefined): boolean {
+  const value = Array.isArray(accept) ? accept.join(",") : (accept ?? "");
+  return value.includes("text/html");
+}
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -30,6 +39,15 @@ export default defineConfig({
     },
     proxy: {
       "/api": { target: proxyTarget, changeOrigin: false },
+      // 学生页 JSON 也在 `/f/:slug` 上（双形态：JSON 与 document 同路径）。
+      // 浏览器直接打开 `/f/abc` 时 `Accept` 含 `text/html`，那是**页面导航**，
+      // 必须由 dev server 自己吐 index.html（交给前端路由），不能反代到服务端；
+      // 只有 JSON 请求（`Accept: application/json` / `*/*`）才走代理。
+      "/f": {
+        target: proxyTarget,
+        changeOrigin: false,
+        bypass: (req) => (acceptsHtml(req.headers["accept"]) ? "/index.html" : undefined),
+      },
     },
   },
   build: {

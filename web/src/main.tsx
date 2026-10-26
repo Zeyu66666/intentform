@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 // KaTeX 的字体随包发布（不走 CDN），公式才能离线渲染。
 import "katex/dist/katex.min.css";
 
-import { App } from "./App";
+import { RouteView } from "./RouteView";
 import "./styles/index.css";
 
 const container = document.getElementById("root");
@@ -16,6 +16,6 @@ if (container === null) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <RouteView />
   </StrictMode>,
 );
