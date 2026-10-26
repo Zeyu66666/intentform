@@ -8,8 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { LIMITS } from "./constants";
-import { formItemSchema } from "./types";
+import { LIMITS } from "./constants.ts";
+import { formItemSchema } from "./types.ts";
 import {
   createSseSequencer,
   eventCategory,
@@ -26,7 +26,7 @@ import {
   type SseEventBody,
   toNdjsonLine,
   toSseFrame,
-} from "./sse-events";
+} from "./sse-events.ts";
 
 /**
  * 一个结构合法的单选题节点，作为 `field` 事件的载荷底稿。

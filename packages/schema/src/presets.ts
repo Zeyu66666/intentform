@@ -10,7 +10,7 @@
  * 改这段文本 = 让 3 条 fixture 全部失效，必须重录。改之前先看 README 第 5 节。
  */
 
-import { LIMITS } from "./constants";
+import { LIMITS } from "./constants.ts";
 
 /** 预置需求的 id，只用于 DOM key 与日志，不参与回放 hash。 */
 export type GeneratePresetId = "math-quadratic" | "english-vocab" | "bio-survey";

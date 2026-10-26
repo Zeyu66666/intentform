@@ -12,7 +12,7 @@ import {
   isBloomLevel,
   isFieldType,
   isFormKind,
-} from "./index";
+} from "./index.ts";
 
 describe("契约常量（对齐计划 v1.1 附录 A）", () => {
   it("版本号是数字 1，进回放键参与 hash", () => {

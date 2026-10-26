@@ -9,7 +9,7 @@
  * `explanation` 键，也包括它们的取值。
  */
 
-import type { FormKind } from "./constants";
+import type { FormKind } from "./constants.ts";
 import type {
   ChoiceOption,
   FillField,
@@ -23,7 +23,7 @@ import type {
   SectionField,
   ShortField,
   SingleField,
-} from "./types";
+} from "./types.ts";
 
 /** union 上的 Omit 需要分发，否则 `keyof (A|B)` 只剩公共键。 */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

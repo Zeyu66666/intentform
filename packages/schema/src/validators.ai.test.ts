@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { validateForm } from "./index";
-import type { ErrorCode } from "./errors";
+import { validateForm } from "./index.ts";
+import type { ErrorCode } from "./errors.ts";
 
 /**
  * 边界与畸形输入用例（AI 生成，逐条人工核对预期后保留）。

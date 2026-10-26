@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { LIMITS } from "./constants";
-import { formItemSchema, formSchema } from "./types";
+import { LIMITS } from "./constants.ts";
+import { formItemSchema, formSchema } from "./types.ts";
 
 /** 一份结构合法的 quiz，各测试在它上面做单点破坏。 */
 function validQuiz(): Record<string, unknown> {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { LIMITS } from "./constants";
-import { findPreset, GENERATE_PRESETS, presetsWithinLimit } from "./presets";
+import { LIMITS } from "./constants.ts";
+import { findPreset, GENERATE_PRESETS, presetsWithinLimit } from "./presets.ts";
 
 describe("预置需求（同时是回放 fixture 的输入）", () => {
   it("正好 3 条，对应 I2 要录的 3 条 fixture", () => {

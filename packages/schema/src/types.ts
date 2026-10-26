@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 
-import { BLOOM_LEVELS, FORM_KINDS, LIMITS, SCHEMA_VERSION } from "./constants";
+import { BLOOM_LEVELS, FORM_KINDS, LIMITS, SCHEMA_VERSION } from "./constants.ts";
 
 /**
  * 深度只读：契约对象出库后不允许调用方改写。

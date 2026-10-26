@@ -11,9 +11,9 @@
 
 import type { ZodError } from "zod";
 
-import { schemaError, type SchemaError } from "./errors";
-import { formSchema } from "./types";
-import type { FormItem, FormSchema, ScoredField } from "./types";
+import { schemaError, type SchemaError } from "./errors.ts";
+import { formSchema } from "./types.ts";
+import type { FormItem, FormSchema, ScoredField } from "./types.ts";
 
 /** LaTeX 校验函数：返回 `null` 表示可解析，返回字符串表示错误原因。 */
 export type LatexChecker = (text: string) => string | null;

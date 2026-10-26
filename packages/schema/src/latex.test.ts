@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { checkLatex, findFormulas } from "./latex";
-import { validateForm } from "./index";
+import { checkLatex, findFormulas } from "./latex.ts";
+import { validateForm } from "./index.ts";
 
 describe("findFormulas", () => {
   it("提取行内公式并标记为非块级", () => {

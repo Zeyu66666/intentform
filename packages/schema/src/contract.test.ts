@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { validateForm } from "./index";
-import { publicView, type PublicForm } from "./public-view";
-import type { FormSchema } from "./types";
+import { validateForm } from "./index.ts";
+import { publicView, type PublicForm } from "./public-view.ts";
+import type { FormSchema } from "./types.ts";
 
 /**
  * C1 契约测试（计划 v1.1 §3.5 规则 3、附录 A.2）。

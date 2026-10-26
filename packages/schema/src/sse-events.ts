@@ -26,9 +26,9 @@
 
 import { z } from "zod";
 
-import { LIMITS } from "./constants";
-import { ERROR_CODES } from "./errors";
-import { formItemSchema } from "./types";
+import { LIMITS } from "./constants.ts";
+import { ERROR_CODES } from "./errors.ts";
+import { formItemSchema } from "./types.ts";
 
 /**
  * 线上 `event:` 名，共 8 个。顺序即文档顺序，测试对成员与数量做断言。

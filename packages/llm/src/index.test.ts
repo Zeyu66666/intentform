@@ -6,7 +6,7 @@ import {
   isLlmMode,
   requiresUpstreamCredentials,
   resolveLlmMode,
-} from "./index";
+} from "./index.ts";
 
 describe("resolveLlmMode", () => {
   it("未设置 LLM_MODE 时回落到 replay（评委无 Key 复现路径）", () => {

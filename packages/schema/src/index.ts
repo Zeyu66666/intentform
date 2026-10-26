@@ -14,21 +14,21 @@
  * 除下面的装配外只做重导出，不放实现。
  */
 
-import { checkLatex } from "./latex";
+import { checkLatex } from "./latex.ts";
 import {
   validateForm as validateFormWithRules,
   type ValidateOptions,
   type ValidationResult,
-} from "./rules";
+} from "./rules.ts";
 
-export * from "./constants";
-export * from "./types";
-export * from "./errors";
-export * from "./rules";
-export * from "./latex";
-export * from "./public-view";
-export * from "./sse-events";
-export * from "./presets";
+export * from "./constants.ts";
+export * from "./types.ts";
+export * from "./errors.ts";
+export * from "./rules.ts";
+export * from "./latex.ts";
+export * from "./public-view.ts";
+export * from "./sse-events.ts";
+export * from "./presets.ts";
 
 /**
  * 生产装配：R7 使用真实的 KaTeX 校验。

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { formatRepairs, type ErrorCode, type SchemaError } from "./errors";
-import { validateForm, type LatexChecker, type ValidationResult } from "./rules";
+import { formatRepairs, type ErrorCode, type SchemaError } from "./errors.ts";
+import { validateForm, type LatexChecker, type ValidationResult } from "./rules.ts";
 
 /**
  * 测试用的 JSON 形态。
