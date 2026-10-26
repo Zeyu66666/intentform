@@ -14,6 +14,7 @@
  * 换来的是评审能把整条 HTTP 链路一次读完。
  */
 
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 
@@ -170,6 +171,16 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
     if (serverEnv.sessionSecretSource === "ephemeral") {
       process.stdout.write(
         "intentform-server warn: SESSION_SECRET 未设置，本次使用一次性密钥（重启后已登录会话失效）\n",
+      );
+    }
+    // 生产同源托管：`/` 与 `/f/:slug` 的 HTML 请求要回一张壳。路径配错时的症状是
+    // 「学生扫码后白屏 / 只看到一段 JSON」，而那时已经离开终端了 —— 所以在启动期就说清楚。
+    if (serverEnv.webIndexHtml !== "") {
+      const ok = existsSync(serverEnv.webIndexHtml);
+      process.stdout.write(
+        ok
+          ? `intentform-server html: ${serverEnv.webIndexHtml}\n`
+          : `intentform-server warn: WEB_INDEX_HTML=${serverEnv.webIndexHtml} 不存在，HTML 请求会退回 404 JSON（先跑 pnpm build:web）\n`,
       );
     }
   });
