@@ -1,0 +1,19 @@
+#!/bin/sh
+# 意卷 IntentForm · pre-commit
+# 唯一职责：阻止密钥 / 个人信息进入仓库。
+# 不做 typecheck（那属于 CI）：pre-commit 要快，慢了就会被 --no-verify 绕过。
+set -e
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if command -v gitleaks >/dev/null 2>&1; then
+  exec gitleaks protect --staged --redact --config .gitleaks.toml
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[pre-commit] 需要 gitleaks 或 node 才能做密钥扫描；未检测到任何一项。" >&2
+  exit 1
+fi
+
+exec node scripts/secret-scan.mjs --staged

@@ -1,0 +1,44 @@
+#!/bin/sh
+# 意卷 IntentForm · commit-msg
+# 强制 Conventional Commits，并对 feat/fix 强制挂载留痕标签：
+#   [Pxx]      对应 docs/prompt-log/Pxx 的 Prompt 链
+#   [AI-TEST]  由 AI 生成的测试或由 AI 测试发现的缺陷修复
+# 这条钩子是「过程可复现性」评分里最容易被抓住的漏洞，必须在本地就拦住。
+set -e
+
+msg_file=$1
+first_line=$(head -n 1 "$msg_file")
+
+# 合并与回滚提交不套用格式
+case "$first_line" in
+  "Merge "*|"Revert "*)
+    exit 0
+    ;;
+esac
+
+if [ -z "$first_line" ]; then
+  echo "[commit-msg] 提交信息为空。" >&2
+  exit 1
+fi
+
+length=$(printf '%s' "$first_line" | wc -c | tr -d ' ')
+if [ "$length" -gt 100 ]; then
+  echo "[commit-msg] 首行 ${length} 字符，超过 100。请把细节写进正文。" >&2
+  exit 1
+fi
+
+if ! printf '%s' "$first_line" | grep -Eq '^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([a-z0-9._-]+\))?: .+'; then
+  echo "[commit-msg] 格式不符：type(scope): subject" >&2
+  echo "            合法 type：feat fix chore docs test refactor perf build ci style revert" >&2
+  echo "            当前：$first_line" >&2
+  exit 1
+fi
+
+if printf '%s' "$first_line" | grep -Eq '^(feat|fix)(\([^)]*\))?: '; then
+  if ! printf '%s' "$first_line" | grep -Eq '\[(P[0-9]{2}|AI-TEST)\]'; then
+    echo "[commit-msg] feat/fix 必须带 [Pxx] 或 [AI-TEST] 标签，例如：" >&2
+    echo "            feat(schema): define FormSchema v1 field union [P01]" >&2
+    echo "            当前：$first_line" >&2
+    exit 1
+  fi
+fi
