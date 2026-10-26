@@ -28,6 +28,7 @@ export * from "./rules";
 export * from "./latex";
 export * from "./public-view";
 export * from "./sse-events";
+export * from "./presets";
 
 /**
  * 生产装配：R7 使用真实的 KaTeX 校验。
