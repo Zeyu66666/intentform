@@ -16,6 +16,9 @@ export default {
         ink: "var(--color-text)",
         muted: "var(--color-text-muted)",
         accent: "var(--color-accent)",
+        // 语义色：只用于状态（校验失败 / 修复成功），不算调色板扩充。
+        danger: "var(--color-danger)",
+        success: "var(--color-success)",
       },
       fontSize: {
         xs: ["var(--text-xs)", { lineHeight: "var(--leading-tight)" }],
