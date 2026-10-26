@@ -123,11 +123,13 @@ function buildView(): { form: FormSchema; view: PublicForm } {
 }
 
 describe("C1：publicView 不得泄露答案", () => {
-  it("递归收集到的键里不存在 answer / explanation", () => {
+  it("递归收集到的键里不存在 answer / explanation / bloom / knowledgePoint", () => {
     const { view } = buildView();
     const keys = collectKeys(view);
     expect(keys.has("answer")).toBe(false);
     expect(keys.has("explanation")).toBe(false);
+    expect(keys.has("bloom")).toBe(false);
+    expect(keys.has("knowledgePoint")).toBe(false);
   });
 
   it("序列化文本里既没有 answer 也没有 tolerance 这类答案形状", () => {
@@ -153,10 +155,18 @@ describe("C1：publicView 不得泄露答案", () => {
 });
 
 describe("C1：publicView 保留学生作答所需的信息", () => {
-  it("保留分值、层级、知识点（学生要看到评分口径）", () => {
+  it("保留分值，剥掉层级与知识点（它们是教学标注，对学生是提示）", () => {
     const { view } = buildView();
     const first = view.items[0];
-    expect(first).toMatchObject({ id: "q01", score: 2, bloom: "remember", knowledgePoint: "kp1" });
+    expect(first).toMatchObject({ id: "q01", score: 2 });
+    expect(first === undefined ? {} : "bloom" in first).toBe(false);
+    expect(first === undefined ? {} : "knowledgePoint" in first).toBe(false);
+  });
+
+  it("meta 里不带 objectives（教师侧教学目标清单）", () => {
+    const { view } = buildView();
+    expect("objectives" in view.meta).toBe(false);
+    expect(JSON.stringify(view)).not.toContain('"objectives"');
   });
 
   it("保留选项文本、短答字数上限、量表锚点与分节描述", () => {

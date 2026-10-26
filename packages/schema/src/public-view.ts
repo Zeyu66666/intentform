@@ -18,7 +18,6 @@ import type {
   FormSchema,
   MultiField,
   NumberField,
-  Objective,
   ScaleField,
   SectionField,
   ShortField,
@@ -28,17 +27,27 @@ import type {
 /** union 上的 Omit 需要分发，否则 `keyof (A|B)` 只剩公共键。 */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-type StripAnswer<T> = DistributiveOmit<T, "answer" | "explanation">;
+/**
+ * 剥掉"教师侧元数据"。两类东西都在这个名单里：
+ * - `answer` / `explanation`：答案，泄露即作弊（规则 3、契约测试 C1）；
+ * - `bloom` / `knowledgePoint`：教学标注，学生看到"这题考的是 apply、知识点 kp1"
+ *   等于拿到提示；《计划 v2.0》§3.5 明确要求 `publicView()` 删除它们。
+ * 保留 `score`：学生需要知道分值口径，且分值不构成答案提示。
+ */
+type StripTeacherMeta<T> = DistributiveOmit<
+  T,
+  "answer" | "explanation" | "bloom" | "knowledgePoint"
+>;
 
-export type PublicSingleField = StripAnswer<SingleField>;
-export type PublicMultiField = StripAnswer<MultiField>;
-export type PublicFillField = StripAnswer<FillField>;
-export type PublicNumberField = StripAnswer<NumberField>;
-export type PublicShortField = StripAnswer<ShortField>;
-export type PublicScaleField = StripAnswer<ScaleField>;
-export type PublicSectionField = SectionField;
+export type PublicSingleField = StripTeacherMeta<SingleField>;
+export type PublicMultiField = StripTeacherMeta<MultiField>;
+export type PublicFillField = StripTeacherMeta<FillField>;
+export type PublicNumberField = StripTeacherMeta<NumberField>;
+export type PublicShortField = StripTeacherMeta<ShortField>;
+export type PublicScaleField = StripTeacherMeta<ScaleField>;
+export type PublicSectionField = StripTeacherMeta<SectionField>;
 
-/** 学生端可见的字段：去掉了答案与解析，保留分值、层级与知识点。 */
+/** 学生端可见的字段：去掉答案、解析、层级与知识点，只留作答必需的信息与分值。 */
 export type PublicFormItem =
   | PublicSingleField
   | PublicMultiField
@@ -52,7 +61,10 @@ export interface PublicFormMeta {
   readonly version: FormMeta["version"];
   readonly kind: FormKind;
   readonly title: string;
-  readonly objectives: readonly Objective[];
+  /**
+   * 注意这里**没有** `objectives`：它是教师侧的教学目标清单（"这份卷考什么"），
+   * 对学生是提示。§3.5 把它和 bloom/knowledgePoint 一起划进删除名单。
+   */
   /** quiz 才有；survey 不判分，因而没有总分。 */
   readonly totalScore?: number;
 }
@@ -72,14 +84,8 @@ function projectOption(option: ChoiceOption): ChoiceOption {
  */
 function projectScored(item: SingleField | MultiField | FillField | NumberField): {
   readonly score: number;
-  readonly bloom: SingleField["bloom"];
-  readonly knowledgePoint: string;
 } {
-  return {
-    score: item.score,
-    bloom: item.bloom,
-    knowledgePoint: item.knowledgePoint,
-  };
+  return { score: item.score };
 }
 
 function projectItem(item: FormItem): PublicFormItem {
@@ -158,7 +164,6 @@ function projectMeta(meta: FormMeta): PublicFormMeta {
     version: meta.version,
     kind: meta.kind,
     title: meta.title,
-    objectives: meta.objectives.map((objective) => ({ id: objective.id, name: objective.name })),
     ...(meta.totalScore === undefined ? {} : { totalScore: meta.totalScore }),
   };
 }
