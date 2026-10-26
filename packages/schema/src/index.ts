@@ -10,10 +10,29 @@
  * - `public-view.ts` —— 学生端投影 `publicView()`（I1）
  *
  * 形状对齐《计划 v1.1》附录 A.1：判别字段 `type`、顶层容器 `items`。
- * 这里只做重导出，不放实现；调用方一律 `import { ... } from "@intentform/schema"`。
+ * 除下面的装配外只做重导出，不放实现。
  */
+
+import { checkLatex } from "./latex";
+import {
+  validateForm as validateFormWithRules,
+  type ValidateOptions,
+  type ValidationResult,
+} from "./rules";
 
 export * from "./constants";
 export * from "./types";
 export * from "./errors";
 export * from "./rules";
+export * from "./latex";
+
+/**
+ * 生产装配：R7 使用真实的 KaTeX 校验。
+ *
+ * `rules.ts` 刻意不依赖 KaTeX（单测要能注入假 checker），默认实现在这里接上。
+ * 这样任何 `import { validateForm } from "@intentform/schema"` 的调用方都不会
+ * 因为忘记传 `checkLatex` 而静默跳过 R7——`rules.validateForm` 是内部的、可注入的那个。
+ */
+export function validateForm(input: unknown, options: ValidateOptions = {}): ValidationResult {
+  return validateFormWithRules(input, { ...options, checkLatex });
+}
