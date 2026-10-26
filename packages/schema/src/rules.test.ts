@@ -303,3 +303,82 @@ describe("formatRepairs", () => {
     expect(formatRepairs([...result.errors].reverse())).toBe(formatRepairs(result.errors));
   });
 });
+
+/**
+ * 附录 A 的四条验收反例（审查问题 10）。
+ *
+ * 这四条以前**不可能全部成立**：结构层把 `answer` 写成必填，于是「无答案的 survey」
+ * 无法表达，`E_ANSWER_MISSING` / `E_SURVEY_HAS_ANSWER` 只在代码里存在、永远不会触发。
+ * 现在结构层全部放开为可选，四条才真正落在语义规则上。
+ */
+/** 一份不带答案、不带分值的 survey（含一道选择题）。 */
+function baseSurvey(): RawForm {
+  return {
+    meta: { version: 1, kind: "survey", title: "学情调查", objectives: [] },
+    items: [
+      { id: "s01", type: "section", title: "第一部分" },
+      {
+        id: "s02",
+        type: "single",
+        title: "你对这节课的整体感受？",
+        options: [
+          { id: "a", text: "很好" },
+          { id: "b", text: "一般" },
+        ],
+      },
+      { id: "s03", type: "short", title: "还想补充什么？" },
+    ],
+  };
+}
+
+describe("validateForm / 附录 A 的 kind 约束（四反例）", () => {
+  it("反例一：无答案无分值的 survey 通过（含选择题）", () => {
+    const result = validateForm(baseSurvey());
+    expect(codesOf(result)).toEqual([]);
+  });
+
+  it("反例一（反向）：survey 里带答案或带分值 → E_SURVEY_HAS_ANSWER 并指到具体字段", () => {
+    const withAnswer = baseSurvey();
+    at(withAnswer, 1).answer = "a";
+    const answerCodes = codesOf(validateForm(withAnswer));
+    expect(answerCodes).toContain("E_SURVEY_HAS_ANSWER");
+    const answerError = errorsOf(validateForm(withAnswer)).find(
+      (error) => error.code === "E_SURVEY_HAS_ANSWER",
+    );
+    expect(answerError?.path).toBe("items[1].answer");
+
+    const withScore = baseSurvey();
+    at(withScore, 1).score = 5;
+    expect(codesOf(validateForm(withScore))).toContain("E_SURVEY_HAS_ANSWER");
+  });
+
+  it("反例二：quiz 的判分题缺答案 → E_ANSWER_MISSING", () => {
+    const form = baseQuiz();
+    const first = at(form, 0);
+    delete first["answer"];
+    const codes = codesOf(validateForm(form));
+    expect(codes).toContain("E_ANSWER_MISSING");
+    expect(codes).not.toContain("E_SCHEMA_SHAPE");
+    expect(
+      errorsOf(validateForm(form)).find((error) => error.code === "E_ANSWER_MISSING")?.path,
+    ).toBe("items[0].answer");
+  });
+
+  it("反例二（反向）：quiz 的判分题缺分值 → E_SCORE_SUM", () => {
+    const form = baseQuiz();
+    delete at(form, 0)["score"];
+    expect(codesOf(validateForm(form))).toContain("E_SCORE_SUM");
+  });
+
+  it("反例三：总分与题目之和不符 → E_SCORE_SUM", () => {
+    const form = baseQuiz();
+    form.meta["totalScore"] = 99;
+    expect(codesOf(validateForm(form))).toContain("E_SCORE_SUM");
+  });
+
+  it("反例四：id 重复 → E_DUP_ID", () => {
+    const form = baseQuiz();
+    at(form, 1).id = "q01";
+    expect(codesOf(validateForm(form))).toContain("E_DUP_ID");
+  });
+});

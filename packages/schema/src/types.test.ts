@@ -149,10 +149,13 @@ describe("FormSchema 结构校验（附录 A.1）", () => {
 });
 
 describe("各字段类型的结构约束", () => {
-  it("single 缺 answer 被拒", () => {
+  it("single 缺 answer 在结构层是合法的（附录 A 把它降级为语义规则）", () => {
     const input = clone(validQuiz()) as { items: Record<string, unknown>[] };
     delete input.items[1]?.["answer"];
-    expect(formSchema.safeParse(input).success).toBe(false);
+    // 结构层必须放过：否则「survey 里不带答案的选择题」无法表达，
+    // `E_ANSWER_MISSING` / `E_SURVEY_HAS_ANSWER` 就永远不会触发（审查问题 10）。
+    // 真正的拒绝发生在 rules.ts：quiz 缺答案 → E_ANSWER_MISSING，survey 带答案 → E_SURVEY_HAS_ANSWER。
+    expect(formSchema.safeParse(input).success).toBe(true);
   });
 
   it("选项数量必须 2–8（R4 的结构部分）", () => {

@@ -61,12 +61,29 @@ describe("runPublishGate · 通过", () => {
 });
 
 describe("runPublishGate · 整表级失败", () => {
-  it("survey 里出现判分题 → 拦住，错误挂在 meta.kind 而不是某一行", () => {
+  it("survey 里出现带答案/分值的题 → 拦住，且错误点在那一行（比挂 meta.kind 更好修）", () => {
+    // 附录 A 之后 survey 可以有选择题，只要不带答案和分值；带了就逐行点名。
     const gate = runPublishGate(fields(SHORT, SINGLE), "survey");
     expect(gate.ok).toBe(false);
-    expect(gate.itemErrors).toEqual([]);
-    expect(gate.formErrors.map((error) => error.path)).toContain("meta.kind");
-    expect(gate.formErrors.map((error) => error.code)).toContain("E_SURVEY_HAS_ANSWER");
+    expect(gate.itemErrors).toHaveLength(1);
+    expect(gate.itemErrors[0]?.id).toBe(SINGLE.id);
+    expect(gate.itemErrors[0]?.codes).toContain("E_SURVEY_HAS_ANSWER");
+  });
+
+  it("survey 里的选择题不带答案不带分值 → 放行（附录 A 反例一）", () => {
+    const bare: Record<string, unknown> = { ...SINGLE, id: "s_choice" };
+    delete bare["answer"];
+    delete bare["score"];
+    delete bare["bloom"];
+    delete bare["knowledgePoint"];
+    const gate = runPublishGate(fields(SHORT, bare as unknown as typeof SINGLE), "survey");
+    expect(gate).toMatchObject({ ok: true, itemErrors: [], formErrors: [] });
+  });
+
+  it("quiz 里一个判分题都没有 → 拦住（§2.5 空表判据）", () => {
+    const gate = runPublishGate(fields(SHORT), "quiz");
+    expect(gate.ok).toBe(false);
+    expect(gate.formErrors[0]?.path).toBe("items");
   });
 
   it("空表 → 拦住（避免发出一个没有题的表单）", () => {

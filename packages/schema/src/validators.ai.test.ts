@@ -115,14 +115,13 @@ describe("组合场景", () => {
     ).toEqual([]);
   });
 
-  it("已知缺口：survey 声明 totalScore 目前不被拒绝", () => {
+  it("survey 声明 totalScore 被拒：没有分值语义就不该有总分（原「已知缺口」已修）", () => {
     const form = {
       meta: { version: 1, kind: "survey", title: "问卷", objectives: [], totalScore: 10 },
       items: [{ id: "s01", type: "section", title: "第一节" }],
     };
-    // 附录 A.2 只规定 survey 不得含 answer/score（字段级），
-    // 没有规定 meta.totalScore 必须缺席，所以这里记录「当前放行」。
-    expect(codes(form)).toEqual([]);
+    // 《计划 v3.0》附录 A：survey 没有分值语义，字段级不许带 score，整表也不许声明总分。
+    expect(codes(form)).toEqual(["E_SCORE_SUM"]);
   });
 
   it("已知缺口：objectives 里 id 重复目前不被拒绝", () => {

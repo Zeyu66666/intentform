@@ -129,10 +129,20 @@ describe("generateForm · mock 模式", () => {
 
 describe("generateForm · 坏行处理", () => {
   it("坏行发 field_error 但不掐流：后面的好行照常渲染", async () => {
+    // 好行必须是**可判分题**：§2.5 门禁要求整表至少一道判分题，
+    // 只给一个分节的话终态会是 error，这条测试要证明的「不掐流」就测不到了。
     const good = `${JSON.stringify({
-      type: "section",
-      id: "sec_main",
-      title: "小测验",
+      type: "single",
+      id: "q01",
+      title: "一题",
+      score: 4,
+      bloom: "remember",
+      knowledgePoint: "kp1",
+      options: [
+        { id: "a", text: "甲" },
+        { id: "b", text: "乙" },
+      ],
+      answer: "a",
     })}\n`;
     const bodies = await collect(
       { config: MOCK_CONFIG, source: scriptedSource(['{"type":"single","id":\n', good]) },
@@ -167,7 +177,20 @@ describe("generateForm · 坏行处理", () => {
       knowledgePoint: "kp_basic",
       answer: [],
     })}\n`;
-    const good = `${JSON.stringify({ type: "section", id: "sec_main", title: "小测验" })}\n`;
+    // 同上：门禁要求整表至少一道可判分题（§2.5），只给分节的话终态会是 error。
+    const good = `${JSON.stringify({
+      type: "single",
+      id: "q_good",
+      title: "一题",
+      score: 5,
+      bloom: "remember",
+      knowledgePoint: "kp_basic",
+      options: [
+        { id: "a", text: "甲" },
+        { id: "b", text: "乙" },
+      ],
+      answer: "a",
+    })}\n`;
     const bodies = await collect(
       {
         config: MOCK_CONFIG,
