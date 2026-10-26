@@ -29,6 +29,7 @@ export * from "./latex.ts";
 export * from "./public-view.ts";
 export * from "./sse-events.ts";
 export * from "./presets.ts";
+export * from "./api.ts";
 
 /**
  * 生产装配：R7 使用真实的 KaTeX 校验。

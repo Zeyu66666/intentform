@@ -87,7 +87,30 @@ export const LIMITS = {
    * 上限存在，是因为一行 section 可能上万字符，SSE 帧不该被它撑爆。
    */
   rawLineMax: 2000,
+  /** 收集页短链（`/f/:slug`）。随机生成，够短好念，但不许手填成别的教师也在用的串。 */
+  slugMax: 32,
+  /** 教师账号邮箱上限（RFC 5321 的地址长度上限）。 */
+  emailMax: 320,
+  /** 登录密码长度区间：下限卡住弱口令，上限防超长输入拖慢 KDF。 */
+  passwordMin: 8,
+  passwordMax: 200,
 } as const;
+
+/**
+ * 表单状态。`published` 只表示"有过发布版本"，具体给学生看哪一版由
+ * `forms.published_version_id` 决定——状态与指针分开，是为了让"下架"能只清指针。
+ */
+export const FORM_STATUSES = ["draft", "published"] as const;
+
+export type FormStatus = (typeof FORM_STATUSES)[number];
+
+/**
+ * 版本来源（`form_versions.source`）：生成、受限修改、修复。
+ * 不在这个集合里的来源一律拒收——留一个自由文本列，事后没人说得清版本怎么来的。
+ */
+export const FORM_VERSION_SOURCES = ["generate", "patch", "repair"] as const;
+
+export type FormVersionSource = (typeof FORM_VERSION_SOURCES)[number];
 
 /** 字段类型守卫，供流式解析与渲染分派使用。 */
 export function isFieldType(value: unknown): value is FieldType {

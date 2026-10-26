@@ -1,0 +1,283 @@
+/**
+ * I4 的 HTTP 契约（《计划 v3.0》§4.1 I4、§3.5、§5）。
+ *
+ * 为什么放在 `packages/schema` 而不是 `server`：填写页与看板在 `web/`，按
+ * AGENTS.md 的模块边界，`web` 只能依赖 `schema` 的类型与纯函数。契约若写在
+ * server 里，前端就只能靠手抄接口形状，两边一漂移，"提交响应不含答案" 这种
+ * 不变量会先在类型层面失守，字节级检查只是最后一道网。
+ *
+ * 这里只描述**线缆上的形状**与硬上限，不含任何实现：SQL、判分、限流都在
+ * `server/src/**`。请求体用 Zod 就是为了让同一个 schema 在两侧都能跑——
+ * 前端先挡一遍明显的错（少填一个必答项），服务端不信前端，再挡一遍。
+ */
+import { z } from "zod";
+import {
+  FORM_KINDS,
+  FORM_STATUSES,
+  FORM_VERSION_SOURCES,
+  LIMITS,
+  type FormKind,
+  type FormStatus,
+  type FormVersionSource,
+} from "./constants.ts";
+import type { PublicForm } from "./public-view.ts";
+import { formSchema, type FormSchema } from "./types.ts";
+
+/** 路由表：前后端都从这里取路径，避免 "/api/forms/:id/publish" 手写成两种拼法。 */
+export const API_PATHS = {
+  login: "/api/auth/login",
+  logout: "/api/auth/logout",
+  me: "/api/auth/me",
+  generate: "/api/generate",
+  forms: "/api/forms",
+  form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
+  publish: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/publish`,
+  submissions: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions`,
+  submissionsCsv: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions.csv`,
+  submit: "/api/submissions",
+  /** 学生收集页；`web/src/config.ts` 的 `fillPathPrefix` 与这里必须一致。 */
+  fill: (slug: string) => `/f/${encodeURIComponent(slug)}`,
+} as const;
+
+/**
+ * 错误码。刻意与 SSE 的 `SSE_ERROR_CODES` 分开：SSE 那些描述的是"生成过程中
+ * 上游怎么了"，这里是"这次 HTTP 请求为什么被拒"。混在一张表里会让
+ * `llm_timeout` 这种码出现在登录接口上。
+ */
+export const API_ERROR_CODES = [
+  "bad_request",
+  "unauthorized",
+  "forbidden",
+  "not_found",
+  "version_conflict",
+  "payload_too_large",
+  "rate_limited",
+  "internal",
+] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
+/** 失败响应统一形状：`ok:false` 放第一位，前端只判一个字段就够。 */
+export interface ApiErrorBody {
+  readonly ok: false;
+  readonly error: ApiErrorCode;
+  readonly message: string;
+}
+
+export function isApiErrorBody(value: unknown): value is ApiErrorBody {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record["ok"] === false &&
+    typeof record["error"] === "string" &&
+    (API_ERROR_CODES as readonly string[]).includes(record["error"])
+  );
+}
+
+/** HTTP 状态码映射。写死在一处，免得"发布未登录" 一会儿 401 一会儿 403。 */
+export const API_ERROR_STATUS: Readonly<Record<ApiErrorCode, number>> = {
+  bad_request: 400,
+  unauthorized: 401,
+  forbidden: 403,
+  not_found: 404,
+  version_conflict: 409,
+  payload_too_large: 413,
+  rate_limited: 429,
+  internal: 500,
+};
+
+/* ---------------------------------- 鉴权 ---------------------------------- */
+
+/**
+ * 只做登录，不做开放注册（《计划 v3.0》§5：砍开放注册）。
+ * 教师账号由 seed 脚本写入，密码经 argon2 哈希。
+ */
+export const loginRequestSchema = z.object({
+  email: z.string().trim().toLowerCase().max(LIMITS.emailMax),
+  password: z.string().min(LIMITS.passwordMin).max(LIMITS.passwordMax),
+});
+
+export type LoginRequest = z.infer<typeof loginRequestSchema>;
+
+/** 登录后前端能拿到的东西：只有 id 与邮箱。密码哈希、创建时间都不出服务端。 */
+export interface TeacherIdentity {
+  readonly id: string;
+  readonly email: string;
+}
+
+export interface LoginResponse {
+  readonly ok: true;
+  readonly teacher: TeacherIdentity;
+}
+
+export interface MeResponse {
+  readonly ok: true;
+  readonly teacher: TeacherIdentity;
+}
+
+/* --------------------------------- 表单管理 -------------------------------- */
+
+export const formKindSchema = z.enum(FORM_KINDS);
+export const formStatusSchema = z.enum(FORM_STATUSES);
+export const formVersionSourceSchema = z.enum(FORM_VERSION_SOURCES);
+
+/**
+ * 新建表单 = 把一份**已通过整表门禁**的 Schema 落成 `v1` 草稿版本。
+ * 这里再跑一遍 `formSchema`（结构）而不是 `validateForm`（语义）：语义门禁
+ * 属于生成链路的 responsibility（`packages/llm/src/publish-gate.ts`），
+ * 接口层只保证"存进来的东西能被 DSL 解析"，否则一存进去后续所有读取都炸。
+ */
+export const createFormRequestSchema = z.object({
+  title: z.string().trim().min(1).max(LIMITS.formTitleMax),
+  kind: formKindSchema,
+  schema: formSchema,
+  /** 缺省视为 `generate`：手动上传的 Schema 也走生成入口，不另开一条路。 */
+  source: formVersionSourceSchema.default("generate"),
+});
+
+export type CreateFormRequest = z.infer<typeof createFormRequestSchema>;
+
+/** 列表项。刻意不带 `schema_json`：列表页不需要整份表单，带上就是白传几十 KB。 */
+export interface FormSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly kind: FormKind;
+  readonly status: FormStatus;
+  readonly slug?: string;
+  readonly draftVersionId: string;
+  readonly publishedVersionId?: string;
+  readonly updatedAt: string;
+}
+
+export interface FormVersionSummary {
+  readonly id: string;
+  readonly n: number;
+  readonly source: FormVersionSource;
+  readonly promptVersion: string;
+  readonly parentId?: string;
+  readonly createdAt: string;
+}
+
+export interface CreateFormResponse {
+  readonly ok: true;
+  readonly form: FormSummary;
+  readonly version: FormVersionSummary;
+}
+
+export interface ListFormsResponse {
+  readonly ok: true;
+  readonly forms: readonly FormSummary[];
+}
+
+/** 教师侧详情：带完整 Schema（含答案），所以这个接口必须登录且校验归属。 */
+export interface FormDetailResponse {
+  readonly ok: true;
+  readonly form: FormSummary;
+  readonly version: FormVersionSummary;
+  readonly schema: FormSchema;
+}
+
+/**
+ * 发布 = 把某个版本 id 写进 `forms.published_version_id`（§3.5 规则 1）。
+ * 请求里显式带 `versionId` 而不是"发最新草稿"：教师看到的预览是哪一版，
+ * 发的就该是哪一版，中间被别人加了草稿也不影响这次操作。
+ */
+export const publishRequestSchema = z.object({
+  versionId: z.string().min(1).max(64),
+});
+
+export type PublishRequest = z.infer<typeof publishRequestSchema>;
+
+export interface PublishResponse {
+  readonly ok: true;
+  readonly slug: string;
+  readonly versionId: string;
+  readonly publishedAt: string;
+}
+
+/* ------------------------------- 学生端收集页 ------------------------------ */
+
+/**
+ * `GET /f/:slug` 的响应。`form` 的类型就是 `PublicForm`——学生端能看到的
+ * 一切必须经过 `publicView()`，这里用类型把出口卡死：想加一个 `answer`
+ * 字段就必须先改 `public-view.ts`，而那里有 C1 契约测试看着。
+ */
+export interface FillViewResponse {
+  readonly ok: true;
+  readonly formId: string;
+  readonly versionId: string;
+  readonly versionN: number;
+  readonly slug: string;
+  readonly form: PublicForm;
+}
+
+/**
+ * 学生提交的答案值。只允许字符串与字符串数组：
+ * 选项题交选项 id，填空题交字符串数组，数值题交字符串（解析与容差判定在服务端，
+ * 不让前端把 "3.14" 预处理成 3.14 再交上来——那等于让学生自证解析正确）。
+ */
+export const answerValueSchema = z.union([z.string(), z.array(z.string())]);
+
+export type AnswerValue = z.infer<typeof answerValueSchema>;
+
+export const submitRequestSchema = z.object({
+  slug: z.string().min(1).max(LIMITS.slugMax),
+  /**
+   * 学生页面**实际渲染的那个版本**。服务端拿它与当前 `published_version_id`
+   * 比对，不等就拒（§3.5：旧版页面提交 → 「版本已更新，请刷新」）。
+   * 只按这个版本判分，绝不用新版答案去判旧版作答。
+   */
+  formVersionId: z.string().min(1).max(64),
+  /** 键是字段 id；未知键由服务端拒绝（学生改 DOM 加字段不该静默计 0 分）。 */
+  answers: z.record(answerValueSchema),
+});
+
+export type SubmitRequest = z.infer<typeof submitRequestSchema>;
+
+/**
+ * 提交响应。**只有得分与满分**：不带每题对错、不带正确答案、不带他人统计，
+ * 也不回显学生填了什么（回显也是一条泄露路径——浏览器历史里会留下它）。
+ */
+export interface SubmitResponse {
+  readonly ok: true;
+  readonly submissionId: string;
+  readonly score: number;
+  readonly maxScore: number;
+}
+
+/** 版本冲突时给人类看的话。前端直接展示，所以文案放在契约里而不是各处硬编码。 */
+export const VERSION_CONFLICT_MESSAGE = "版本已更新，请刷新页面后重试";
+
+/* --------------------------------- 看板 ---------------------------------- */
+
+export interface SubmissionRow {
+  readonly submissionId: string;
+  readonly createdAt: string;
+  readonly score: number;
+  readonly maxScore: number;
+}
+
+export interface SubmissionSummary {
+  readonly versionId: string;
+  readonly versionN: number;
+  readonly count: number;
+  /** 无提交时为 `null`，不要补 0——0 分和"还没有人交"是两件事。 */
+  readonly avgScore: number | null;
+  readonly maxScore: number;
+}
+
+export interface SubmissionsResponse {
+  readonly ok: true;
+  readonly summary: SubmissionSummary;
+  readonly rows: readonly SubmissionRow[];
+}
+
+/**
+ * CSV 表头前四列固定，后面按版本里的字段 id 依次追加。
+ * 表头写死在这里，是因为 `pnpm verify` 要拿它做字节级断言：
+ * 一旦有人在导出里混进 `answer` 列，校验会直接失败而不是"看起来正常"。
+ */
+export const CSV_BASE_COLUMNS = ["submission_id", "created_at", "score", "max_score"] as const;
+
+/** CSV 的 Content-Type；带 charset，Excel 打开中文表头才不乱码。 */
+export const CSV_CONTENT_TYPE = "text/csv; charset=utf-8";
