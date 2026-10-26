@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+  - server
+  - web
+
+# esbuild（vitest 传递依赖）的 postinstall 需要下载平台二进制。
+# pnpm 10+ 默认拦截依赖构建脚本，这里显式放行这一项；新增依赖若需要构建脚本，
+# 必须在本文件登记并说明理由，禁止 `allowBuilds: {}` 或全量放行。
+allowBuilds:
+  esbuild: true

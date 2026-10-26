@@ -1,0 +1,15 @@
+{
+  "name": "@intentform/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "React 18 + Vite 前端：生成式 UI、思考时间线、填写页、看板（I0 阶段为零依赖骨架）",
+  "main": "./src/config.ts",
+  "types": "./src/config.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@intentform/schema": "workspace:*"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@intentform/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hono 服务端：intent / planner / generator / repairer / patcher / submission / analytics（I0 阶段为零依赖骨架）",
+  "main": "./src/main.ts",
+  "types": "./src/main.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "node --experimental-strip-types src/main.ts"
+  },
+  "dependencies": {
+    "@intentform/llm": "workspace:*",
+    "@intentform/schema": "workspace:*"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "intentform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "意卷 IntentForm — 自然语言驱动的表单 / 考卷生成引擎",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "setup:hooks": "git config core.hooksPath .githooks",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "oxlint --deny-warnings packages server web scripts",
+    "test": "vitest run --passWithNoTests",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "secret-scan:history": "node scripts/secret-scan.mjs --history",
+    "dev:server": "node --experimental-strip-types server/src/main.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "oxlint": "0.15.15",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  }
+}
