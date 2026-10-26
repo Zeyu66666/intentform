@@ -18,11 +18,25 @@
     "no-await-in-loop": "off",
     "no-unused-vars": "error"
   },
+  "overrides": [
+    {
+      "files": ["web/**/*.ts", "web/**/*.tsx"],
+      "env": {
+        "browser": true,
+        "es2022": true
+      },
+      "rules": {
+        "react/react-in-jsx-scope": "off",
+        "react/jsx-uses-react": "off"
+      }
+    }
+  ],
   "ignorePatterns": [
     "node_modules",
     "dist",
     "coverage",
     "fixtures/**",
-    "pnpm-lock.yaml"
+    "pnpm-lock.yaml",
+    "web/dist"
   ]
 }

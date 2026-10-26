@@ -78,7 +78,7 @@ export type PhaseName = (typeof PHASE_NAMES)[number];
 /**
  * 终态错误码。刻意穷举而不是 `z.string()`：前端要按码分支给可操作提示
  * （「重试」还是「先去配 Key」），自由字符串会让前端只能显示原文。
- * 新增码属于契约变更，必须同步 `packages/contracts` 的调用方与本文档。
+ * 新增码属于契约变更，必须同步 `packages/schema` 内的错误码表（`errors.ts`）
  */
 export const SSE_ERROR_CODES = [
   /** 上游超过 `LLM_TIMEOUT_MS`（默认 60s）。可重试。 */
