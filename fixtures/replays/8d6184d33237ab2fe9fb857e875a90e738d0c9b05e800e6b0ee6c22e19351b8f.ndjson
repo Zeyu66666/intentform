@@ -1,0 +1,27 @@
+{"d":"{\"type\":\"section\",\"id\":\"sec_survey\",","dt":33}
+{"d":"\"title\":\"高二生物 · 课前学情调查\",\"description","dt":61}
+{"d":"\":\"本问卷不判分、不计成绩，只为调整上课节奏；请按真实情况填写。\"}\n","dt":75}
+{"d":"{\"type\":\"short\",\"id\":\"s_preview\",\"title","dt":49}
+{"d":"\":\"课前你预习了教材吗？（选 A/B/C 填在后面）A 完整预习 B 浏览过","dt":62}
+{"d":" C 没有\",\"required\":true,\"maxLength\":20}\n","dt":44}
+{"d":"{\"type\":\"short\",\"id\":\"s_notes\",\"ti","dt":48}
+{"d":"tle\":\"你会自己做课堂笔记吗？（A 每节都做 B 偶尔做 C 不做","dt":62}
+{"d":"）\",\"required\":true,\"maxLength\":20}\n","dt":46}
+{"d":"{\"type\":\"short\",\"id\":\"s_exercise\",\"titl","dt":31}
+{"d":"e\":\"上次课后练习你独立完成的比例大概是？（A 80% 以上 B 一半左右 C","dt":62}
+{"d":" 少于一成）\",\"required\":true,\"maxLength\":20}\n","dt":46}
+{"d":"{\"type\":\"scale\",\"id\":\"s_confidence\",\"titl","dt":47}
+{"d":"e\":\"你对学好本章（遗传与变异）的信心有多大？\",\"required\":true,","dt":48}
+{"d":"\"min\":1,\"max\":5,\"labels\":[\"完全没底\",\"很有把握\"]}\n","dt":59}
+{"d":"{\"type\":\"scale\",\"id\":\"s_lab_confidence\",\"ti","dt":47}
+{"d":"tle\":\"你对独立完成显微观察类实验的信心有多大？\",\"required\":true","dt":62}
+{"d":",\"min\":1,\"max\":5,\"labels\":[\"完全没底\",\"很有把握\"]}\n","dt":46}
+{"d":"{\"type\":\"short\",\"id\":\"s_confusion\",\"","dt":47}
+{"d":"title\":\"本章你最困惑的具体概念是什么？请写一个（例如：自由组合定","dt":78}
+{"d":"律）\",\"required\":true,\"maxLength\":120}\n","dt":47}
+{"d":"{\"type\":\"short\",\"id\":\"s_confusion","dt":36}
+{"d":"_why\",\"title\":\"上一题的概念为什么让你觉得难？\",\"","dt":58}
+{"d":"required\":false,\"maxLength\":200}\n","dt":47}
+{"d":"{\"type\":\"short\",\"id\":\"s_wish_experim","dt":45}
+{"d":"ent\",\"title\":\"如果只能做一个实验，你最想搞懂哪个实验？为什","dt":48}
+{"d":"么？\",\"required\":true,\"maxLength\":300}\n","dt":45}

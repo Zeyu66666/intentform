@@ -1,0 +1,33 @@
+{"d":"{\"type\":\"section\",\"id\":\"sec_vocab\",\"t","dt":28}
+{"d":"itle\":\"高一英语 Unit 3 词汇周测\",\"description\"","dt":64}
+{"d":":\"共 10 题，满分 50 分；单选题考词义辨析，填空题写词形变化。\"}\n","dt":62}
+{"d":"{\"type\":\"single\",\"id\":\"q_look_up\",\"title\":\"He ____ the word in the dictionary before answering.\",\"required\":true,\"score","dt":94}
+{"d":"\":5,\"bloom\":\"remember\",\"knowledgePoint\":\"kp1\",\"options\":[{\"id\":\"a\",\"text\":\"looked up\"},{\"id\":\"b\",\"text\":\"looked after\"}","dt":92}
+{"d":",{\"id\":\"c\",\"text\":\"looked into\"},{\"id\":\"d\",\"text\":\"looked through\"}],\"answer\":\"a\",\"explanation\":\"look up = 查阅（词典/单词）。\"}\n","dt":95}
+{"d":"{\"type\":\"single\",\"id\":\"q_turn_down\",\"title\":\"She ____ the job offer because the pay was low.\",\"required\":true,\"scor","dt":76}
+{"d":"e\":5,\"bloom\":\"understand\",\"knowledgePoint\":\"kp1\",\"options\":[{\"id\":\"a\",\"text\":\"turned down\"},{\"id\":\"b\",\"text\":\"turne","dt":98}
+{"d":"d up\"},{\"id\":\"c\",\"text\":\"turned on\"},{\"id\":\"d\",\"text\":\"turned off\"}],\"answer\":\"a\",\"explanation\":\"turn down = 拒绝。\"}\n","dt":73}
+{"d":"{\"type\":\"single\",\"id\":\"q_get_over\",\"title\":\"It took him a month to ____ the illness.\",\"required\":true,\"score\":5","dt":77}
+{"d":",\"bloom\":\"understand\",\"knowledgePoint\":\"kp2\",\"options\":[{\"id\":\"a\",\"text\":\"get over\"},{\"id\":\"b\",\"text\":\"get in\"}","dt":93}
+{"d":",{\"id\":\"c\",\"text\":\"get off\"},{\"id\":\"d\",\"text\":\"get on\"}],\"answer\":\"a\",\"explanation\":\"get over = 从（疾病/打击）中恢复。\"}\n","dt":94}
+{"d":"{\"type\":\"single\",\"id\":\"q_put_off\",\"title\":\"They decided to ____ the meeting until next Monday.\",\"required\":tr","dt":78}
+{"d":"ue,\"score\":5,\"bloom\":\"apply\",\"knowledgePoint\":\"kp1\",\"options\":[{\"id\":\"a\",\"text\":\"put off\"},{\"id\":\"b\",\"text\":\"p","dt":38}
+{"d":"ut out\"},{\"id\":\"c\",\"text\":\"put up\"},{\"id\":\"d\",\"text\":\"put away\"}],\"answer\":\"a\",\"explanation\":\"put off = 推迟。\"}\n","dt":86}
+{"d":"{\"type\":\"single\",\"id\":\"q_come_up_with\",\"title\":\"Who ____ this idea in the first place?\",\"required\":true,\"score\":5,","dt":78}
+{"d":"\"bloom\":\"apply\",\"knowledgePoint\":\"kp3\",\"options\":[{\"id\":\"a\",\"text\":\"came up with\"},{\"id\":\"b\",\"text\":\"came across\"}","dt":93}
+{"d":",{\"id\":\"c\",\"text\":\"came about\"},{\"id\":\"d\",\"text\":\"came out\"}],\"answer\":\"a\",\"explanation\":\"come up with = 提出（想法）。\"}\n","dt":75}
+{"d":"{\"type\":\"single\",\"id\":\"q_run_out_of\",\"title\":\"We have ____ milk; buy some on your way home.\",\"required\":true,\"sc","dt":79}
+{"d":"ore\":5,\"bloom\":\"apply\",\"knowledgePoint\":\"kp2\",\"options\":[{\"id\":\"a\",\"text\":\"run out of\"},{\"id\":\"b\",\"text\":\"run in","dt":91}
+{"d":"to\"},{\"id\":\"c\",\"text\":\"run over\"},{\"id\":\"d\",\"text\":\"run after\"}],\"answer\":\"a\",\"explanation\":\"run out of = 用完。\"}\n","dt":94}
+{"d":"{\"type\":\"fill\",\"id\":\"q_form_decide\",\"title\":\"用 decide 的正确形式填空：It was a dif","dt":77}
+{"d":"ficult ____ to make.\",\"required\":true,\"score\":5,\"bloom\":\"apply\",\"knowledge","dt":61}
+{"d":"Point\":\"kp2\",\"answer\":[\"decision\"],\"explanation\":\"decide → decision（名词）。\"}\n","dt":78}
+{"d":"{\"type\":\"fill\",\"id\":\"q_form_achieve\",\"title\":\"用 achieve 的正确形式填空：Her ____ in ","dt":64}
+{"d":"the exam surprised us.\",\"required\":true,\"score\":5,\"bloom\":\"apply\",\"knowledgeP","dt":60}
+{"d":"oint\":\"kp3\",\"answer\":[\"achievement\"],\"explanation\":\"achieve → achievement。\"}\n","dt":79}
+{"d":"{\"type\":\"short\",\"id\":\"q_short_senten","dt":49}
+{"d":"ce\",\"title\":\"用 turn down 造一个描述日常生活的句","dt":57}
+{"d":"子。\",\"required\":true,\"maxLength\":200}\n","dt":47}
+{"d":"{\"type\":\"short\",\"id\":\"q_short_story\"","dt":50}
+{"d":",\"title\":\"用至少三个 Unit 3 的动词短语，写两句连贯的话","dt":59}
+{"d":"。\",\"required\":true,\"maxLength\":300}\n","dt":44}
