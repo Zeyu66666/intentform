@@ -25,6 +25,7 @@ export * from "./types";
 export * from "./errors";
 export * from "./rules";
 export * from "./latex";
+export * from "./public-view";
 
 /**
  * 生产装配：R7 使用真实的 KaTeX 校验。
