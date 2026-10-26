@@ -1,4 +1,11 @@
 {
   "extends": "../tsconfig.base.json",
-  "include": ["src/**/*.ts"]
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    // 前端只认浏览器环境：把 base 里的 "node" 换掉，让误用 `process` / `Buffer`
+    // 在这里就编译不过，而不是等到浏览器里运行时才炸。
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

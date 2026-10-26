@@ -19,7 +19,9 @@
     "verify": "node scripts/verify.mjs",
     "secret-scan": "node scripts/secret-scan.mjs",
     "secret-scan:history": "node scripts/secret-scan.mjs --history",
-    "dev:server": "node --experimental-strip-types server/src/main.ts"
+    "dev:server": "node --experimental-strip-types server/src/main.ts",
+    "dev:web": "pnpm --filter @intentform/web dev",
+    "build:web": "pnpm --filter @intentform/web build"
   },
   "devDependencies": {
     "@types/node": "22.10.2",
