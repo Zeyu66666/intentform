@@ -1,7 +1,7 @@
 # P00 · 架构约束注入
 
 - 迭代：`I0` · 日期：`2026-10-26` · 涉及模块：仓库整体（`package.json`、`pnpm-workspace.yaml`、`tsconfig.base.json`、`AGENTS.md`、`.githooks/`）
-- 会话导出：`raw-20261026-i0-bootstrap.md`（待导出，导出后过 `scripts/secret-scan.mjs` 并人工脱敏）
+- 会话导出：`raw-20261026-i0-bootstrap.md`（已归档；DSH 会话不提供 `/export`，该文件为提问原文 + 交付动作摘录，已在文件头注明；已过 `scripts/secret-scan.mjs`）
 
 ## 提问
 
@@ -49,6 +49,20 @@ AI 没有按"先规划再动手"的套路走，而是直接落盘。它给的方
 | commit | message | 说明 |
 |---|---|---|
 | `e479304` | `chore: init pnpm monorepo (web/server/schema/llm)` | 4 包骨架 + lockfile，typecheck 通过 |
-| `60311c4` | `chore(sec): add gitignore, env.example, gitleaks pre-commit` | 安全底座 + 双钩子（含可执行位修正） |
-| 待填 | `docs: add AGENTS.md constraints for AI agents [P00]` | 本文件所在的 commit |
-| 待填 | `ci: add lint/typecheck/test workflow` | 回放模式 CI |
+| `e463258` | `chore(sec): add gitignore, env.example, gitleaks pre-commit` | 安全底座 + 双钩子（含可执行位 100755 修正） |
+| `50fdeb5` | `docs: add AGENTS.md constraints for AI agents [P00]` | 约束文档 + Prompt 链归档结构 |
+| `b9dd852` | `ci: add lint/typecheck/test workflow` | 回放模式 CI（lint 127 规则 / typecheck / test / 双扫秘密） |
+| `f218e40` | `test(llm): cover mode parsing and api base resolution [AI-TEST]` | 增补单测 14 条，证明 test 链路可用 |
+
+原始导出：`raw-20261026-i0-bootstrap.md`（DSH 会话无 `/export`，该文件为提问原文 + 交付动作摘录，已在文件头注明）。
+
+### 待人工完成的两步（本机无法代做）
+
+```bash
+# 1) 建 Public 仓库并推送（本机未安装 gh CLI，仓库名需本人确认）
+git remote add origin https://github.com/<你的账号>/intentform.git
+git push -u origin main
+
+# 2) 推送后确认 CI 与钩子策略在干净克隆中也生效
+git config core.hooksPath .githooks   # 新克隆需要执行一次，或依赖 README 的 setup 步骤
+```
