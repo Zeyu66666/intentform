@@ -26,7 +26,7 @@ docs/prompt-log/
 1. **四段式**：提问 / AI 修改建议 / 我如何引导 AI 修复 Bug / 结果。少一段就不算归档。
 2. **Bug 段不允许编造**：本轮没发生真实 bug 就写"待补"，下轮补上。编造会被评审通过 commit 时间线拆穿。
 3. **5 分钟内导出**：会话结束后立刻把原始对话导出成 `raw-<日期>-<主题>.md`，再填 `summary.md`。隔天补记会丢上下文。
-4. **双重脱敏**：`raw-*.md` 也要过一遍 `node scripts/secret-scan.mjs`，并手动删掉姓名、手机号、学校名、邮箱、本机绝对路径中的用户名。
+4. **双重脱敏（占位符替换，不删段）**：`raw-*.md` 也要过一遍 `node scripts/secret-scan.mjs`。姓名、手机号、学校名、邮箱、本机路径里的用户名，一律用占位符替换（如 `[REDACTED-NAME]`、`[REDACTED-PHONE]`），**不整段删除**——删掉段落会让导出文件失去真实性。替换后在 `summary.md` 末尾记一行「替换了哪几类信息」；没替换也要写「无需替换」。
 5. **commit hash 占位必须填实**：`summary.md` 里写的 hash 必须能在 `git log` 里查到，且该 commit 的改动范围与 summary 描述一致。
 6. **AI 的建议要写取舍**：采纳了什么、否决了什么、为什么。只写"AI 给了方案我用了"没有留痕价值。
 
@@ -37,4 +37,4 @@ docs/prompt-log/
 | `[Pxx]` | 该 commit 属于 Prompt 链 Pxx |
 | `[AI-TEST]` | AI 生成的测试，或由 AI 测试发现的缺陷修复 |
 
-`commit-msg` 钩子会对 `feat` / `fix` 强制要求上述标签之一，缺少直接拒绝提交。
+`commit-msg` 钩子会对 `feat` / `fix` / `test` 强制要求上述标签之一，缺少直接拒绝提交。`chore` / `docs` / `ci` 不强制，但属于某条 Prompt 链时也应带上（本仓库的惯例是带上）。
