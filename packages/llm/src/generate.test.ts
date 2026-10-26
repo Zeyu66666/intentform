@@ -8,7 +8,7 @@ import { generateForm, inferFormKind, placeholderVersionId } from "./generate.ts
 import type { LlmRuntimeConfig } from "./config.ts";
 import { resolveLlmRuntimeConfig } from "./config.ts";
 import type { DeltaSource, SourceDelta } from "./sources.ts";
-import { mockLines } from "./sources.ts";
+import { MOCK_BROKEN_LINE_ID, mockLines } from "./sources.ts";
 
 const MOCK_CONFIG: LlmRuntimeConfig = resolveLlmRuntimeConfig("mock", {}, {});
 
@@ -49,21 +49,61 @@ describe("generateForm · mock 模式", () => {
     const phases = bodies
       .filter((body): body is Extract<SseEventBody, { type: "phase" }> => body.type === "phase")
       .map((body) => body.phase);
-    expect(phases).toEqual(["understand", "plan", "generate", "validate", "done"]);
+    expect(phases).toEqual(["understand", "plan", "generate", "validate", "repair", "done"]);
     expect(phases.at(-1)).toBe("done");
 
     const fields = bodies.filter((body): body is Extract<SseEventBody, { type: "field" }> => body.type === "field");
-    expect(fields.map((field) => field.index)).toEqual([0, 1, 2, 3, 4]);
+    // 5 个一次通过 + 1 个修复后补上的（索引按通过顺序分配，所以补上的排在最后）。
+    expect(fields.map((field) => field.index)).toEqual([0, 1, 2, 3, 4, 5]);
     for (const field of fields) expect(() => formItemSchema.parse(field.node)).not.toThrow();
 
     const done = bodies.at(-1);
-    expect(done).toMatchObject({ type: "done", stats: { fields: mockLines("x").length, errors: 0, repairs: 0 } });
+    expect(done).toMatchObject({
+      type: "done",
+      stats: { fields: mockLines("x").length, errors: 0, repairs: 1 },
+    });
     const usage = bodies.find((body) => body.type === "usage");
     expect(usage).toMatchObject({ type: "usage" });
     if (usage !== undefined && usage.type === "usage") {
       expect(usage.promptTokens).toBeGreaterThan(0);
       expect(usage.completionTokens).toBeGreaterThan(0);
     }
+  });
+
+  it("修复环是真实路径：坏行 → field_error → repair(fixed) → 补回 field，门禁照样放行", async () => {
+    const bodies = await collect({ config: MOCK_CONFIG }, "出一份初二数学测验，8 道题");
+
+    const errors = bodies.filter(
+      (body): body is Extract<SseEventBody, { type: "field_error" }> => body.type === "field_error",
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.id).toBe(MOCK_BROKEN_LINE_ID);
+    // bloom 不是 6 级之一 → 结构码 + 语义码都要报出来，前端才能提示"该修哪"
+    expect(errors[0]?.codes).toEqual(expect.arrayContaining(["E_SCHEMA_SHAPE", "E_BLOOM_INVALID"]));
+
+    const repairs = bodies.filter(
+      (body): body is Extract<SseEventBody, { type: "repair" }> => body.type === "repair",
+    );
+    expect(repairs).toHaveLength(1);
+    expect(repairs[0]).toMatchObject({
+      id: MOCK_BROKEN_LINE_ID,
+      round: 1,
+      status: "fixed",
+      codesAfter: [],
+    });
+    // 单调性：修复前的码集合非空且真包含修复后的空集合
+    expect((repairs[0]?.codesBefore ?? []).length).toBeGreaterThan(0);
+
+    const repaired = bodies
+      .filter((body): body is Extract<SseEventBody, { type: "field" }> => body.type === "field")
+      .find((body) => body.node.id === MOCK_BROKEN_LINE_ID);
+    expect(repaired).toBeDefined();
+    // 修好的行必须真的被改对了，而不是只把错误码吞掉：答案要回到选项集合内
+    expect(JSON.stringify(repaired?.node)).toContain('"answer":"a"');
+
+    // 修复有效 → 整表门禁通过 → 终态是 done，而不是"修过就报错"
+    // `errors` 统计的是「修完仍未解决的行数」，这一行修好了所以是 0；`repairs` 记修复次数。
+    expect(bodies.at(-1)).toMatchObject({ type: "done", stats: { errors: 0, repairs: 1 } });
   });
 
   it("mock 不落盘、不联网：重复跑两次事件体完全一致（除时间字段）", async () => {

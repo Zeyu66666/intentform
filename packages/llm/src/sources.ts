@@ -240,6 +240,14 @@ export function createReplaySource(
  * mock 的确定性脚本：与需求无关的固定几行（但标题里带需求前 12 个字，便于肉眼分辨
  * 是哪一次请求）。刻意覆盖 4 种题型 + 1 个分节，让前端能看见真实渲染。
  */
+/**
+ * mock 内置脚本里那条**故意写坏**的行的 id。
+ *
+ * `createMockRepairHook()` 认这个 id 把它改对，从而让 `field_error` → `repair(fixed)`
+ * 在 mock 模式下是真实路径而非测试桩（录制回放里没有这两类事件，见 P02 已知缺口）。
+ */
+export const MOCK_BROKEN_LINE_ID = "q_repair_demo";
+
 export function mockLines(requirement: string): readonly string[] {
   const title = requirement.trim().slice(0, 12).replace(/\s+/g, " ") || "未命名需求";
   const lines = [
@@ -258,6 +266,28 @@ export function mockLines(requirement: string): readonly string[] {
       ],
       answer: "b",
       explanation: "基础加法。",
+    },
+    // 故意写坏的一行。理由：《计划 v3.0》§2.4 的修复环（校验失败 → 回喂 → 重发）
+    // 必须有可复现的素材，而三条回放 fixture 录的是模型一次写对（干净生成），
+    // 回放只能如实重放，不许事后补造事件。所以把「坏行」放进 mock 的内置脚本：
+    // 它照常经过 validateLine 被判错、照常走两轮修复循环，坏与好都是真实跑出来的。
+    {
+      type: "single",
+      id: MOCK_BROKEN_LINE_ID,
+      title: "示例单选题（故意写坏）：$3\\times3$ 等于几？",
+      required: true,
+      score: 5,
+      // 两处真实模型常犯的错：
+      // ① bloom 写成不在 6 级里的 "memorize" → 逐行校验即 E_SCHEMA_SHAPE + E_BLOOM_INVALID；
+      // ② 答案指向不存在的选项 c（正确答案是 a = 9）→ 修复后仍要被整表门禁复核。
+      bloom: "memorize",
+      knowledgePoint: "kp_basic",
+      options: [
+        { id: "a", text: "9" },
+        { id: "b", text: "6" },
+      ],
+      answer: "c",
+      explanation: "bloom 与答案都是错的，用来演示修复环。",
     },
     {
       type: "fill",

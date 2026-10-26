@@ -18,7 +18,7 @@ import { LlmError, toErrorEventBody } from "./errors.ts";
 import { silentLogger } from "./logger.ts";
 import type { LlmLogger } from "./logger.ts";
 import { LineSplitter } from "./line-splitter.ts";
-import { createProviderRepairHook, noopRepairHook } from "./repair.ts";
+import { createMockRepairHook, createProviderRepairHook, noopRepairHook } from "./repair.ts";
 import type { FailedLine, RepairHook } from "./repair.ts";
 import { replayKey } from "./replay-key.ts";
 import {
@@ -341,5 +341,8 @@ function estimateUsage(requirement: string, fields: readonly AcceptedField[]): T
 }
 
 function defaultRepairFor(config: LlmRuntimeConfig): RepairHook {
-  return config.mode === "live" || config.mode === "record" ? createProviderRepairHook(config) : noopRepairHook;
+  if (config.mode === "live" || config.mode === "record") return createProviderRepairHook(config);
+  // mock 的坏行是内置脚本自己写的，修法也自己知道；replay 没有第二次上游可打，只能如实报失败。
+  if (config.mode === "mock") return createMockRepairHook();
+  return noopRepairHook;
 }
