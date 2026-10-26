@@ -16,6 +16,9 @@ coverage/
 data/
 *.db
 *.db-journal
+# SQLite 的 WAL 模式会额外生成这两个文件；哪怕现在没开 WAL，也不该让它们有机会进库。
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 fixtures/replays/*.tmp

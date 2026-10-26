@@ -8,7 +8,9 @@
   "types": "./src/main.ts",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dev": "node --experimental-strip-types src/main.ts"
+    "dev": "node --experimental-strip-types src/main.ts",
+    "seed": "node --experimental-strip-types src/seed.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@intentform/llm": "workspace:*",
