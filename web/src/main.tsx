@@ -1,6 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+// KaTeX 的字体随包发布（不走 CDN），公式才能离线渲染。
+import "katex/dist/katex.min.css";
+
 import { App } from "./App";
 import "./styles/index.css";
 

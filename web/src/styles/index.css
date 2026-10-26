@@ -32,3 +32,29 @@
     outline-offset: 2px;
   }
 }
+
+/*
+ * 字段淡入：流式生成时卡片是一个接一个出现的，硬切会让人以为"闪了一下"。
+ * 只动 opacity + 极小的位移，不做缩放（缩放会让长题干的行高抖动）。
+ */
+@keyframes field-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-field-in {
+  animation: field-in 180ms ease-out both;
+}
+
+/* 尊重系统的"减少动态效果"：这里关掉动画，不是把时长改成 1ms。 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-field-in {
+    animation: none;
+  }
+}
