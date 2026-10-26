@@ -21,7 +21,11 @@ importers:
         specifier: 2.1.8
         version: 2.1.8(@types/node@22.10.2)
 
-  packages/llm: {}
+  packages/llm:
+    dependencies:
+      '@intentform/schema':
+        specifier: workspace:*
+        version: link:../schema
 
   packages/schema: {}
 

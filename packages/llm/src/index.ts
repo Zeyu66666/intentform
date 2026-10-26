@@ -8,6 +8,8 @@
  * 这样单测可以在不污染环境变量的前提下覆盖全部非法输入。
  */
 
+import type { SchemaVersion } from "@intentform/schema";
+
 export const LLM_MODES = ["live", "record", "replay", "mock"] as const;
 
 export type LlmMode = (typeof LLM_MODES)[number];
@@ -51,9 +53,20 @@ export function requiresUpstreamCredentials(mode: LlmMode): boolean {
   return mode === "live" || mode === "record";
 }
 
-/** 回放键：hash(需求 + 模型 + prompt 版本)。I2 用真实 hash，这里只固化形状。 */
+/**
+ * 回放键的输入（计划 v1.1 §3.7）：`hash(规范化需求 + 模型 + prompt 版本 + schema 版本)`。
+ *
+ * 三处细节决定了「同一个键」的含义，别在 I2 里各写一套：
+ * - `requirement` 是**规范化之后**的文本（去首尾空白、内部连续空白折叠、换行统一为 \n），
+ *   否则教师多打一个空格就会换一个键，回放必然未命中。
+ * - `schemaVersion` 必须进键：FormSchema 形状变了，旧 fixture 的合法性就不能复用。
+ * - `promptVersion` 是 prompt 文件名里的版本号（如 `generate.v3`），不是 commit hash。
+ *
+ * I2 用真实 sha256 落盘，这里只固化形状。
+ */
 export interface ReplayKeyInput {
   readonly requirement: string;
   readonly model: string;
   readonly promptVersion: string;
+  readonly schemaVersion: SchemaVersion;
 }

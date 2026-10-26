@@ -13,7 +13,7 @@ import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 
 import { resolveLlmMode, requiresUpstreamCredentials } from "@intentform/llm";
-import { FIELD_KINDS, SCHEMA_VERSION } from "@intentform/schema";
+import { FIELD_TYPES, SCHEMA_VERSION } from "@intentform/schema";
 
 export interface ServerConfig {
   readonly port: number;
@@ -46,7 +46,7 @@ export function healthPayload(config: ServerConfig): Record<string, unknown> {
     ok: true,
     service: "intentform-server",
     schemaVersion: SCHEMA_VERSION,
-    fieldKinds: FIELD_KINDS,
+    fieldTypes: FIELD_TYPES,
     llmMode: config.llmMode,
     needsApiKey: config.needsApiKey,
   };
