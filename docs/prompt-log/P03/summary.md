@@ -46,6 +46,18 @@
 
 4. **中栏横向滚动条。** 1280×800 下 `scrollWidth > innerWidth`，根因是 `1fr` 的自动最小值。改 `minmax(0,1fr)` 后实测 `[320, 596, 300]`、`scrollWidth=1280=innerWidth`。
 
+6. **审查问题 10：survey 契约根本没法表达"没有答案的选择题"。**
+   现象：`types.ts` 里 `single`/`multi`/`fill`/`number` 的 `answer` 是 `z.string().min(1)` 这类必填，`scoredFieldSchema` 的 `score`/`bloom`/`knowledgePoint` 也是必填。于是"survey 里一道不带答案、不带分值的单选题"在结构层就写不出来，`E_ANSWER_MISSING` 与 `E_SURVEY_HAS_ANSWER` 两条规则代码里存在、**永远不可能触发**（附录 A 的四条验收反例里有一条根本跑不出来）。
+   修法：把四项一律降级为可选，把"quiz 必须有答案/分值、survey 一律不许有"搬进语义层，行级与整表各判一次。
+   - `packages/schema/src/types.ts`：`score` / `bloom` / `knowledgePoint` / 四种 `answer` 全部 `.optional()`，注释写明"这四项可选是让两条 kind 规则能触发的前提"。
+   - `packages/schema/src/rules.ts`：`hasAnswer` 判据从"题型"改成"这一行带没带字段"；quiz 判分题缺答案 → `E_ANSWER_MISSING`、缺分值 → `E_SCORE_SUM`；survey 带答案或带分值 → `E_SURVEY_HAS_ANSWER`（指到 `items[i].answer` / `items[i].score`，比原来挂 `meta.kind` 好修）；survey 声明 `meta.totalScore` → `E_SCORE_SUM`（原来记在"已知缺口"里，现在真的拒了）。
+   - `packages/llm/src/validate-line.ts`：行级镜像同样两条，外加"答案必须在选项内"（以前由 Zod 顶掉，现在必须自己判，否则这种错会一路滑到整表门禁）。
+   - `packages/llm/src/publish-gate.ts`：候选表按 `score ?? 0` 求和、知识点缺就不进 `objectives`；补 §2.5 的"quiz 至少要有一道判分题"，否则只出分节的整表会被当成合法测验发布。
+   - `packages/schema/src/public-view.ts`：`score` 可选之后不再回填 0，没有分值就**不出现这个键**（§2.6 第 4 条：未知值不伪填）。
+   - `web/src/render/FieldRegistry.tsx`：edit 态四种判分题型都能显示"未设置"，不再假设 `item.answer` 一定在。
+   验收：`packages/schema` 加了一组"附录 A 四反例"测试（无答案 survey 通过 / 缺答案 quiz 失败 / 总分不符失败 / 重复 id 失败），`publish-gate` 加"survey 不带答案的选择题放行""quiz 无判分题拦住"。全仓 **325 条通过 / 28 文件**，`pnpm typecheck` 4 包 Done，`oxlint --deny-warnings` 0/0。
+   顺带修正两条旧测试的前提：`types.test.ts` 的"single 缺 answer 被拒"改成"结构层合法、拒绝在语义层"，`validators.ai.test.ts` 的"已知缺口：survey 声明 totalScore 不被拒"改成"已被拒"。**这些不是把测试改绿，而是把断言改到新契约该有的行为上**，四条反例的通过/失败面都在测试里显式写出来了。
+
 5. **审查驱动的两处回退。** ①时间线里原来有 `<details>推理原文（N 段，M 字）</details>`，按 §2.4 删掉原文、只留"推理摘要 N 段"——理由同上：模型自述不可核验，展开它等于暗示"它真的这样想"。②界面上 replay 与 live 显示完全一样（模式只存在于服务端 `LLM_MODE`），违反 §2.6「live/replay/mock 始终可辨」。修法是服务端在 SSE 响应上加 `x-intentform-llm-mode` 头（不动冻结的事件载荷），前端 `source.ts` 通过 `onUpstreamMode` 回调交给界面，头缺失就显示"未知（等待响应头回执）"——不猜。
 
 ## 结果
@@ -62,6 +74,8 @@
 | `9d53fff` | `feat(web): SSE client state machine, seq gap recovery and thinking timeline [P03]` | `stream/*` + 假帧 + `panels/TimelinePanel` |
 | `4dda3e0` | `feat(web): FieldRegistry renderer with edit and fill states [P03]` | `render/*`（`fill-plan` 白名单、KaTeX） |
 | `f131dfc` | `feat(web): three-column generate page wired to the generate stream [P03]` | `App.tsx` 三栏装配 + 模式显示 + `vite.config` watcher |
+| `0ac9539` | `feat(contract): make answer and score optional across schema, llm and web [P03]` | survey 契约修复的源码部分（审查问题 10）：schema + 行级 + 门禁 + 学生端投影 + edit 渲染 |
+| `3279e72` | `test(schema): cover survey/quiz divergence and appendix-A counterexamples [P03]` | 附录 A 四反例 + 门禁两条新断言 + 两条旧断言改到新契约 |
 
 ### 相对《计划 v3.0》的偏离（3 处）
 
