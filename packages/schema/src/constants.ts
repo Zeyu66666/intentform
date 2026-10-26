@@ -81,6 +81,12 @@ export const LIMITS = {
   requirementMaxChars: 4000,
   /** 单份答卷上限，service 层校验用。 */
   submissionMaxBytes: 64 * 1024,
+  /**
+   * `field_error.raw` 的截断上限：出问题的那行 NDJSON 原文。
+   * 截断而不是整行丢弃，是为了让教师端能看见"模型到底吐了什么"；
+   * 上限存在，是因为一行 section 可能上万字符，SSE 帧不该被它撑爆。
+   */
+  rawLineMax: 2000,
 } as const;
 
 /** 字段类型守卫，供流式解析与渲染分派使用。 */

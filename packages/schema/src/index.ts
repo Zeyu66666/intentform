@@ -8,6 +8,7 @@
  * - `rules.ts`     —— 语义规则 R1–R8（I1）
  * - `latex.ts`     —— KaTeX 解析校验（R7，I1）
  * - `public-view.ts` —— 学生端投影 `publicView()`（I1）
+ * - `sse-events.ts` —— 生成链路 SSE 事件契约（I2，前后端唯一契约源）
  *
  * 形状对齐《计划 v1.1》附录 A.1：判别字段 `type`、顶层容器 `items`。
  * 除下面的装配外只做重导出，不放实现。
@@ -26,6 +27,7 @@ export * from "./errors";
 export * from "./rules";
 export * from "./latex";
 export * from "./public-view";
+export * from "./sse-events";
 
 /**
  * 生产装配：R7 使用真实的 KaTeX 校验。
