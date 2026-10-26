@@ -61,8 +61,11 @@ export type FormKind = (typeof FORM_KINDS)[number];
 export const LIMITS = {
   /** 字段 id：小写字母 / 数字 / 下划线 / 连字符，3–32 位。Patch 以它寻址，所以必须严格。 */
   idPattern: /^[a-z0-9_-]{3,32}$/,
-  /** 选项 id：同样限定字符集，但允许 1 位（`a`/`b`/`c` 是常见写法），不做 3 位下限。 */
-  optionIdPattern: /^[a-z0-9_-]{1,32}$/,
+  /**
+   * 短标识：选项 id（`a`/`b`/`c` 是常见写法）与知识点 id（`kp1`）共用。
+   * 同样限定字符集，但允许 1 位——这两个不是 Patch 寻址目标，没有必要套 3 位下限。
+   */
+  shortIdPattern: /^[a-z0-9_-]{1,32}$/,
   titleMax: 500,
   formTitleMax: 200,
   optionTextMax: 200,
