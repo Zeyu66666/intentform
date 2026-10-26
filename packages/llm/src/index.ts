@@ -8,8 +8,6 @@
  * 这样单测可以在不污染环境变量的前提下覆盖全部非法输入。
  */
 
-import type { SchemaVersion } from "@intentform/schema";
-
 export const LLM_MODES = ["live", "record", "replay", "mock"] as const;
 
 export type LlmMode = (typeof LLM_MODES)[number];
@@ -54,19 +52,22 @@ export function requiresUpstreamCredentials(mode: LlmMode): boolean {
 }
 
 /**
- * 回放键的输入（计划 v1.1 §3.7）：`hash(规范化需求 + 模型 + prompt 版本 + schema 版本)`。
+ * 对外导出面（barrel）。
  *
- * 三处细节决定了「同一个键」的含义，别在 I2 里各写一套：
- * - `requirement` 是**规范化之后**的文本（去首尾空白、内部连续空白折叠、换行统一为 \n），
- *   否则教师多打一个空格就会换一个键，回放必然未命中。
- * - `schemaVersion` 必须进键：FormSchema 形状变了，旧 fixture 的合法性就不能复用。
- * - `promptVersion` 是 prompt 文件名里的版本号（如 `generate.v3`），不是 commit hash。
- *
- * I2 用真实 sha256 落盘，这里只固化形状。
+ * 规则：**内部模块之间不经过 barrel 互 import**，否则 `index.ts` 会重新卷入循环
+ * 依赖；barrel 只服务包外消费者（server / web / scripts）。
  */
-export interface ReplayKeyInput {
-  readonly requirement: string;
-  readonly model: string;
-  readonly promptVersion: string;
-  readonly schemaVersion: SchemaVersion;
-}
+export * from "./config.ts";
+export * from "./errors.ts";
+export * from "./fixtures.ts";
+export * from "./generate.ts";
+export * from "./json.ts";
+export * from "./line-splitter.ts";
+export * from "./logger.ts";
+export * from "./prompt.ts";
+export * from "./provider.ts";
+export * from "./repair.ts";
+export * from "./replay-key.ts";
+export * from "./sources.ts";
+export * from "./sse-writer.ts";
+export * from "./validate-line.ts";
