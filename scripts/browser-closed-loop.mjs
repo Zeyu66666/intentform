@@ -301,25 +301,6 @@ const PAGE_HELPERS = `
     el.click();
     return true;
   }
-  function clickTestId(id) {
-    var el = byTestId(id);
-    if (el === null) return false;
-    el.click();
-    return true;
-  }
-  function clickChoice(fieldId, optionId) {
-    var label = byTestId('fill-' + fieldId + '-' + optionId);
-    if (label === null) {
-      return { ok: false, reason: 'missing label', testIds: Array.prototype.slice.call(document.querySelectorAll('[data-testid^="fill-' + fieldId + '"]')).map(function (el) { return el.getAttribute('data-testid') + ':' + el.tagName; }) };
-    }
-    var input = label.querySelector('input');
-    if (input === null) { label.click(); return { ok: true, checked: true, via: 'label' }; }
-    label.click();
-    var afterLabel = input.checked;
-    if (!afterLabel) input.click();
-    var state = Array.prototype.map.call(document.querySelectorAll('input[name="' + fieldId + '"]'), function (el) { return el.checked ? 1 : 0; }).join('');
-    return { ok: true, checked: input.checked, afterLabel: afterLabel, afterInput: input.checked, group: state, via: afterLabel ? 'label' : 'input', type: input.type };
-  }
   function setValue(selector, value) {
     var el = bySelector(selector);
     if (el === null) return { ok: false, reason: 'missing ' + selector };
@@ -384,6 +365,49 @@ class Page {
 
   async text() {
     return await this.evaluate("return bodyText()");
+  }
+
+  /**
+   * 真的"点"一下：取元素中心坐标，发 `Input.dispatchMouseEvent`。
+   *
+   * 为什么不用 `element.click()` 而要走 CDP 鼠标事件：
+   * 1. **可信度**：`Input.dispatchMouseEvent` 是浏览器认可的输入，和真人手指同一条路径
+   *    （命中测试、`:active`、默认行为、事件顺序全都真实）。`element.click()` 只发一个
+   *    `isTrusted=false` 的合成事件，绕过了命中测试——它证明不了"这个控件点得到"。
+   * 2. **能顺带量触控目标**：取到元素的 `getBoundingClientRect()` 才能断言 ≥44px 的热区，
+   *    这正是学生页要求的可点性指标。
+   *
+   * 一次归因修正（别再被我上一版注释误导）：学生页曾出现"点完之后 `input.checked` 恒为
+   * false、整组 `input[name=x]` 全是 0"。那不是合成事件的问题，而是 web 侧
+   * `selectedValues()` 只认数组、而单选在 state 里存的是字符串，导致 `checked` 永远算成
+   * false；修在 `f63613d fix(web): make single-choice selection visible on the student page`。
+   * 也就是说现在 `element.click()` 也能点亮，本脚本仍然用可信点击，理由是上面那两条。
+   */
+  async tap(selector) {
+    const box = await this.evaluate(`
+      var el = bySelector(${JSON.stringify(selector)});
+      if (el === null) return null;
+      el.scrollIntoView({ block: 'center' });
+      var rect = el.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, w: rect.width, h: rect.height, text: (el.textContent || '').trim().slice(0, 24) };
+    `);
+    if (box === null) return { ok: false, reason: `找不到元素 ${selector}` };
+    if (box.w < 1 || box.h < 1) return { ok: false, reason: `元素不可见 ${selector}（${String(box.w)}×${String(box.h)}）` };
+    await this.cdp.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: box.x,
+      y: box.y,
+      button: "left",
+      clickCount: 1,
+    });
+    await this.cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: box.x,
+      y: box.y,
+      button: "left",
+      clickCount: 1,
+    });
+    return { ok: true, heightPx: Math.round(box.h), widthPx: Math.round(box.w), text: box.text };
   }
 
   async path() {
@@ -673,27 +697,6 @@ async function main() {
       );
       artifacts.push(await page.screenshot("04-student.png"));
 
-      if (process.env["PROBE_CLICK"] === "1") {
-        const box = await page.evaluate(`
-          var label = byTestId('fill-q_single-b');
-          if (label === null) return null;
-          label.scrollIntoView({ block: 'center' });
-          var rect = label.getBoundingClientRect();
-          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, w: rect.width, h: rect.height };
-        `);
-        const probe = { box };
-        if (box !== null) {
-          await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: box.x, y: box.y, button: "left", clickCount: 1 });
-          await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: box.x, y: box.y, button: "left", clickCount: 1 });
-          await sleepMs(150);
-          probe.afterTrustedClick = await page.evaluate(
-            "var el = byTestId('fill-q_single-b'); var input = el === null ? null : el.querySelector('input'); return input === null ? null : { checked: input.checked, group: Array.prototype.map.call(document.querySelectorAll('input[name=q_single]'), function (i) { return i.checked ? 1 : 0; }).join('') };",
-          );
-        }
-        process.stdout.write(`PROBE ${JSON.stringify(probe)}\n`);
-        throw new Error("PROBE 结束（预期失败，用于定位点击问题）");
-      }
-
       const formDetail = await request("GET", `/api/forms/${publish.formId}`, { cookie });
       must(formDetail.status === 200, `读表单详情失败（${String(formDetail.status)}）：${formDetail.text}`);
       const schema = formDetail.json.schema;
@@ -703,71 +706,70 @@ async function main() {
 
       // 全部答对：这样看板上的那一行分数是个确定的数字，能被断死。
       //
-      // 只在这一步「点」，判定放到下一次 evaluate：单选是**受控组件**，`checked` 要等
-      // React 重渲染才反映到 DOM；在同一个 evaluate 里同步读 `input.checked` 必然是 false
-      // （本脚本第一版就是这样假失败，报"控件没答上"，其实点击已经生效）。
-      const clicked = await page.evaluate(`
-        var items = ${JSON.stringify(schema.items)};
-        var touched = [];
-        for (var index = 0; index < items.length; index += 1) {
-          var item = items[index];
-          if (item.type === 'single' && typeof item.answer === 'string') {
-            clickChoice(item.id, item.answer);
-            touched.push(item.id);
-          } else if (item.type === 'multi' && Array.isArray(item.answer)) {
-            for (var k = 0; k < item.answer.length; k += 1) clickChoice(item.id, item.answer[k]);
-            touched.push(item.id);
-          } else if (item.type === 'number' && item.answer !== undefined && item.answer !== null) {
-            setValue('[data-testid="fill-' + item.id + '"]', String(item.answer.value));
-            touched.push(item.id);
-          } else if (item.type === 'fill' && Array.isArray(item.answer)) {
-            setValue('[data-testid="fill-' + item.id + '"]', item.answer.join('／'));
-            touched.push(item.id);
-          } else if (item.type === 'short') {
-            setValue('[data-testid="fill-' + item.id + '"]', '浏览器闭环脚本填写');
-            touched.push(item.id);
+      // 选项类用 `tap`（可信鼠标事件，走浏览器默认行为），文本类用原型 setter + input 事件
+      // （React 的 value tracker 只认这条路径）。点完立刻回读 DOM，不看返回值自说自话。
+      const touched = [];
+      for (const item of schema.items) {
+        if (item.type === "single" && typeof item.answer === "string") {
+          const hit = await page.tap(`[data-testid="fill-${item.id}-${item.answer}"]`);
+          must(hit.ok === true, `点不到单选选项 ${item.id}/${item.answer}：${JSON.stringify(hit)}`);
+          const state = await page.evaluate(`
+            var label = byTestId(${JSON.stringify(`fill-${item.id}-${item.answer}`)});
+            var input = label === null ? null : label.querySelector('input');
+            return {
+              checked: input === null ? null : input.checked === true,
+              touchTarget: label === null ? 0 : Math.round(label.getBoundingClientRect().height),
+            };
+          `);
+          must(state.checked === true, `单选 ${item.id} 点完仍未选中`);
+          touched.push({ id: item.id, kind: "single", touchTarget: state.touchTarget });
+        } else if (item.type === "multi" && Array.isArray(item.answer)) {
+          for (const optionId of item.answer) {
+            const hit = await page.tap(`[data-testid="fill-${item.id}-${optionId}"]`);
+            must(hit.ok === true, `点不到多选选项 ${item.id}/${optionId}：${JSON.stringify(hit)}`);
+            const checked = await page.evaluate(`
+              var label = byTestId(${JSON.stringify(`fill-${item.id}-${optionId}`)});
+              var input = label === null ? null : label.querySelector('input');
+              return input !== null && input.checked === true;
+            `);
+            must(checked === true, `多选 ${item.id}/${optionId} 点完仍未选中`);
           }
+          touched.push({ id: item.id, kind: "multi" });
+        } else if (item.type === "number" && item.answer !== undefined && item.answer !== null) {
+          const value = String(item.answer.value);
+          const filled = await page.evaluate(
+            `return setValue('[data-testid="fill-${item.id}"]', ${JSON.stringify(value)});`,
+          );
+          must(filled.ok === true, `数字题 ${item.id} 没填进去：${JSON.stringify(filled)}`);
+          must(filled.value === value, `数字题 ${item.id} 的 value 回读不一致：${String(filled.value)}`);
+          touched.push({ id: item.id, kind: "number", value });
+        } else if (item.type === "fill" && Array.isArray(item.answer)) {
+          const value = item.answer.join("／");
+          const filled = await page.evaluate(
+            `return setValue('[data-testid="fill-${item.id}"]', ${JSON.stringify(value)});`,
+          );
+          must(filled.ok === true, `填空题 ${item.id} 没填进去：${JSON.stringify(filled)}`);
+          must(filled.value === value, `填空题 ${item.id} 的 value 回读不一致`);
+          touched.push({ id: item.id, kind: "fill", value });
+        } else if (item.type === "short") {
+          const filled = await page.evaluate(
+            `return setValue('[data-testid="fill-${item.id}"]', "浏览器闭环脚本填写");`,
+          );
+          must(filled.ok === true, `简答题 ${item.id} 没填进去：${JSON.stringify(filled)}`);
+          touched.push({ id: item.id, kind: "short" });
         }
-        return touched;
-      `);
+      }
 
-      // 每一项的真实状态：选项类看受控 radio/checkbox 的选中态，输入类看 value 非空。
-      const stillEmpty = await waitFor(
-        async () =>
-          page.evaluate(`
-            var items = ${JSON.stringify(schema.items)};
-            var missing = [];
-            for (var index = 0; index < items.length; index += 1) {
-              var item = items[index];
-              if (item.type === 'single' && typeof item.answer === 'string') {
-                var picked = document.querySelector('[data-testid="fill-' + item.id + '-' + item.answer + '"] input');
-                if (picked === null || picked.checked !== true) missing.push(item.id + ':single');
-              } else if (item.type === 'multi' && Array.isArray(item.answer)) {
-                for (var k = 0; k < item.answer.length; k += 1) {
-                  var box = document.querySelector('[data-testid="fill-' + item.id + '-' + item.answer[k] + '"] input');
-                  if (box === null || box.checked !== true) missing.push(item.id + ':multi:' + item.answer[k]);
-                }
-              } else {
-                var input = document.querySelector('[data-testid="fill-' + item.id + '"]');
-                if (input === null || String(input.value).trim() === '') missing.push(item.id + ':text');
-              }
-            }
-            return missing.length === 0 ? true : missing;
-          `),
-        "所有控件都进入已作答状态",
-        10_000,
-      );
-      must(
-        stillEmpty === true,
-        `这些控件没答上：${JSON.stringify(stillEmpty)}（已点击 ${JSON.stringify(clicked)}）`,
-      );
       artifacts.push(await page.screenshot("05-student-answered.png"));
-      return { slug: publish.slug, maxScore, answeredFields: clicked.length };
+      return { slug: publish.slug, maxScore, answeredFields: touched.length, touched };
     });
+
 
     // 5) 提交并看到成功卡片
     const submitted = await step("提交答卷并看到成功卡片", async () => {
-      must(await page.evaluate("return clickTestId('fill-submit')"), "点不到提交按钮");
+      const hit = await page.tap('[data-testid="fill-submit"]');
+      must(hit.ok === true, `点不到提交按钮：${JSON.stringify(hit)}`);
+      must(hit.heightPx >= 44, `提交按钮的触控高度只有 ${String(hit.heightPx)}px（应 ≥44px）`);
       await waitFor(async () => (await page.text()).includes("答案已记录"), "提交成功卡片", 20_000);
       artifacts.push(await page.screenshot("06-submitted.png"));
       const text = await page.text();
