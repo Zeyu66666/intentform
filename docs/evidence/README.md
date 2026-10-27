@@ -37,12 +37,12 @@ node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + std
 
 | 项 | 值 |
 |---|---|
-| commit | `c6389b3`（本轮截图与脚本的入库提交） |
-| 时间 | 2026-10-27 08:23（Asia/Shanghai） |
-| 浏览器 | Chrome 156.0.8078.47，headless=new，CDP 驱动 |
-| 服务 | `LLM_MODE=mock`；每次运行自起 server + vite，端口临时分配（本轮 59957/59958/59959） |
-| 结果 | 6 步全绿：登录 → 生成 → 发布（UI 路径，`publishMode: "ui"`）→ 学生页作答（可信鼠标事件）→ 提交 `20 / 20` → 看板新增 1 行 |
-| 截图 | `01-login.png`、`02-generate.png`、`03a-publish-panel.png`、`03b-published-dashboard.png`、`04-student.png`、`05-student-answered.png`、`06-submitted.png`、`07-dashboard.png`（全部同一次运行，08:23:05–06） |
+| commit | `3def01f`（本轮截图与脚本的入库提交） |
+| 时间 | 2026-10-27 15:43（Asia/Shanghai） |
+| 浏览器 | Chrome 156.0.8078.47（`C:\Program Files\Google\Chrome\Application\chrome.exe`），headless=new，CDP 驱动 |
+| 服务 | `LLM_MODE=mock`；每次运行自起 server + vite，端口临时分配（本轮 58206/58207/58208） |
+| 结果 | 6 步全绿：登录 → 生成 → 发布（UI 路径，`publishMode: "ui"`）→ 学生页作答（可信鼠标事件）→ 提交 `20 / 20` → 看板新增 1 行（slug `s5xezyggjy`） |
+| 截图 | `01-login.png`、`02-generate.png`、`03a-publish-panel.png`、`03b-published-dashboard.png`、`04-student.png`、`05-student-answered.png`、`06-submitted.png`、`07-dashboard.png`（全部同一次运行，15:43:10–12） |
 
 选项类控件在这一轮改由 CDP `Input.dispatchMouseEvent` 点击（可信输入，走命中测试与默认行为），
 并回读 `getBoundingClientRect()` 断言触控目标 ≥44px（实测 50px）。合成 `element.click()`
