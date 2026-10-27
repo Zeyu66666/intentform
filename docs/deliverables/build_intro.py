@@ -671,7 +671,7 @@ bullet(doc, "没有统计行覆盖率：仓库没装 c8 / istanbul，本文不�
 bullet(doc, "达标率只测了「结构是否满足」，没测「题目好不好」：看不出难度是否合适、表述是否清楚、有没有歧义。后者要人工评分表，本轮没做。")
 bullet(doc, "30 条需求里 16 条是 debug 集（含 3 条预置需求，调 Prompt 时反复看），真正干净的 holdout 只有 14 条，样本量不足以支撑小数点后的比较。")
 bullet(doc, "澄清层是 0：两条探针（「帮我出一份英语卷子」「做个问卷」）证明产品直接开生成、不追问缺槽位，这一层没有可量的指标。")
-bullet(doc, "三条回放录像录自本机 OpenAI 兼容 stub，meta.json 的 upstream 字段如实写着 local-stub；真实上游重录要等有 Key。")
+bullet(doc, "三条回放录像仍是最早用本机 OpenAI 兼容 stub 录的（meta.json 的 upstream 如实写着 local-stub）。本轮已经拿到可用 Key 并真跑了 28 条评测，但没重录这三条：重录会替换 fixture 内容，连带要重跑 verify.mjs 的 VC1–VC4 与浏览器闭环证据，赶在冻结前动它们不划算，留到下一轮。")
 bullet(doc, "只在 Windows + Chrome 156 验证：没有跨浏览器矩阵，也没有 Linux / macOS 的实跑证据。")
 bullet(doc, "E2E 只有一个浏览器脚本（一条主链），没有覆盖分支场景，例如生成失败的降级、发布面板的异常路径。")
 
@@ -937,7 +937,7 @@ table(
         ["3", "简答字段没有分值：shortFieldSchema 继承 baseFieldSchema", "需求写「含 N 道简答、每题 5 分、共 M 分」时总分凑不出来，30 条评测需求里 15 条因此无解；整份达标率被压到 42.9%，去掉这一组是 92.3%。修法在 schema 侧，要连带改 isScoredItem、判分、publicView、web 渲染并升 schemaVersion"],
         ["4", "澄清层未实现：缺槽位不追问", "「帮我出一份英语卷子」「做个问卷」直接开生成，缺的题型与题量由模型自己猜；两条探针实测 0/2"],
         ["5", "达标率只测结构、不测题目质量", "能算出题量/题型/知识点对不对，算不出难度是否合适、表述是否清楚、有没有歧义；后者要人工评分表"],
-        ["6", "三条回放录自本机 OpenAI 兼容 stub", "meta.json 的 upstream 为 local-stub；真实 DeepSeek 输出待有 Key 后重录"],
+        ["6", "三条回放录自本机 OpenAI 兼容 stub", "meta.json 的 upstream 为 local-stub；本轮已具备可用 Key（live 评测 28 条真跑过），但重录会改 fixture 内容并需重跑 VC1–VC4 与浏览器闭环，未在本轮做"],
         ["7", "只在 Windows + Chrome 156 验证", "换浏览器或系统需重跑闭环脚本，否则截图证据视为过期"],
         ["8", "限流是进程内计数，不是 IP 级分布式限流", "单机演示够用；多实例部署会失效"],
         ["9", "CSV 未加 BOM", "Excel 直接双击打开中文可能乱码，需另存为 UTF-8 或从数据导入"],
