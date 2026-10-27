@@ -24,7 +24,7 @@ describe("gradeSubmission", () => {
       "q-fill": ["2", "x"],
       "q-number": "3.14",
     });
-    expect(result).toEqual({ ok: true, score: 20, maxScore: 20 });
+    expect(result).toEqual({ ok: true, score: 20, maxScore: 20, pendingScore: 0 });
   });
 
   it("multi 与选项顺序无关", () => {
@@ -56,7 +56,7 @@ describe("gradeSubmission", () => {
     const halfWidth = grade({ "q-fill": "2/x" });
     const fullWidth = grade({ "q-fill": "2／x" });
     expect(halfWidth).toEqual(fullWidth);
-    expect(halfWidth).toEqual({ ok: true, score: 5, maxScore: 20 });
+    expect(halfWidth).toEqual({ ok: true, score: 5, maxScore: 20, pendingScore: 0 });
   });
 
   it("只有一个空时，答案里的斜杠是内容而不是分隔符", () => {
@@ -78,6 +78,7 @@ describe("gradeSubmission", () => {
       ok: true,
       score: 5,
       maxScore: 5,
+      pendingScore: 0,
     });
     // 全角写法的同一个答案也一样（归一化对斜杠不敏感，但分段必须还是 1 段）。
     expect(gradeSubmission(single, { "q-half": "1／2" })).toMatchObject({ ok: true, score: 0 });
@@ -103,7 +104,7 @@ describe("gradeSubmission", () => {
   });
 
   it("未作答得 0 分但不拒收整份提交", () => {
-    expect(grade({})).toEqual({ ok: true, score: 0, maxScore: 20 });
+    expect(grade({})).toEqual({ ok: true, score: 0, maxScore: 20, pendingScore: 0 });
   });
 
   it("未知字段 id 整份拒收（不能静默按 0 分）", () => {

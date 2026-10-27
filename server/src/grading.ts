@@ -14,21 +14,32 @@
  * - number 解析成数字后与 `answer.value` 差 ≤ `tolerance` 才算对；解析失败只是
  *   算错，不抛异常（学生输入 "三" 不该换来一个 500）。
  * - 未作答的题得 0 分，但**不拒收整份提交**：学生点了提交就该留档。
- * - `max_score` = 该版本所有自动判分题的分值之和；`score` = 得分之和。
+ * - `max_score` = 该版本所有**带分值**题目的分值之和，**含简答**（省赛 R-01）：
+ *   学生看到的满分是全卷满分；简答那部分进 `pendingScore`，表示"要老师批改才有的分"。
+ *   若把含简答的分值从满分里剔掉，一份 40 分卷子会显示成 30 分，教师声称的总分对不上。
+ * - `score` 只累加四种自动判分题型。简答恒不计分——它没有标准答案可比。
  */
 
-import type { FormItem, FormSchema } from "@intentform/schema";
+import type { FormItem, FormSchema, ShortField } from "@intentform/schema";
 
 /** 契约里 `answers` 的值类型：`string | string[]`。 */
 export type AnswerValue = string | string[];
 
 export type GradeResult =
-  | { readonly ok: true; readonly score: number; readonly maxScore: number }
+  | {
+      readonly ok: true;
+      readonly score: number;
+      readonly maxScore: number;
+      /** 满分里需要人工批改的部分（简答分值之和）。为 0 时说明全卷自动判分。 */
+      readonly pendingScore: number;
+    }
   | { readonly ok: false; readonly message: string };
 
 /**
  * 有分值的四种字段（`AUTO_GRADED_TYPES`）。用类型收窄而不是只看 `isAutoGradedType`
- * 的原因：`short` / `scale` / `section` 根本没有 `score` 字段，靠布尔守卫拿不到窄化。
+ * 的原因：`short` / `scale` / `section` 靠布尔守卫拿不到窄化。
+ *
+ * 注意 `short` **不在这里**：省赛 R-01 之后它有分值，但不自动判分。两个集合刻意分开。
  */
 type ScoredItem = Extract<FormItem, { type: "single" | "multi" | "fill" | "number" }>;
 
@@ -41,18 +52,89 @@ function isScoredItem(item: FormItem): item is ScoredItem {
   );
 }
 
+/** 结构上带 `score` 的题型：自动判分四种 + 简答（要人工批改）。核算满分用它。 */
+function hasScore(item: FormItem): item is ScoredItem | ShortField {
+  return isScoredItem(item) || item.type === "short";
+}
+
 /** 学生能作答的字段（CSV 的列、公开视图的键都取自这里）。 */
 export function answerableFieldIds(schema: FormSchema): readonly string[] {
   return schema.items.filter((item) => item.type !== "section").map((item) => item.id);
 }
 
+/**
+ * 全卷满分：**含简答**。与 `rules.ts` 的 R6 同口径，否则 schema 校验通过的表
+ * 会出现「totalScore 40 而判分满分 30」。
+ */
 export function maxScoreOf(schema: FormSchema): number {
   let total = 0;
   for (const item of schema.items) {
-    if (!isScoredItem(item)) continue;
+    if (!hasScore(item)) continue;
     total += item.score ?? 0;
   }
   return total;
+}
+
+/** 满分里需要人工批改的部分：简答分值之和。 */
+export function pendingScoreOf(schema: FormSchema): number {
+  let total = 0;
+  for (const item of schema.items) {
+    if (item.type !== "short") continue;
+    total += item.score ?? 0;
+  }
+  return total;
+}
+
+/** 需要人工批改的题目清单（看板据此渲染批改表单）。 */
+export function shortItemsOf(
+  schema: FormSchema,
+): readonly { readonly itemId: string; readonly title: string; readonly score: number }[] {
+  const result: { itemId: string; title: string; score: number }[] = [];
+  for (const item of schema.items) {
+    if (item.type !== "short") continue;
+    result.push({ itemId: item.id, title: item.title, score: item.score ?? 0 });
+  }
+  return result;
+}
+
+export interface ManualGradeEffect {
+  /** 人工分之和（已按每题上限夹住，越界分不会把总分顶到满分以上）。 */
+  readonly manualScore: number;
+  /** 还没批的简答分值之和；0 表示结清。 */
+  readonly pendingScore: number;
+}
+
+/**
+ * 把人工分并进一份答卷的成绩。
+ *
+ * 三条口径：
+ * 1. **只认简答题**：给单选录人工分是无效输入，调用方（路由）负责拒绝；
+ *    这里再夹一次，函数本身不产生"给选择题加分"的可能。
+ * 2. **每题上限是题目自己的 `score`**：教师手滑输 50 分而题目满分 5 分时，
+ *    30 分卷子不该出现 55 分。夹住而不是报错——报错会让一次误触丢掉其余批改。
+ * 3. `pendingScore` 只统计**尚未录入**的简答：批完全卷后它必须归零，
+ *    否则学生成绩上永远挂着"待批改"，看板也没法回答"还有几条没批"。
+ */
+export function applyManualGrades(
+  schema: FormSchema,
+  grades: Readonly<Record<string, number>>,
+): ManualGradeEffect {
+  let manualScore = 0;
+  let pendingScore = 0;
+  for (const item of schema.items) {
+    if (item.type !== "short") continue;
+    const full = item.score ?? 0;
+    const given = grades[item.id];
+    if (given === undefined) {
+      pendingScore += full;
+      continue;
+    }
+    const clamped = Math.max(0, Math.min(Math.trunc(given), full));
+    manualScore += clamped;
+    // 录过的题不再出现在待批改里：教师给了 3/5，剩下的 2 分是"扣掉了"，不是"还没批"。
+    // 这条口径让 `score + pendingScore === maxScore` 恒成立，看板与批改页才可能对账。
+  }
+  return { manualScore, pendingScore };
 }
 
 function normalizeText(value: string): string {
@@ -183,5 +265,5 @@ export function gradeSubmission(
     }
     if (correct) score += weight;
   }
-  return { ok: true, score, maxScore };
+  return { ok: true, score, maxScore, pendingScore: pendingScoreOf(schema) };
 }

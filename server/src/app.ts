@@ -17,6 +17,7 @@ import { checkCsrf, corsHeadersFor } from "./csrf.ts";
 import type { Db } from "./db/index.ts";
 import { isMutatingMethod, type ServerEnv } from "./env.ts";
 import { handleFillView } from "./fill-route.ts";
+import { handleGradeSubmission } from "./grade-route.ts";
 import {
   handleCreateForm,
   handleGetForm,
@@ -44,6 +45,9 @@ export const ROUTES: readonly RouteDef[] = [
   { method: "POST", pattern: "/api/forms/:id/publish", handler: handlePublishForm },
   { method: "GET", pattern: "/api/forms/:id/submissions", handler: handleSubmissions },
   { method: "GET", pattern: "/api/forms/:id/submissions.csv", handler: handleSubmissionsCsv },
+  // 省赛 R-02：人工批改。`POST` 而不是 `PUT`：路径里没有"哪个分"，分值在体里，
+  // 用 POST + (提交, 题目) 覆盖写表达"录入一次"，比 PUT 一个虚拟资源更直白。
+  { method: "POST", pattern: "/api/forms/:id/submissions/:submissionId/grades", handler: handleGradeSubmission },
 
   // 匿名写接口：限流按「来源 IP 哈希 × 每分钟」计，超了 429。
   {

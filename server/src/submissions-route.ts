@@ -112,10 +112,12 @@ export async function handleSubmit(ctx: RouteContext): Promise<void> {
     submissionId,
     score: grade.score,
     maxScore: grade.maxScore,
+    pendingScore: grade.pendingScore,
   };
   // 201 + `Location`：这是唯一一个「学生创建了资源」的接口，给它正确的语义。
   // 指向的是**该表单的提交列表**而不是某条提交——契约里没有按 id 读单条提交的路由，
   // 硬编一个不存在的 `/api/submissions/<id>` 只会让前端多点一次 404。
-  // 响应体保持 `{ok, submissionId, score, maxScore}`，不加任何字段。
+  // 响应体保持 `{ok, submissionId, score, maxScore, pendingScore}`，不加任何其他字段；
+  // `pendingScore` 是省赛 R-01 的新增字段：不含它，"40 分卷子只给我 30" 无法自证清白。
   sendJson(ctx.res, 201, response, { location: `/api/forms/${form.id}/submissions` });
 }

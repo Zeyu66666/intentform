@@ -68,6 +68,18 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_submissions_form_version
      ON submissions(form_id, form_version_id)`,
 
+  // 省赛 R-02：人工批改。**不改 submissions 行**——提交是只写一次的，判分依据
+  // 必须留在当时那一行里。教师打的分单独成表，(提交, 题目) 为键，重打即覆盖，
+  // 于是「改错了」是修正同一行，而不是在历史里插一条自相矛盾的记录。
+  `CREATE TABLE IF NOT EXISTS manual_grades (
+     submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+     item_id       TEXT NOT NULL,
+     score         INTEGER NOT NULL,
+     teacher_id    TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+     graded_at     TEXT NOT NULL,
+     PRIMARY KEY (submission_id, item_id)
+   )`,
+
   `CREATE TABLE IF NOT EXISTS usage_daily (
      teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
      day        TEXT NOT NULL,

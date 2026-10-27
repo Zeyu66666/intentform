@@ -96,8 +96,28 @@ export function surveySchema(): FormSchema {
   });
 }
 
+/**
+ * quiz + 带分值的简答（省赛 R-01/R-02 的批改测试用）。
+ *
+ * 不复用 `quizSchema()` 直接把简答改成 5 分，是因为**满分必须同步改**（20 → 25）：
+ * 只改题不改 `totalScore` 会先被 R6 拦下，测试就会变成"验证校验器"，而不是验证批改。
+ */
+export function scoredShortQuizSchema(): FormSchema {
+  const base = quizSchema();
+  return formSchema.parse({
+    ...base,
+    meta: { ...base.meta, totalScore: 25 },
+    items: base.items.map((item) =>
+      item.type === "short" ? { ...item, score: 5 } : item,
+    ),
+  });
+}
+
 /** 沿用 `createFormRequestSchema` 的形状，省得每个测试各写一遍。 */
-export function createFormBody(kind: "quiz" | "survey" = "quiz"): Record<string, unknown> {
-  const schema = kind === "quiz" ? quizSchema() : surveySchema();
-  return { title: schema.meta.title, kind, schema };
+export function createFormBody(
+  kind: "quiz" | "survey" = "quiz",
+  schema?: FormSchema,
+): Record<string, unknown> {
+  const resolved = schema ?? (kind === "quiz" ? quizSchema() : surveySchema());
+  return { title: resolved.meta.title, kind, schema: resolved };
 }

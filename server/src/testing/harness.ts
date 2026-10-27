@@ -14,7 +14,7 @@ import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
 import { hashSync } from "@node-rs/argon2";
-import type { CreateFormResponse, PublishResponse } from "@intentform/schema";
+import type { CreateFormResponse, FormSchema, PublishResponse } from "@intentform/schema";
 import { createApiApp } from "../app.ts";
 import { openDatabase, type Db } from "../db/index.ts";
 import { insertTeacher } from "../db/teachers.ts";
@@ -194,9 +194,10 @@ export async function createPublishedQuiz(
   server: TestServer,
   cookie: string,
   kind: "quiz" | "survey" = "quiz",
+  schema?: FormSchema,
 ): Promise<PublishedQuiz> {
   const created = await call<CreateFormResponse>(server, "POST", "/api/forms", {
-    body: createFormBody(kind),
+    body: createFormBody(kind, schema),
     cookie,
   });
   if (created.status !== 201) {

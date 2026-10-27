@@ -19,7 +19,7 @@ import { hashSync } from "@node-rs/argon2";
 import { formSchema } from "@intentform/schema";
 import { insertFormWithInitialVersion, publishVersion } from "./db/forms.ts";
 import { openDatabase, type Db } from "./db/index.ts";
-import { insertSubmission } from "./db/submissions.ts";
+import { insertSubmission, upsertManualGrade } from "./db/submissions.ts";
 import { insertTeacher } from "./db/teachers.ts";
 import { readServerEnv } from "./env.ts";
 import { gradeSubmission, type AnswerValue } from "./grading.ts";
@@ -59,7 +59,7 @@ function demoQuizSchema(): unknown {
         { id: "kp-vertex", name: "顶点式与对称轴" },
         { id: "kp-root", name: "根与判别式" },
       ],
-      totalScore: 25,
+      totalScore: 30,
     },
     items: [
       {
@@ -135,6 +135,16 @@ function demoQuizSchema(): unknown {
         knowledgePoint: "kp-root",
         explanation: "韦达定理：$x_1+x_2=-\\frac{b}{a}=6$。",
         answer: { value: 6, tolerance: 0 },
+      },
+      {
+        id: "q6-explain",
+        type: "short",
+        title: "说说你是怎么求顶点坐标的（写思路即可）",
+        required: false,
+        score: 5,
+        bloom: "understand",
+        knowledgePoint: "kp-vertex",
+        maxLength: 300,
       },
     ],
   };
@@ -250,7 +260,16 @@ export function seedDemoData(db: Db, options: SeedOptions): SeedResult {
     "q3-roots": ["op3", "op1"], // 顺序刻意的：判分不看顺序
     "q4-min": "−4", // Unicode 减号变体
     "q5-sum": "6",
+    "q6-explain": "配方：$y=(x-2)^2+3$，所以顶点是 $(2,3)$，对称轴 $x=2$。",
   };
+
+  /**
+   * 前 4 条在种子里就批好（4/5 分），其余留作待批改。
+   *
+   * 理由：看板上要能同时看到「已批完」和「待批改」两种状态，
+   * 否则演示时每条都要点一次「批改」，观众看不出这两种状态的区别。
+   */
+  const DEMO_MANUAL_SCORES: readonly number[] = [4, 5, 3, 4];
 
   const startMs = now.getTime() - 9 * 24 * 60 * 60 * 1000;
   let inserted = 0;
@@ -265,17 +284,31 @@ export function seedDemoData(db: Db, options: SeedOptions): SeedResult {
     if (!grade.ok) {
       throw new Error(`种子数据被判分拒收（不应发生）：${grade.message}`);
     }
+    const submissionId = newId("s");
+    const manualGiven = DEMO_MANUAL_SCORES[index];
+    // 人工分在种子里直接写进 score：`score` 的口径是"已确定的分"（自动 + 人工），
+    // 播种后再改一次会让演示数据出现两套算法，不如一开始就算清。
+    const finalScore = manualGiven === undefined ? grade.score : grade.score + manualGiven;
     insertSubmission(db, {
-      id: newId("s"),
+      id: submissionId,
       formId: quizFormId,
       formVersionId: quizVersionId,
       answersJson: JSON.stringify(answers),
-      score: grade.score,
+      score: finalScore,
       maxScore: grade.maxScore,
       ipHash: demoIpHash(index),
       // 铺开在 9 天里，每小时一条，看板的 created_at 才有分布。
       createdAt: new Date(startMs + index * 8 * 60 * 60 * 1000).toISOString(),
     });
+    if (manualGiven !== undefined) {
+      upsertManualGrade(db, {
+        submissionId,
+        itemId: "q6-explain",
+        score: manualGiven,
+        teacherId,
+        gradedAt: new Date(startMs + index * 8 * 60 * 60 * 1000 + 60_000).toISOString(),
+      });
+    }
     inserted += 1;
   });
 

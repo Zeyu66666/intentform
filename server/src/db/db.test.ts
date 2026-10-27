@@ -38,12 +38,13 @@ function tableNames(db: Db): readonly string[] {
 }
 
 describe("openDatabase / migrate", () => {
-  it("建出 §3.5 要求的六张表", () => {
+  it("建出 §3.5 要求的六张表 + 省赛 R-02 的 manual_grades", () => {
     const db = openDatabase(":memory:");
     expect(tableNames(db)).toEqual([
       "form_versions",
       "forms",
       "login_attempts",
+      "manual_grades",
       "submissions",
       "teachers",
       "usage_daily",

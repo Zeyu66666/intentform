@@ -20,10 +20,18 @@ import {
   type SubmissionsResponse,
 } from "@intentform/schema";
 import { findVersion } from "./db/forms.ts";
-import { listSubmissionsByVersion, type SubmissionRow } from "./db/submissions.ts";
-import { answerableFieldIds, maxScoreOf, type AnswerValue } from "./grading.ts";
+import { listManualGrades, listSubmissionsByVersion, type SubmissionRow } from "./db/submissions.ts";
 import { requireOwnedForm } from "./forms-route.ts";
-import { sendApiError, sendJson, type RouteContext } from "./http.ts";
+import { parseAnswers } from "./grade-route.ts";
+import {
+  answerableFieldIds,
+  applyManualGrades,
+  maxScoreOf,
+  shortItemsOf,
+  type AnswerValue,
+} from "./grading.ts";
+import type { RouteContext } from "./http.ts";
+import { sendApiError, sendJson } from "./http.ts";
 
 interface ResolvedVersion {
   readonly versionId: string;
@@ -68,12 +76,26 @@ function resolveAnalyticsVersion(
   return { versionId: version.id, versionN: version.n, schema: schema.data };
 }
 
-function toDto(row: SubmissionRow): SubmissionRowDto {
+/**
+ * 一条提交的对外形状：自动分 + 人工分 + 待批改额度 + 学生答案。
+ *
+ * `applyManualGrades` 是**唯一**的合并口径，看板、批改响应、CSV 都调它；
+ * 三处各算一遍迟早会出现"看板 28 分、CSV 30 分"这种对不上的账。
+ */
+function toDto(
+  row: SubmissionRow,
+  gradeMap: Readonly<Record<string, number>>,
+  schema: FormSchema,
+): SubmissionRowDto {
+  const effect = applyManualGrades(schema, gradeMap);
   return {
     submissionId: row.id,
     createdAt: row.created_at,
-    score: row.score,
+    score: row.score + effect.manualScore,
     maxScore: row.max_score,
+    pendingScore: effect.pendingScore,
+    manualScores: gradeMap,
+    answers: parseAnswers(row.answers_json),
   };
 }
 
@@ -85,8 +107,12 @@ function toDto(row: SubmissionRow): SubmissionRowDto {
  * `avgScore` 是 `0` 而不是 `null`——看起来一样，语义完全不同：
  * 「没人交」看 `summary.count === 0`，「交了的都是 0 分」看 `avgScore === 0 && count > 0`。
  * 想区分这两件事只靠 `avgScore` 是做不到的，这也是 `count` 必须在 `summary` 里的原因。
+ *
+ * 省赛 R-02 之后**平均分用合并后的分数**（自动分 + 人工分）：教师看到的均分
+ * 应当随批改进度上升，否则"批了 20 份还是一条平线"会让人以为批改没生效。
+ * 未批完的卷子按"人工分已录部分"计入，`pendingCount` 同时给出还有几条没批完。
  */
-function averageScore(rows: readonly SubmissionRow[]): number | null {
+function averageScore(rows: readonly SubmissionRowDto[]): number | null {
   if (rows.length === 0) return null;
   const sum = rows.reduce((acc, row) => acc + row.score, 0);
   return Math.round((sum / rows.length) * 100) / 100;
@@ -103,17 +129,30 @@ export async function handleSubmissions(ctx: RouteContext): Promise<void> {
   const resolved = resolveAnalyticsVersion(ctx, form.id, form.published_version_id);
   if (resolved === undefined) return;
   const rows = listSubmissionsByVersion(ctx.db, form.id, resolved.versionId);
+  const gradeRows = listManualGrades(
+    ctx.db,
+    rows.map((row) => row.id),
+  );
+  const gradesBySubmission = new Map<string, Record<string, number>>();
+  for (const grade of gradeRows) {
+    const bucket = gradesBySubmission.get(grade.submission_id) ?? {};
+    bucket[grade.item_id] = grade.score;
+    gradesBySubmission.set(grade.submission_id, bucket);
+  }
+  const dtos = rows.map((row) => toDto(row, gradesBySubmission.get(row.id) ?? {}, resolved.schema));
   const summary: SubmissionSummary = {
     versionId: resolved.versionId,
     versionN: resolved.versionN,
-    count: rows.length,
-    avgScore: averageScore(rows),
+    count: dtos.length,
+    avgScore: averageScore(dtos),
     maxScore: maxScoreOf(resolved.schema),
+    pendingCount: dtos.filter((row) => row.pendingScore > 0).length,
   };
   const response: SubmissionsResponse = {
     ok: true,
     summary,
-    rows: rows.map(toDto),
+    rows: dtos,
+    shortItems: shortItemsOf(resolved.schema),
   };
   sendJson(ctx.res, 200, response);
 }
@@ -126,9 +165,10 @@ export function csvEscape(cell: string): string {
   return cell;
 }
 
-function cellOf(value: AnswerValue | undefined): string {
+function cellOf(value: AnswerValue | readonly string[] | undefined): string {
   if (value === undefined) return "";
-  return Array.isArray(value) ? value.join("|") : value;
+  // `Array.isArray` 收窄不到 `readonly string[]`（TS 的已知局限），用一次显式分支代替强转。
+  return typeof value === "string" ? value : value.join("|");
 }
 
 export async function handleSubmissionsCsv(ctx: RouteContext): Promise<void> {
@@ -142,6 +182,18 @@ export async function handleSubmissionsCsv(ctx: RouteContext): Promise<void> {
   const resolved = resolveAnalyticsVersion(ctx, form.id, form.published_version_id);
   if (resolved === undefined) return;
   const rows = listSubmissionsByVersion(ctx.db, form.id, resolved.versionId);
+  // CSV 的 score 列与看板同口径（自动分 + 人工分）：同一份数据两处不同数字，
+  // 教师第一反应是"导出坏了"，而不是"看板没刷新"。
+  const gradeRows = listManualGrades(
+    ctx.db,
+    rows.map((row) => row.id),
+  );
+  const gradesBySubmission = new Map<string, Record<string, number>>();
+  for (const grade of gradeRows) {
+    const bucket = gradesBySubmission.get(grade.submission_id) ?? {};
+    bucket[grade.item_id] = grade.score;
+    gradesBySubmission.set(grade.submission_id, bucket);
+  }
 
   const fieldIds = answerableFieldIds(resolved.schema);
   // 唯一允许「拼」SQL/文本的地方就是这里：表头是固定字面量 + 字段 id，
@@ -158,10 +210,14 @@ export async function handleSubmissionsCsv(ctx: RouteContext): Promise<void> {
   const lines: string[] = [header];
   for (const row of rows) {
     const answers = parseAnswers(row.answers_json);
+    const merged = row.score + applyManualGrades(
+      resolved.schema,
+      gradesBySubmission.get(row.id) ?? {},
+    ).manualScore;
     const cells = [
       row.id,
       row.created_at,
-      String(row.score),
+      String(merged),
       String(row.max_score),
       ...fieldIds.map((fieldId) => cellOf(answers[fieldId])),
     ];
@@ -176,31 +232,4 @@ export async function handleSubmissionsCsv(ctx: RouteContext): Promise<void> {
     `attachment; filename="submissions-${resolved.versionId}.csv"`,
   );
   ctx.res.end(csv);
-}
-
-function parseAnswers(json: string): Readonly<Record<string, AnswerValue>> {
-  try {
-    const parsed: unknown = JSON.parse(json);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const result: Record<string, AnswerValue> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "string") {
-        result[key] = value;
-      } else if (Array.isArray(value)) {
-        const strings: string[] = [];
-        let allStrings = true;
-        for (const entry of value) {
-          if (typeof entry !== "string") {
-            allStrings = false;
-            break;
-          }
-          strings.push(entry);
-        }
-        if (allStrings) result[key] = strings;
-      }
-    }
-    return result;
-  } catch {
-    return {};
-  }
 }

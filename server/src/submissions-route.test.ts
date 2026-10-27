@@ -50,7 +50,7 @@ function submitBody(slug: string, versionId: string, answers: Record<string, unk
 }
 
 describe("POST /api/submissions", () => {
-  it("全对得满分，响应只有 ok/submissionId/score/maxScore", async () => {
+  it("全对得满分，响应只有 ok/submissionId/score/maxScore/pendingScore", async () => {
     const { app, quiz } = await boot();
     const response = await call<SubmitResponse>(app, "POST", "/api/submissions", {
       body: submitBody(quiz.slug, quiz.versionId, CORRECT_ANSWERS),
@@ -59,10 +59,12 @@ describe("POST /api/submissions", () => {
     expect(Object.keys(response.json).sort()).toEqual([
       "maxScore",
       "ok",
+      "pendingScore",
       "score",
       "submissionId",
     ]);
-    expect(response.json).toMatchObject({ ok: true, score: 20, maxScore: 20 });
+    // 全卷自动判分：pendingScore 必须是 0，而不是"没这个字段"。
+    expect(response.json).toMatchObject({ ok: true, score: 20, maxScore: 20, pendingScore: 0 });
     // 不回显学生答案、不告诉每题对错。
     expect(response.text).not.toContain("q-single");
     expect(response.text).not.toContain("op1");
@@ -258,7 +260,13 @@ describe("提交成功的响应语义", () => {
     // 契约里没有「按 id 读单条提交」的接口，所以 Location 指向集合而不是 `/api/submissions/<id>`。
     expect(response.headers.get("location")).toBe(`/api/forms/${quiz.formId}/submissions`);
     const body = (await response.json()) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(["maxScore", "ok", "score", "submissionId"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "maxScore",
+      "ok",
+      "pendingScore",
+      "score",
+      "submissionId",
+    ]);
   });
 
   it("形状不合法时回中文 400，不把 zod 的英文原文抛给前端", async () => {
