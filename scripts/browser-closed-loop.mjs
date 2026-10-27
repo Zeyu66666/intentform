@@ -603,6 +603,8 @@ async function main() {
         async () => (await page.evaluate("return bySelector('input[name=email]') !== null")),
         "登录表单渲染",
       );
+      // 截图取在填表之前：这张图要证明的是「会话建立前的入口」，不是登录后的看板
+      artifacts.push(await page.screenshot("01-login.png"));
       const filled = await page.evaluate(`
         var email = setValue('input[name=email]', ${JSON.stringify(DEMO_EMAIL)});
         var password = setValue('input[name=password]', ${JSON.stringify(DEMO_PASSWORD)});
@@ -616,7 +618,6 @@ async function main() {
         async () => (await page.evaluate("return byTestId('dash-form-select') !== null")),
         "看板表单下拉渲染",
       );
-      artifacts.push(await page.screenshot("01-login.png"));
       const forms = await page.evaluate(
         "return Array.prototype.map.call(document.querySelectorAll('[data-testid=dash-form-select] option'), function (o) { return o.textContent.trim(); });",
       );

@@ -37,12 +37,17 @@ node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + std
 
 | 项 | 值 |
 |---|---|
-| commit | `3def01f`（本轮截图与脚本的入库提交） |
-| 时间 | 2026-10-27 15:43（Asia/Shanghai） |
-| 浏览器 | Chrome 156.0.8078.47（`C:\Program Files\Google\Chrome\Application\chrome.exe`），headless=new，CDP 驱动 |
-| 服务 | `LLM_MODE=mock`；每次运行自起 server + vite，端口临时分配（本轮 58206/58207/58208） |
-| 结果 | 6 步全绿：登录 → 生成 → 发布（UI 路径，`publishMode: "ui"`）→ 学生页作答（可信鼠标事件）→ 提交 `20 / 20` → 看板新增 1 行（slug `s5xezyggjy`） |
-| 截图 | `01-login.png`、`02-generate.png`、`03a-publish-panel.png`、`03b-published-dashboard.png`、`04-student.png`、`05-student-answered.png`、`06-submitted.png`、`07-dashboard.png`（全部同一次运行，15:43:10–12） |
+| commit | `9fa7475`（截图与脚本另有未提交改动：见本节末条） |
+| 时间 | 2026-10-27 18:41（Asia/Shanghai） |
+| 浏览器 | Chrome 156.0.8078.47（headless=new，CDP 驱动） |
+| 服务 | `LLM_MODE=mock`；自起 server + vite，端口临时分配 |
+| 结果 | 6 步全绿：登录 → 生成 → 发布（`publishMode: "ui"`）→ 学生页作答 → 提交 `20 / 20` → 看板新增 1 行（slug `hx2w54k7m3`） |
+| 截图 | `01-login.png` … `07-dashboard.png` 共 8 张，全部同一次运行，18:41 落盘 |
+
+**2026-10-27 18:41 这轮的两处改动**：
+1. `01-login.png` 原先在「登录成功跳到 /dashboard 之后」截，文件名却叫 login，与文档里「登录页」的
+   图注对不上。现在截图移到填表之前（`waitFor("登录表单渲染")` 之后立刻截），名字与内容一致。
+2. 因为连截图位置都改了，八张图整轮重跑，旧图不与新代码混放。
 
 选项类控件在这一轮改由 CDP `Input.dispatchMouseEvent` 点击（可信输入，走命中测试与默认行为），
 并回读 `getBoundingClientRect()` 断言触控目标 ≥44px（实测 50px）。合成 `element.click()`
