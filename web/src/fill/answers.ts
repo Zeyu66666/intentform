@@ -75,6 +75,20 @@ export function selectedValues(state: AnswerState, fieldId: string): readonly st
   return Array.isArray(value) ? value : [];
 }
 
+/**
+ * 选项类控件要的「当前选中集合」。
+ *
+ * 为什么不能直接用 `selectedValues()`：单选在状态里存的是**字符串**，多选存的是**数组**。
+ * 只认数组的实现会让单选的 `checked` 永远为 false——学生点得动、状态也存下了，
+ * 但界面上一个选项都不会亮（I4 的浏览器验收只看"能否提交、有无泄漏"，漏了"选中态"，
+ * 所以这处 bug 活到了 I5 的闭环脚本才被抓到：脚本断言的是 DOM 的 `input.checked`）。
+ */
+export function choiceValues(state: AnswerState, fieldId: string): readonly string[] {
+  const value = state[fieldId];
+  if (Array.isArray(value)) return value;
+  return typeof value === "string" && value !== "" ? [value] : [];
+}
+
 /** `section` 是结构节点不是题目，不参与作答与必答校验。 */
 export function isAnswerable(
   item: PublicFormItem,

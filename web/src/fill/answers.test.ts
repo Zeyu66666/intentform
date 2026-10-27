@@ -5,6 +5,7 @@ import {
   answerReducer,
   isAnswerable,
   isAnswered,
+  choiceValues,
   selectedValues,
   stringValue,
   type AnswerAction,
@@ -82,7 +83,23 @@ describe("取值辅助", () => {
   it("类型不符时降级成空值，不把数组塞进文本框", () => {
     const state: AnswerState = { "item-multi": ["a"], "item-single": "b" };
     expect(stringValue(state, "item-multi")).toBe("");
+    // `selectedValues()` 只认数组：单选存的是字符串，所以它在这里返回空——
+    // 这正是 I5 抓到的那处 bug 的成因（选项控件若用它算 `checked`，单选永远不亮）。
     expect(selectedValues(state, "item-single")).toEqual([]);
+  });
+
+  it("choiceValues 同时认字符串与数组（选项控件的选中态靠它）", () => {
+    const state: AnswerState = { "item-single": "b", "item-multi": ["a", "c"], "item-empty": "" };
+    expect(choiceValues(state, "item-single")).toEqual(["b"]);
+    expect(choiceValues(state, "item-multi")).toEqual(["a", "c"]);
+    expect(choiceValues(state, "item-empty")).toEqual([]);
+    expect(choiceValues(state, "item-missing")).toEqual([]);
+  });
+
+  it("单选点过之后，选中态真的能读回来（回归：I5 之前界面不亮）", () => {
+    const after = answerReducer(EMPTY_ANSWERS, { type: "choose", fieldId: "item-single", value: "b" });
+    expect(choiceValues(after, "item-single")).toEqual(["b"]);
+    expect(isAnswered(after["item-single"])).toBe(true);
   });
 });
 

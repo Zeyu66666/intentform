@@ -15,7 +15,7 @@ import type { PublicFormItem } from "@intentform/schema";
 import { MathText } from "../render/Latex";
 import { TYPE_LABELS } from "../render/FieldRegistry";
 import { toFillRenderPlan, type FillOption, type FillPlanOf, type FillRenderPlan } from "../render/fill-plan";
-import { selectedValues, stringValue, type AnswerAction, type AnswerState } from "./answers";
+import { choiceValues, stringValue, type AnswerAction, type AnswerState } from "./answers";
 import { BLANK_INPUT_PLACEHOLDER, splitBlanks } from "./submit";
 
 export interface StudentFieldProps {
@@ -145,7 +145,8 @@ function ChoiceList({
   readonly answers: AnswerState;
   readonly dispatch: (action: AnswerAction) => void;
 }): JSX.Element {
-  const selected = selectedValues(answers, fieldId);
+  // 单选存字符串、多选存数组，统一用 `choiceValues()` 取选中集合（见该函数注释）。
+  const selected = choiceValues(answers, fieldId);
 
   return (
     <div className="mt-2 flex flex-col gap-1">
