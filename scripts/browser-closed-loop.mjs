@@ -49,7 +49,7 @@ const DEMO_PASSWORD = "intentform-demo";
  * 生成用的需求文本。刻意不含「问卷/调查/反馈」这类词：`inferFormKind` 见到就会把表单
  * 判成 survey，而 survey 不许有答案与分值（R3），学生页就没有"作答→判分"可走了。
  */
-const REQUIREMENT = "出一份二次函数随堂测：单选、填空、数值和简答各一道，共 20 分";
+const REQUIREMENT = "出一份二次函数随堂测：单选、填空、数值和简答各一道，共 25 分";
 
 /** 桌面视口（教师侧）与学生手机视口（学生侧）。 */
 const DESKTOP_VIEWPORT = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false };
@@ -490,7 +490,8 @@ function parseSse(text) {
   return events;
 }
 
-const SCORED_TYPES = new Set(["single", "multi", "fill", "number"]);
+// 进 totalScore 的题型：省赛 R-01 之后简答也带分值（它是"要老师批"的分，不是"自动判"的分）。
+const SCORED_TYPES = new Set(["single", "multi", "fill", "number", "short"]);
 
 /** 与 `scripts/verify.mjs` 同源的组装规则：节点顺序、objectives 去重、totalScore 求和（R6）。 */
 function buildGeneratedQuiz(nodes) {
@@ -805,11 +806,19 @@ async function main() {
       const text = await page.text();
       const scoreLine = /(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/.exec(text);
       must(scoreLine !== null, `成功卡片里没看到 得分/满分：${text.slice(0, 200)}`);
-      return { score: Number(scoreLine[1]), maxScore: Number(scoreLine[2]), text: scoreLine[0] };
+      const pendingLine = /其中\s*(\d+(?:\.\d+)?)\s*分待人工批改/.exec(text);
+      return {
+        score: Number(scoreLine[1]),
+        maxScore: Number(scoreLine[2]),
+        pending: pendingLine === null ? 0 : Number(pendingLine[1]),
+        text: scoreLine[0],
+      };
     });
+    // 简答带分值之后（省赛 R-01），全部答对也不等于拿满分：客观题拿满、简答等教师批。
+    // 断言「客观分 + 待批分 = 满分」，并把这个待批额记下来给第 7 步用。
     must(
-      submitted.score === student.maxScore,
-      `全部答对却只拿到 ${String(submitted.score)}/${String(student.maxScore)}`,
+      submitted.score + submitted.pending === student.maxScore,
+      `客观 ${String(submitted.score)} + 待批 ${String(submitted.pending)} 应等于满分 ${String(student.maxScore)}`,
     );
 
     // 6) 看板看到新增行
@@ -828,13 +837,60 @@ async function main() {
       const cells = await page.evaluate(
         "var row = document.querySelector('[data-testid=dash-row]'); return row === null ? [] : Array.prototype.map.call(row.querySelectorAll('td'), function (td) { return td.textContent.trim(); });",
       );
-      const expectedScoreText = `${String(submitted.score)} / ${String(student.maxScore)}`;
+      const expectedScoreText = `${String(submitted.score)} / ${String(student.maxScore)}（另有 ${String(submitted.pending)} 分待批改）`;
       must(
         cells.includes(expectedScoreText),
         `看板第一行的得分应是「${expectedScoreText}」，实际 ${JSON.stringify(cells)}`,
       );
       const stats = await page.text();
       return { rowCount, firstRowCells: cells, expectedScoreText, sawStats: stats.includes("提交数") };
+    });
+
+    // 7) 教师批改：看板上把简答案批掉，确认分数真的从「待批改」变成确定值
+    //
+    // 这一步是省赛 R-02 的界面级证据。VC5 验的是 HTTP 语义，这里验的是
+    // 「教师点得到按钮、批完看板自己变了」——少了这一步，批改功能只有接口没有入口。
+    const graded = await step("教师批改简答案并看到分数更新", async () => {
+      const open = await page.tap('[data-testid^="dash-grade-"]');
+      must(open.ok === true, `点不到看板上的批改按钮：${JSON.stringify(open)}`);
+      must(open.heightPx >= 44, `批改按钮触控高度只有 ${String(open.heightPx)}px（应 ≥44px）`);
+      await waitFor(async () => (await page.text()).includes("批改"), "批改面板出现", 20_000);
+
+      const answerText = await page.evaluate(
+        "var el = document.querySelector('[data-testid^=grade-answer]'); return el === null ? null : el.textContent.trim();",
+      );
+      must(
+        typeof answerText === "string" && answerText.length > 0,
+        `批改面板里要能看到学生写的原文，实际 ${JSON.stringify(answerText)}`,
+      );
+
+      const filled = await page.evaluate(
+        "var input = document.querySelector('[data-testid^=grade-input]'); if (input === null) return { ok: false }; var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, '4'); input.dispatchEvent(new Event('input', { bubbles: true })); return { ok: true, value: input.value };",
+      );
+      must(filled.ok === true && filled.value === "4", `批改输入框没写进 4 分：${JSON.stringify(filled)}`);
+
+      const save = await page.tap('[data-testid^="grade-save"]');
+      must(save.ok === true, `点不到保存按钮：${JSON.stringify(save)}`);
+
+      // 批 4 分：客观 20 + 人工 4 = 24，满分 25 不变；批完这条不再有待批改。
+      const expectedAfter = `${String(submitted.score + 4)} / ${String(submitted.maxScore)}`;
+      const cells = await waitFor(
+        async () => {
+          const value = await page.evaluate(
+            "var row = document.querySelector('[data-testid=dash-row]'); return row === null ? null : Array.prototype.map.call(row.querySelectorAll('td'), function (td) { return td.textContent.trim(); });",
+          );
+          if (value === null) return null;
+          return value.some((cell) => cell === expectedAfter) ? value : null;
+        },
+        `批改后看板分数变为 ${expectedAfter}`,
+        20_000,
+      );
+      must(
+        !cells.some((cell) => cell.includes("待批改")),
+        `批完之后不应再有待批改提示，实际 ${JSON.stringify(cells)}`,
+      );
+      artifacts.push(await page.screenshot("08-graded.png"));
+      return { gradedScore: 4, firstRowCells: cells, answerSeen: answerText.length };
     });
 
     const summary = {
@@ -847,6 +903,7 @@ async function main() {
       student,
       submitted,
       dashboard,
+      graded,
       steps,
       artifacts,
     };

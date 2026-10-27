@@ -7,6 +7,8 @@
  *   VC2 判分与版本冲突：正常提交得分正确；用旧 versionId 提交返回 409 + version_conflict。
  *   VC3 学生端零泄漏：`/f/:slug` 与 `POST /api/submissions` 的响应体字节里不含
  *                 answer / explanation / bloom / knowledgePoint / objectives。
+ *   VC5 人工批改：`POST /api/forms/:id/submissions/:sid/grades` 录分后总分、待批额度、
+ *      看板与 CSV 三处一致（省赛 R-02）。
  *   VC4 生成→发布→提交→看板：`LLM_MODE=mock` 走完整的 SSE 生成，把 `field` 事件里
  *                 的节点组装成 quiz 表单，发布后提交一份**故意只对一半**的答卷，
  *                 得分必须等于脚本自己算出的期望值（不是"大于 0"），再看板与 CSV 对账。
@@ -109,10 +111,11 @@ const QUIZ_SCHEMA = {
 /** v2：多一道简答、换个标题 —— 足够让「快照被改动」在字节比较里现形。 */
 const QUIZ_SCHEMA_V2 = {
   ...QUIZ_SCHEMA,
-  meta: { ...QUIZ_SCHEMA.meta, title: "verify · 二次函数快照卷（改）" },
+  meta: { ...QUIZ_SCHEMA.meta, title: "verify · 二次函数快照卷（改）", totalScore: 25 },
   items: [
     ...QUIZ_SCHEMA.items,
-    { id: "v-short", type: "short", title: "一句话总结今天学了什么", required: false },
+    // 省赛 R-01：简答带分值，VC5 才有东西可批。
+    { id: "v-short", type: "short", title: "一句话总结今天学了什么", required: false, score: 5 },
   ],
 };
 
@@ -332,14 +335,18 @@ async function vc2GradingAndConflict(request, ctx) {
   // 此刻线上发布的是 v2（VC1 末尾发布），先证明「正常提交判分正确」，
   // 再证明「手里还攥着 v1 的旧标签页」会被 409 挡住。
   const ok = await request("POST", "/api/submissions", {
-    json: { slug: ctx.slug, formVersionId: ctx.v2, answers: CORRECT_ANSWERS },
+    json: { slug: ctx.slug, formVersionId: ctx.v2, answers: { ...CORRECT_ANSWERS, "v-short": "今天学了顶点式" } },
   });
   must(ok.status === 201, `提交失败（${String(ok.status)}）：${firstLine(ok.text)}`);
   must(ok.json.score === 20, `得分应为 20，实际 ${String(ok.json.score)}`);
-  must(ok.json.maxScore === 20, `满分应为 20，实际 ${String(ok.json.maxScore)}`);
+  must(ok.json.maxScore === 25, `满分应为 25（含简答 5 分），实际 ${String(ok.json.maxScore)}`);
+  // 简答没批之前，那 5 分既不算得也不算失：`pendingScore` 必须显式返回，
+  // 否则学生看到 20/25 只会以为自己被扣了 5 分。
+  must(ok.json.pendingScore === 5, `待批改额度应为 5，实际 ${String(ok.json.pendingScore)}`);
   must(
-    JSON.stringify(Object.keys(ok.json).sort()) === JSON.stringify(["maxScore", "ok", "score", "submissionId"]),
-    `提交响应多了字段：${Object.keys(ok.json).join(", ")}`,
+    JSON.stringify(Object.keys(ok.json).sort()) ===
+      JSON.stringify(["maxScore", "ok", "pendingScore", "score", "submissionId"]),
+    `提交响应的键集合变了：${Object.keys(ok.json).join(", ")}`,
   );
   checkNoLeak("POST /api/submissions", ok.text);
 
@@ -363,17 +370,74 @@ async function vc2GradingAndConflict(request, ctx) {
 must(dashboard.json.summary.count === 1, `v2 看板条数应为 1，实际 ${String(dashboard.json.summary.count)}`);
   must(dashboard.json.summary.avgScore === 20, `v2 看板平均分应为 20，实际 ${String(dashboard.json.summary.avgScore)}`);
 
-  const csv = await request("GET", `/api/forms/${ctx.formId}/submissions.csv`, {
+  const csv = await request("GET", `/api/forms/${ctx.formId}/submissions.csv`, { cookie: ctx.cookie });
+  const dataLine = (csv.text.split(String.fromCharCode(13, 10))[1] ?? "");
+  const scoreCell = dataLine.split(",")[2];
+  must(scoreCell === "20", `VC2 阶段还没批改，CSV 的 score 列应为 20，实际 ${String(scoreCell)}`);
+}
+
+/**
+ * VC5：人工批改（省赛 R-02）。
+ *
+ * 批改是唯一一处「教师写、学生看」的数据流，三条断言缺一不可：
+ * 分值真的加上去了、待批额度真的清零、看板与 CSV 用的是同一份合并结果。
+ * 少任何一条就会出现「看板 24 分、CSV 20 分」这种对不上账的交付。
+ */
+async function vc5ManualGrade(request, ctx) {
+  const listed = await request("GET", `/api/forms/${ctx.formId}/submissions`, { cookie: ctx.cookie });
+  must(listed.status === 200, `看板失败（${String(listed.status)}）：${firstLine(listed.text)}`);
+  const row = (listed.json.rows ?? []).find((item) => item.pendingScore === 5);
+  must(row !== undefined, "看板里找不到待批改的那一条提交");
+  must(
+    JSON.stringify(Object.keys(row).sort()) ===
+      JSON.stringify(["answers", "createdAt", "manualScores", "maxScore", "pendingScore", "score", "submissionId"]),
+    `看板行多了或少了字段：${Object.keys(row).join(", ")}`,
+  );
+  must(row.answers["v-short"] !== undefined, "看板行里没有学生写的简答内容，教师没法批");
+
+  const unauth = await request("POST", `/api/forms/${ctx.formId}/submissions/${row.submissionId}/grades`, {
+    json: { itemId: "v-short", score: 4 },
+  });
+  must(unauth.status === 401, `未登录批改应 401，实际 ${String(unauth.status)}`);
+
+  const graded = await request("POST", `/api/forms/${ctx.formId}/submissions/${row.submissionId}/grades`, {
+    json: { itemId: "v-short", score: 4 },
     cookie: ctx.cookie,
   });
-  must(csv.status === 200, `CSV 失败（${String(csv.status)}）：${firstLine(csv.text)}`);
-  const header = csv.text.split("\r\n")[0] ?? "";
+  must(graded.status === 200, `批改失败（${String(graded.status)}）：${firstLine(graded.text)}`);
+  must(graded.json.submission.score === 24, `批 4 分后总分应为 24，实际 ${String(graded.json.submission.score)}`);
   must(
-    header.startsWith("submission_id,created_at,score,max_score,"),
-    `CSV 表头前四列不对：${firstLine(header)}`,
+    graded.json.submission.pendingScore === 0,
+    `批完待批额度应归零，实际 ${String(graded.json.submission.pendingScore)}`,
   );
-  must(!header.includes("answer"), `CSV 表头出现了 answer 列：${firstLine(header)}`);
-  must(csv.text.split("\r\n").length >= 2, "CSV 没有数据行");
+
+  // 覆盖写：再批 2 分是替换，不是累加（27 分就是 bug）。
+  const again = await request("POST", `/api/forms/${ctx.formId}/submissions/${row.submissionId}/grades`, {
+    json: { itemId: "v-short", score: 2 },
+    cookie: ctx.cookie,
+  });
+  must(again.status === 200, `二次批改失败（${String(again.status)}）`);
+  must(
+    again.json.submission.score === 22,
+    `覆盖写后应为 22（不是累加），实际 ${String(again.json.submission.score)}`,
+  );
+
+  // 这一版里有两条提交：VC2 那条（刚批成 22）与 VC3 那条（20 分、简答待批）。
+  // 所以待批条数是 1 而不是 0，均分是 21——断言的正是「只影响这一条」。
+  const after = await request("GET", `/api/forms/${ctx.formId}/submissions`, { cookie: ctx.cookie });
+  must(
+    after.json.summary.pendingCount === 1,
+    `待批条数应为 1（另一条没人批），实际 ${String(after.json.summary.pendingCount)}`,
+  );
+  must(after.json.summary.avgScore === 21, `均分应为 (22+20)/2 = 21，实际 ${String(after.json.summary.avgScore)}`);
+  const gradedRow = (after.json.rows ?? []).find((item) => item.submissionId === row.submissionId);
+  must(gradedRow?.pendingScore === 0, "批过的那条应不再待批");
+  must(gradedRow?.score === 22, `批过的那条应记 22 分，实际 ${String(gradedRow?.score)}`);
+
+  const csv = await request("GET", `/api/forms/${ctx.formId}/submissions.csv`, { cookie: ctx.cookie });
+  const dataLine = csv.text.split(String.fromCharCode(13, 10))[1] ?? "";
+  const scoreCell = dataLine.split(",")[2];
+  must(scoreCell === "22", `CSV 的 score 列应与看板同口径（22），实际 ${String(scoreCell)}`);
 }
 
 async function vc3NoLeak(request, ctx) {
@@ -436,7 +500,7 @@ async function vc4GeneratedLoop(request, ctx) {
 
   const nodes = events.filter((event) => event.type === "field").map((event) => event.node);
   const schema = buildGeneratedQuiz(nodes);
-  const scoredIds = schema.items.filter((item) => SCORED_TYPES.has(item.type)).map((item) => item.id);
+  const scoredIds = schema.items.filter((item) => AUTO_GRADED_TYPES.has(item.type)).map((item) => item.id);
   must(scoredIds.length >= 2, `生成的表单至少要有 2 道自动判分题，实际 ${String(scoredIds.length)}`);
 
   const created = await request("POST", "/api/forms", {
@@ -534,7 +598,10 @@ async function vc4GeneratedLoop(request, ctx) {
  * - `objectives` 由节点上的 `knowledgePoint` 去重生成（R8：知识点必须已声明）；
  * - `totalScore` = 自动判分题分值之和（R6，发布门禁会逐字核对）。
  */
-const SCORED_TYPES = new Set(["single", "multi", "fill", "number"]);
+// totalScore 的口径（含简答：省赛 R-01 之后简答也带分值）
+const SCORED_TYPES = new Set(["single", "multi", "fill", "number", "short"]);
+// 自动判分的只有四种：简答要老师批，不能拿它凑数
+const AUTO_GRADED_TYPES = new Set(["single", "multi", "fill", "number"]);
 
 function buildGeneratedQuiz(nodes) {
   const objectiveIds = [];
@@ -611,6 +678,7 @@ const CHECKS = [
   ["VC2 判分与版本冲突：得分正确 / 旧版提交 409", vc2GradingAndConflict],
   ["VC3 学生端零泄漏：响应体不含答案类键", vc3NoLeak],
   ["VC4 生成→发布→提交→看板：SSE 组装、得分对账、CSV 表头", vc4GeneratedLoop],
+  ["VC5 人工批改：简答录分、待批归零、看板与 CSV 同口径", vc5ManualGrade],
 ];
 
 async function main() {
