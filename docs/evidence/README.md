@@ -35,11 +35,16 @@ node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + std
 
 ## 最近一次运行
 
-（由 `browser-closed-loop.mjs` 跑完后人工回填：commit、时间、浏览器版本、截图清单。）
-
 | 项 | 值 |
 |---|---|
-| commit | 待填 |
-| 时间 | 待填 |
-| 浏览器 | 待填 |
-| 截图 | 待填 |
+| commit | `21e06a1`（本目录与脚本的入库提交） |
+| 时间 | 2026-10-27 08:19（Asia/Shanghai） |
+| 浏览器 | Chrome 156.0.8078.47，headless=new，CDP 驱动 |
+| 服务 | `LLM_MODE=mock`；每次运行自起 server + vite，端口临时分配 |
+| 结果 | 6 步全绿：登录 → 生成 → 发布（UI 路径）→ 学生页作答 → 提交 `20 / 20` → 看板新增 1 行 |
+| 截图 | `01-login.png`、`02-generate.png`、`03a-publish-panel.png`、`03b-published-dashboard.png`、`04-student.png`、`05-student-answered.png`、`06-submitted.png`、`07-dashboard.png` |
+
+这次运行抓到的真实缺陷：单选（`radio`）选不亮——`web/src/fill/StudentField.tsx` 用只认数组的
+`selectedValues()` 算选中态，而单选在状态里存的是字符串，于是"点得动、存得下、界面上不亮"。
+I4 的验收只看"能否提交、有无泄漏"，没看选中态，所以漏到这一步；修法与回归测试见 `f63613d`。
+按纪律，它属于 I4 的缺陷在 I5 被闭环脚本抓到，叙事上写到这里，**不补造修复当时的那次会话**。
