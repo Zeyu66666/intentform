@@ -207,6 +207,9 @@ export function validateLine(raw: string, options: ValidateLineOptions = {}): Li
     } else {
       extra.push(...answerCodeOf(node));
     }
+    // 判分题没有分值：行级就报，别等整表门禁。否则修复环拿不到这一行的问题，
+    // 教师只看到"发布被禁用 + E_SCORE_SUM@items[3]"，而那一行的错从来没被修过。
+    if (node.score === undefined) extra.push("E_SCORE_SUM");
   }
 
   if (extra.length > 0) {

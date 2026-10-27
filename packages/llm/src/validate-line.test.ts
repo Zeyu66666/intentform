@@ -74,6 +74,39 @@ describe("validateLine", () => {
     if (!badBloom.ok) expect(badBloom.codes).toContain("E_BLOOM_INVALID");
   });
 
+  it("判分题缺 score 在行级就报 E_SCORE_SUM（修复环才有机会修它）", () => {
+    const noScore = validateLine(
+      JSON.stringify({
+        type: "single",
+        id: "q04",
+        title: "没分值的单选",
+        answer: "a",
+        options: [
+          { id: "a", text: "甲" },
+          { id: "b", text: "乙" },
+        ],
+      }),
+    );
+    expect(noScore.ok).toBe(false);
+    if (!noScore.ok) expect(noScore.codes).toContain("E_SCORE_SUM");
+
+    // 补上分值就放行：这条断言防的是"把缺分值当结构性错误"，那会让 repairer 无从下手。
+    const withScore = validateLine(
+      JSON.stringify({
+        type: "single",
+        id: "q05",
+        title: "有分值的单选",
+        score: 4,
+        answer: "a",
+        options: [
+          { id: "a", text: "甲" },
+          { id: "b", text: "乙" },
+        ],
+      }),
+    );
+    expect(withScore.ok).toBe(true);
+  });
+
   it("重复 id 给 E_DUP_ID（流式阶段就抓，不等整表单）", () => {
     const seenIds = new Set<string>(["q01"]);
     const result = validateLine(SINGLE, { seenIds });
