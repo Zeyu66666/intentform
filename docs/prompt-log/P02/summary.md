@@ -78,7 +78,9 @@
 | `135f9c4` | `feat(llm): openai-compatible provider with manual SSE reader [P02]` | `provider`/`json`/`logger`/`config`/`line-splitter`/`validate-line` |
 | `47788f4` | `feat(llm): record, replay and mock sources with replay key hashing [P02]` | `sources`/`fixtures`/`replay-key`/`prompt`/`check-fixtures` |
 | `8a29fd1` | `feat(server): /api/generate SSE event protocol with whole-form publish gate [P02]` | `generate` + `publish-gate` + `sse-writer` + 路由 + `main.ts` |
-| `653d4d7` | `test(fixtures): record three replay fixtures for generate [P02]` | 3 组 `.ndjson` + `.meta.json`（`upstream: local-stub:127.0.0.1:8903`） |
+| `653d4d7` | `test(fixtures): record three replay fixtures for generate [P02]` | 3 组 `.ndjson` + `.meta.json`（当时 `upstream: local-stub:127.0.0.1:8903`，后来重录，见下两行） |
+| `8858ee7` | `test(fixtures): record the three replays from the real upstream [P02]` | 拿到真实 DeepSeek Key 后重录三条；`upstream: openai-compatible:api.deepseek.com`，`check-fixtures` 全通过 |
+| `bea9d9b` | `feat(llm): let the fixture recorder target the real upstream [P02]` | `recordFixtures({upstream:"real"})` / CLI `--real-upstream`；缺 Key 直接抛、不回落 |
 
 ### 相对《计划 v3.0》的偏离（3 处）
 
@@ -93,10 +95,11 @@
 1. **3 条 fixture 都是"干净生成"**：`field_error` 与 `repair` 在真实回放里没有坏行，回放模式实测只有 5 类事件（phase/thinking/field/usage/done），缺的 2 类只能在 mock 里出。
    已补齐（`fix(llm): make mock mode walk the repair loop for real [P02]`）：不伪造录制，而是在 mock 内置脚本里放一条**故意写坏**的行（`bloom:"memorize"` + 答案指向不存在的选项 `c`），再给 mock 一个确定性修复钩子（`createMockRepairHook`）把它改对。坏行照常过 `validateLine`、照常走两轮修复循环，`fixed` 也照常由 `isStrictSubset` 复核。`PORT=8906 LLM_MODE=mock` 实测 SSE 里出现 `field_error(codes:["E_BLOOM_INVALID","E_SCHEMA_SHAPE"]) → phase:repair → field(修复后) → repair{fixed,codesAfter:[]} → done{errors:0,repairs:1}`，mock 模式因此覆盖 7/7 类事件。
    **仍然成立的缺口**：`replay` 模式仍只有 5/7 类（回放不能凭空造事件），演示修复环必须切 mock，界面上要能分辨模式，否则会被误读成 replay 也能修复。
-2. **录制上游是本地 stub**：本机无 `LLM_API_KEY`，3 条 fixture 走的是真实 `record` 代码路径 + 本地 OpenAI 兼容 stub，`meta.upstream` 如实写 `local-stub:127.0.0.1:8903`。有 Key 后必须重录，`meta` 才能写 `openai-compatible:api.deepseek.com`。
-3. **survey 契约仍未修**（审查问题 10）：`types.ts` 里 `answer` 对 four 种判分字段都是必填，所以"无答案的选择题"在 `survey` 里无法合法表达，`E_ANSWER_MISSING` 无从触发。I2 的门禁只做到"survey 里不许出现判分题"，没有改 DSL。
-4. **整表门禁的 meta 是候选壳**：`title`/`totalScore`/`objectives` 由节点反推（所以两条规则恒不触发），真实元信息要等 I4 的整表编辑器。
-5. **主 chunk 未拆**：约 505 kB，超过 500 kB 提示线。
+2. **录制上游曾是本地 stub（已关闭）**：I2 当时本机没有 `LLM_API_KEY`，3 条 fixture 走的是真实 `record` 代码路径 + 本地 OpenAI 兼容 stub，`meta.upstream` 如实写 `local-stub:127.0.0.1:8903`。
+   已关闭：拿到真实 DeepSeek Key 后用 `record` 模式重录了三条，`meta.upstream` 现在是 `openai-compatible:api.deepseek.com`，chunks 551/883/1230、totalMs 2962/3477/6197、usage 736+1230 / 734+883 / 741+551；`node packages/llm/src/check-fixtures.ts` 全部通过（含"chunks 等于行数""totalMs 与 sum(dt) 相差 ≤10%""回放行能被 `formItemSchema` 吃下"）；`LLM_MODE=replay` 实测三条都以 `done` 收尾。`docs/evidence/video-script.md` 第 3 步的"录完要改 meta"整段因此作废，改成一句"已经录过了，别再重录"。
+   副产物（真实模型暴露的质量问题，不是代码 bug）：`bio-survey` 那条只有 **4 个节点 + 5 条 `field_error`**——真模型在"学情调查问卷"需求上仍给题带了答案/分值，被 `E_SURVEY_HAS_ANSWER` 逐行拒掉，而 `replay` 下修复钩子是 `noopRepairHook`，补不回来。`prompt.ts:48` 已写了"问卷不要标准答案、不要分值，只能用 section / short / scale"，但请求体只带 `requirement`，模型未必判成 survey。**要改就得 bump `promptVersion`，三条 hash 全变、必须再录三条**，赶 10/29 冻结不动。
+3. **整表门禁的 meta 是候选壳**：`title`/`totalScore`/`objectives` 由节点反推（所以两条规则恒不触发），真实元信息要等 I4 的整表编辑器。
+4. **主 chunk 未拆**：约 505 kB，超过 500 kB 提示线。
 
 ### 脱敏记录
 

@@ -92,14 +92,22 @@ pnpm dev:web
 
 ---
 
-## 第 3 步（有 Key 才做）：把三条回放换成真实模型输出
+## 第 3 步（有 Key 才做）：确认三条回放是不是真模型录的
 
-### 3.1 为什么要做这一步
+### 3.1 先查现状，大概率已经录好了
 
-仓库里现在有 3 条录好的模型输出，它们的"来源"记录写的是 `local-stub`——意思是
-**当时是用一个本地假服务器录的**，格式是真的、模型不是。
-你有 Key，就能把这 3 条换成真 DeepSeek 输出，《计划》里"3 条真实回放"这句话才**字面成立**。
-不做这一步也能录视频，但面试/答辩被追问"这是真模型跑的吗"，你只能答"不是"。
+仓库里 3 条回放（`fixtures/replays/*.meta.json`）每一份都记了"来源"。查一下：
+
+```powershell
+cd D:\project1\intentform
+Select-String -Path fixtures\replays\*.meta.json -Pattern '"upstream"'
+```
+
+- 输出里是 **`openai-compatible:api.deepseek.com`** → **已经录过了**，这一步跳过，直接去第 4 步。
+- 输出里是 `local-stub:...` → 当时本机没 Key，是用本地假服务器录的：格式真、模型假。按 3.2–3.7 重录一遍，《计划》里"3 条真实回放"才字面成立。
+
+本项目当前状态是**前者**（2026-10-27 15:25 用真 Key 重录：chunks 551/883/1230，usage 736+1230 / 734+883 / 741+551），所以：
+**视频里直接说"三条回放是 DeepSeek 真实输出，录制时间见 meta.json"就行，不用再花一次钱。**
 
 ### 3.2 把 Key 放到仓库外面
 
@@ -223,6 +231,30 @@ git clean -f fixtures/                # 真正删除（只删未跟踪文件，�
 
 在录制服务的窗口按 `Ctrl+C`，或者直接关掉那个窗口。
 
+### 3.8 更快的一条命令（已经封装好，可选）
+
+上面 3.2–3.7 是"手动一遍"，好处是你能看见每一步。如果只是想把三条重录一次，
+仓库里有封装好的脚本，**一条命令顶前面全部**（仍然走真实的 `record` 代码路径，
+只是不用你手搓请求体、不用起服务、不用 curl）：
+
+```powershell
+cd D:\project1\intentform
+$env:LLM_API_KEY="PASTE_YOUR_KEY_HERE"   # 只在当前窗口有效，关掉就没了
+node --experimental-strip-types packages/llm/src/testing/record-fixtures.ts --real-upstream
+```
+
+它会：
+
+1. 从 `GENERATE_PRESETS` 里取三条需求原文（**和你点按钮用的是同一份常量**，不会因为改个错别字就回放未命中）；
+2. 依次打三次真实上游（**会产生费用，约 3 次请求、每次最多 4096 token**）；
+3. 正常结束才落盘，中途 `Ctrl+C` 不留半截文件；
+4. 打完三条的 `hash / recordedAt / upstream / chunks / totalMs / fields` 汇总表。
+
+跑完再回 §3.6 看两个检查（`check-fixtures.ts` 全部通过 + `git status --short fixtures/` 恰好 3 行 ` M`）。
+
+> 没设 `LLM_API_KEY` 就加了 `--real-upstream` 会直接报错停下，**不会**悄悄回退到本地 stub
+> ——这是故意的：静默回退会让你以为录到了真模型，答辩时被追问就下不来台。
+
 ---
 
 ## 第 4 步：录前检查（每次录之前都跑一遍）
@@ -283,6 +315,15 @@ node scripts/browser-closed-loop.mjs
 > `live` 模式输入「出 5 道题，但不要给分值」，模型照做 → 发布被拦、红字给出 `E_SCORE_SUM@items[i]`。
 > 没有 Key 就别演这一段，用时间线里的修复环比划更稳，也不会被追问"这不是真模型吗"。
 
+> **别在回放模式下点「高二生物·学情调查问卷」这个预置**（除非你想专门讲它）。
+> 三条回放现在是真模型录的，其中这一条恰好暴露了一个真实问题：DeepSeek 给"问卷"需求
+> 也带了答案和分值，被问卷规则（`E_SURVEY_HAS_ANSWER`）逐行拒掉，最后只剩 **4 个节点 + 5 条红色错误**。
+> 这**不是 bug、是模型没听话**，`replay` 下没有上游可以修，所以它就停在那儿。
+> 想讲这件事，段 5 之前加 20 秒："这一条我特意留着——真模型在问卷上会自作主张给答案，
+> 我的逐行校验把它拦下来了，所以你能看到 5 条错误；换 `live` 模式时修复环会去修它。"
+> 这段讲清楚反而是加分项（说明你的校验是真的在拦东西），但**别让它成为唯一一个问卷演示**：
+> 段 5 的问卷走「内置假数据」，干净、可控。
+
 
 ### 5.4 三种模式怎么切换
 
@@ -342,6 +383,8 @@ curl.exe -s http://127.0.0.1:8790/healthz
 | 视频里出现"待补" | 用了模板没填 | 录前把要展示的页面都点一遍 |
 | `pnpm dev:server` 报端口占用 | 8787 上还有旧进程 | `netstat -ano \| findstr :8787`，拿最后一列 PID 后 `taskkill /PID <pid> /F` |
 | 敲 `git` 命令报 `cannot spawn less` / `unable to execute pager 'less'` | 系统里找不到 `less`，git 默认还想拿它做分页 | 一次性：命令改成 `git --no-pager log --oneline -1`；永久：`git config --global core.pager cat`（本仓库已设好，只有新电脑要设） |
+| 回放模式下点「高二生物·学情调查问卷」，只出 4 个节点 + 5 条红字 | 真模型给问卷题带了答案/分值，被 `E_SURVEY_HAS_ANSWER` 拦下；回放里没有上游可修 | 正常现象，别当故障。要么按 §5.3 下面那段 20 秒话术讲它（加分），要么问卷演示走内置假数据 |
+| `--real-upstream` 报"需要真实的 LLM_API_KEY" | 当前窗口没设 Key | `$env:LLM_API_KEY="sk-..."` 再重跑；**不要**把 Key 写进仓库里的任何文件 |
 
 ---
 
@@ -360,6 +403,8 @@ curl.exe -s http://127.0.0.1:8790/healthz
 2. 如果视频里用的是某个 commit，而之后代码又变了：**不用重录**，但在 §13 写明"该段录制于 `<hash>`"。
 3. 如果做了第 3 步（重录三条回放），把这几个文件的改动单独提交一次，并在
    `docs/prompt-log/P02/summary.md` 的「已知缺口」里把"回放来自本地 stub"这条标成**已关闭**。
+   > 本项目已经做过这件事：`8858ee7 test(fixtures): record the three replays from the real upstream [P02]`，
+   > 缺口条目也已改成「已关闭」。所以除非你又动了 prompt 或需求文字，**不用再做**。
 
 ---
 
@@ -379,6 +424,8 @@ cd D:\project1\intentform; pnpm dev:web
 # 自检
 node scripts/verify.mjs
 node scripts/browser-closed-loop.mjs
+# 重录三条回放（只在 Key 已失效或改了需求文字时才用；会花钱）
+#   $env:LLM_API_KEY="sk-..."; node --experimental-strip-types packages/llm/src/testing/record-fixtures.ts --real-upstream
 # 当前版本（字幕用）
 git --no-pager log --oneline -1
 ```
