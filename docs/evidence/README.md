@@ -37,12 +37,25 @@ node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + std
 
 | 项 | 值 |
 |---|---|
-| commit | `21e06a1`（本目录与脚本的入库提交） |
-| 时间 | 2026-10-27 08:19（Asia/Shanghai） |
+| commit | `c6389b3`（本轮截图与脚本的入库提交） |
+| 时间 | 2026-10-27 08:23（Asia/Shanghai） |
 | 浏览器 | Chrome 156.0.8078.47，headless=new，CDP 驱动 |
-| 服务 | `LLM_MODE=mock`；每次运行自起 server + vite，端口临时分配 |
-| 结果 | 6 步全绿：登录 → 生成 → 发布（UI 路径）→ 学生页作答 → 提交 `20 / 20` → 看板新增 1 行 |
-| 截图 | `01-login.png`、`02-generate.png`、`03a-publish-panel.png`、`03b-published-dashboard.png`、`04-student.png`、`05-student-answered.png`、`06-submitted.png`、`07-dashboard.png` |
+| 服务 | `LLM_MODE=mock`；每次运行自起 server + vite，端口临时分配（本轮 59957/59958/59959） |
+| 结果 | 6 步全绿：登录 → 生成 → 发布（UI 路径，`publishMode: "ui"`）→ 学生页作答（可信鼠标事件）→ 提交 `20 / 20` → 看板新增 1 行 |
+| 截图 | `01-login.png`、`02-generate.png`、`03a-publish-panel.png`、`03b-published-dashboard.png`、`04-student.png`、`05-student-answered.png`、`06-submitted.png`、`07-dashboard.png`（全部同一次运行，08:23:05–06） |
+
+选项类控件在这一轮改由 CDP `Input.dispatchMouseEvent` 点击（可信输入，走命中测试与默认行为），
+并回读 `getBoundingClientRect()` 断言触控目标 ≥44px（实测 50px）。合成 `element.click()`
+也能点亮，但它绕过命中测试——控件被遮挡、尺寸不足同样会"点中"，证明力弱。
+
+## 这份证据还差什么（诚实口径）
+
+1. **版本冲突只有 HTTP 级证据（VC2），没有浏览器级证据。** 制造"已换版"需要第二版 draft，而修改表单的
+   路由（Patch）排在 I7；现在只能用 `node:sqlite` 直插一行 `form_versions`，那就不是"全链路只经 HTTP"了。
+   界面侧的冲突分支（`fill-conflict`）已有单测，缺的是真点击——等 I7 的 Patch 上线后补这一段。
+2. **生成步骤强制 `LLM_MODE=mock`。** 它证明链路通电，不证明模型产出质量；后者属于 §7 的 live 说明与
+   I6 的 `pnpm eval`（整份需求达标率）。
+3. **只在 Windows + Chrome 156 验证过。** 换浏览器/系统需要重跑一遍再改这一栏，否则视为证据过期。
 
 这次运行抓到的真实缺陷：单选（`radio`）选不亮——`web/src/fill/StudentField.tsx` 用只认数组的
 `selectedValues()` 算选中态，而单选在状态里存的是字符串，于是"点得动、存得下、界面上不亮"。
