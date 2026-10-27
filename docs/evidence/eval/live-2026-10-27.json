@@ -1,0 +1,2268 @@
+{
+  "meta": {
+    "runId": "live-2026-10-27T13-42-25-v3",
+    "mode": "live",
+    "sourceNote": "真实上游：这一组才代表模型能力",
+    "label": "v3",
+    "setFilter": "all",
+    "only": null,
+    "total": 30,
+    "judgeable": 28,
+    "clarifyProbes": 2,
+    "setSha256": "6a64e2f79ee0e22494b91a74177096307e7f6e6160a7d996b6bbef6686f2c70b",
+    "judgeVersion": "fitness.v3",
+    "model": "deepseek-chat",
+    "promptVersion": "generate.v1",
+    "schemaVersion": "1",
+    "startedAt": "2026-10-27T13:42:25.040Z",
+    "durationMs": 142257,
+    "node": "v24.20.0",
+    "platform": "win32 x64"
+  },
+  "summary": {
+    "judged": 28,
+    "passed": 12,
+    "rate": 0.42857142857142855,
+    "noOutput": 0,
+    "capability": {
+      "gap": 15,
+      "expressible": 13,
+      "expressiblePassed": 12,
+      "expressibleRate": 0.9230769230769231,
+      "gapIds": [
+        "preset-math-quadratic",
+        "preset-english-vocab",
+        "q04-chemical-equation",
+        "q05-classical-particle",
+        "q06-modern-history",
+        "q07-fraction-add",
+        "q09-cell",
+        "q10-sequence",
+        "q12-poem-recite",
+        "q13-induction",
+        "q18-philosophy",
+        "q21-set-theory",
+        "q22-diplomacy",
+        "q24-organic",
+        "q26-color"
+      ]
+    },
+    "blueprint": {
+      "exact": 12,
+      "rate": 0.42857142857142855,
+      "meanAbsCountDelta": 0,
+      "typeMismatch": 1,
+      "scoreMismatch": 15,
+      "objectiveGaps": 0
+    },
+    "validation": {
+      "fieldErrors": 8,
+      "byCode": {
+        "E_SURVEY_HAS_ANSWER": 8
+      },
+      "firstPass": 11,
+      "gateBlocked": 0,
+      "answerPolicyViolations": 0
+    },
+    "repair": {
+      "attempts": 8,
+      "fixed": 8,
+      "failed": 0,
+      "rounds": {
+        "1": 8,
+        "2": 0
+      },
+      "irrelevantEdits": 0
+    },
+    "cost": {
+      "totalMs": 117577,
+      "meanMs": 3919,
+      "maxMs": 6395,
+      "promptTokens": 21512,
+      "completionTokens": 22140
+    },
+    "failures": [
+      {
+        "id": "preset-math-quadratic",
+        "requirement": "出一份初二数学《二次函数》的入门测验，8 道题：4 道单选、2 道填空、2 道简答，覆盖开口方向、顶点坐标、对称轴三个知识点，难度偏基础，每题 5 分。",
+        "failed": [
+          "total-score: 需求 40 分，逐题合计 30 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "preset-english-vocab",
+        "requirement": "生成一份高一英语词汇周测，10 道题：6 道单选考词义辨析、2 道填空考词形变化、2 道简答考用词造句，知识点是 Unit 3 的动词短语，满分 50 分。",
+        "failed": [
+          "total-score: 需求 50 分，逐题合计 40 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "preset-bio-survey",
+        "requirement": "做一个高二生物的课前学情调查问卷，8 道题：3 道单选了解预习情况、2 道量表题了解学习信心、2 道填空题收集具体困惑、1 道简答题让学生写出最想搞懂的实验。这是问卷，不要标准答案，也不要分值。",
+        "failed": [
+          "type-mix: 题型偏差：single 需求 3 实得 0；fill 需求 2 实得 0；short 需求 1 实得 6"
+        ]
+      },
+      {
+        "id": "q04-chemical-equation",
+        "requirement": "初三化学化学方程式专题练习，8 道题：4 道单选、2 道填空、2 道简答，共 40 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 40 分，逐题合计 30 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q05-classical-particle",
+        "requirement": "高一语文文言虚词辨析小测，6 道题：4 道单选、2 道简答，共 30 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 30 分，逐题合计 20 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q06-modern-history",
+        "requirement": "高三历史中国近代史的单元测验，10 道题：6 道单选、2 道填空、2 道简答，共 50 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 50 分，逐题合计 40 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q07-fraction-add",
+        "requirement": "小学四年级数学分数加减法随堂测，6 道题：3 道单选、2 道填空、1 道简答，每题 5 分，共 30 分。",
+        "failed": [
+          "total-score: 需求 30 分，逐题合计 25 分（差 -5），其中简答题无分值字段",
+          "short-unscored: 1 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q09-cell",
+        "requirement": "初二生物细胞结构随堂测，6 道题：3 道单选、2 道填空、1 道简答，共 30 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 30 分，逐题合计 25 分（差 -5），其中简答题无分值字段",
+          "short-unscored: 1 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q10-sequence",
+        "requirement": "高二数学数列求和的专题测验，8 道题：4 道单选、2 道填空、2 道简答，共 40 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 40 分，逐题合计 30 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q12-poem-recite",
+        "requirement": "小学六年级语文古诗默写检测，5 道题：3 道填空、2 道简答，共 25 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 25 分，逐题合计 15 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q13-induction",
+        "requirement": "高三物理电磁感应综合测验，10 道题：5 道单选、3 道填空、2 道简答，共 50 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 50 分，逐题合计 40 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q18-philosophy",
+        "requirement": "高二政治哲学基础小测，6 道题：4 道单选、2 道简答，共 30 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 30 分，逐题合计 20 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q21-set-theory",
+        "requirement": "高一数学集合运算小测，6 道题：3 道单选、2 道填空、1 道简答，共 30 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 30 分，逐题合计 25 分（差 -5），其中简答题无分值字段",
+          "short-unscored: 1 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q22-diplomacy",
+        "requirement": "初二历史新中国外交成就小测，5 道题：3 道单选、2 道简答，共 25 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 25 分，逐题合计 15 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q24-organic",
+        "requirement": "高三化学有机推断专项测验，4 道题：2 道单选、2 道简答，共 20 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 20 分，逐题合计 10 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      },
+      {
+        "id": "q26-color",
+        "requirement": "初一美术色彩基础小测，5 道题：3 道单选、2 道简答，共 25 分，每题 5 分。",
+        "failed": [
+          "total-score: 需求 25 分，逐题合计 15 分（差 -10），其中简答题无分值字段",
+          "short-unscored: 2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        ]
+      }
+    ]
+  },
+  "records": [
+    {
+      "id": "preset-math-quadratic",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "出一份初二数学《二次函数》的入门测验，8 道题：4 道单选、2 道填空、2 道简答，覆盖开口方向、顶点坐标、对称轴三个知识点，难度偏基础，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3976,
+      "eventCount": 19,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 734,
+        "completionTokens": 834,
+        "ms": 3968
+      },
+      "done": {
+        "fields": 9,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3968
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 9 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：8 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 fill×2 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 40 分，逐题合计 30 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "blueprint",
+          "name": "objectives",
+          "ok": true,
+          "detail": "知识点落在题干里：开口方向、顶点坐标、对称轴"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "preset-english-vocab",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "生成一份高一英语词汇周测，10 道题：6 道单选考词义辨析、2 道填空考词形变化、2 道简答考用词造句，知识点是 Unit 3 的动词短语，满分 50 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 5955,
+      "eventCount": 21,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 736,
+        "completionTokens": 1209,
+        "ms": 5949
+      },
+      "done": {
+        "fields": 11,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 5949
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 11 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：10 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×6 fill×2 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 50 分，逐题合计 40 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "blueprint",
+          "name": "objectives",
+          "ok": true,
+          "detail": "知识点落在题干里：动词短语"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "preset-bio-survey",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "做一个高二生物的课前学情调查问卷，8 道题：3 道单选了解预习情况、2 道量表题了解学习信心、2 道填空题收集具体困惑、1 道简答题让学生写出最想搞懂的实验。这是问卷，不要标准答案，也不要分值。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 4490,
+      "eventCount": 30,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {
+        "E_SURVEY_HAS_ANSWER": 5
+      },
+      "repairs": [
+        {
+          "id": "q01",
+          "round": 1,
+          "status": "fixed",
+          "codesBefore": [
+            "E_SURVEY_HAS_ANSWER"
+          ],
+          "codesAfter": []
+        },
+        {
+          "id": "q02",
+          "round": 1,
+          "status": "fixed",
+          "codesBefore": [
+            "E_SURVEY_HAS_ANSWER"
+          ],
+          "codesAfter": []
+        },
+        {
+          "id": "q03",
+          "round": 1,
+          "status": "fixed",
+          "codesBefore": [
+            "E_SURVEY_HAS_ANSWER"
+          ],
+          "codesAfter": []
+        },
+        {
+          "id": "q06",
+          "round": 1,
+          "status": "fixed",
+          "codesBefore": [
+            "E_SURVEY_HAS_ANSWER"
+          ],
+          "codesAfter": []
+        },
+        {
+          "id": "q07",
+          "round": 1,
+          "status": "fixed",
+          "codesBefore": [
+            "E_SURVEY_HAS_ANSWER"
+          ],
+          "codesAfter": []
+        }
+      ],
+      "usage": {
+        "promptTokens": 741,
+        "completionTokens": 548,
+        "ms": 4470
+      },
+      "done": {
+        "fields": 9,
+        "errors": 0,
+        "repairs": 5,
+        "ms": 4470
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 9 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：survey"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：8 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": false,
+          "detail": "题型偏差：single 需求 3 实得 0；fill 需求 2 实得 0；short 需求 1 实得 6"
+        },
+        {
+          "layer": "validation",
+          "name": "survey-no-answer",
+          "ok": true,
+          "detail": "问卷未携带答案与分值（规则 R3/R5 成立）"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [
+          "single 需求 3 实得 0",
+          "fill 需求 2 实得 0",
+          "short 需求 1 实得 6"
+        ],
+        "scoreDelta": null,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q02-linear-equation",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "出一份初一数学一元一次方程的随堂小测，6 道题：4 道单选、2 道填空，每题 5 分，共 30 分，覆盖移项和合并同类项。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 4252,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 726,
+        "completionTokens": 927,
+        "ms": 4234
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 4234
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 fill×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": true,
+          "detail": "分值一致：逐题合计 30 分"
+        },
+        {
+          "layer": "blueprint",
+          "name": "objectives",
+          "ok": true,
+          "detail": "知识点落在题干里：移项、合并同类项"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": 0,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q03-refraction",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "初二物理《光的折射》课堂检测，5 道题：3 道单选、2 道填空，共 25 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 4483,
+      "eventCount": 16,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 715,
+        "completionTokens": 690,
+        "ms": 4465
+      },
+      "done": {
+        "fields": 6,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 4465
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 6 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：5 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 fill×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": true,
+          "detail": "分值一致：逐题合计 25 分"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": 0,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q04-chemical-equation",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "初三化学化学方程式专题练习，8 道题：4 道单选、2 道填空、2 道简答，共 40 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 6395,
+      "eventCount": 19,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 719,
+        "completionTokens": 1334,
+        "ms": 6393
+      },
+      "done": {
+        "fields": 9,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 6393
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 9 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：8 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 fill×2 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 40 分，逐题合计 30 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q05-classical-particle",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "高一语文文言虚词辨析小测，6 道题：4 道单选、2 道简答，共 30 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 4945,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 716,
+        "completionTokens": 858,
+        "ms": 4928
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 4928
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 30 分，逐题合计 20 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q06-modern-history",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "高三历史中国近代史的单元测验，10 道题：6 道单选、2 道填空、2 道简答，共 50 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 5202,
+      "eventCount": 21,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 720,
+        "completionTokens": 1088,
+        "ms": 5184
+      },
+      "done": {
+        "fields": 11,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 5184
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 11 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：10 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×6 fill×2 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 50 分，逐题合计 40 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q07-fraction-add",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "小学四年级数学分数加减法随堂测，6 道题：3 道单选、2 道填空、1 道简答，每题 5 分，共 30 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3856,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 722,
+        "completionTokens": 858,
+        "ms": 3838
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3838
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 fill×2 short×1"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 30 分，逐题合计 25 分（差 -5），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "1 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -5,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q08-mole",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "高一化学物质的量（摩尔）小测，5 道题：3 道单选、1 道填空、1 道数值题，共 25 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 4368,
+      "eventCount": 16,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 722,
+        "completionTokens": 930,
+        "ms": 4364
+      },
+      "done": {
+        "fields": 6,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 4364
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 6 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：5 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 fill×1 number×1"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": true,
+          "detail": "分值一致：逐题合计 25 分"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": 0,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q09-cell",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "初二生物细胞结构随堂测，6 道题：3 道单选、2 道填空、1 道简答，共 30 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 2933,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 720,
+        "completionTokens": 572,
+        "ms": 2916
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 2916
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 fill×2 short×1"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 30 分，逐题合计 25 分（差 -5），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "1 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -5,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q10-sequence",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "高二数学数列求和的专题测验，8 道题：4 道单选、2 道填空、2 道简答，共 40 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 5136,
+      "eventCount": 19,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 720,
+        "completionTokens": 1269,
+        "ms": 5119
+      },
+      "done": {
+        "fields": 9,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 5119
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 9 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：8 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 fill×2 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 40 分，逐题合计 30 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q11-tense",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "初一英语时态专项练习，6 道题：4 道单选、2 道填空，共 30 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3331,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 713,
+        "completionTokens": 685,
+        "ms": 3313
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3313
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 fill×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": true,
+          "detail": "分值一致：逐题合计 30 分"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": 0,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q12-poem-recite",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "小学六年级语文古诗默写检测，5 道题：3 道填空、2 道简答，共 25 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 2623,
+      "eventCount": 16,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 715,
+        "completionTokens": 501,
+        "ms": 2606
+      },
+      "done": {
+        "fields": 6,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 2606
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 6 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：5 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：fill×3 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 25 分，逐题合计 15 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q13-induction",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "高三物理电磁感应综合测验，10 道题：5 道单选、3 道填空、2 道简答，共 50 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 5857,
+      "eventCount": 21,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 719,
+        "completionTokens": 1200,
+        "ms": 5839
+      },
+      "done": {
+        "fields": 11,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 5839
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 11 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：10 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×5 fill×3 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 50 分，逐题合计 40 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q14-climate",
+      "set": "debug",
+      "judgeable": true,
+      "requirement": "初二地理气候类型随堂测，6 道题：4 道单选、2 道填空，共 30 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3955,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 714,
+        "completionTokens": 716,
+        "ms": 3937
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3937
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 fill×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": true,
+          "detail": "分值一致：逐题合计 30 分"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": 0,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q15-stress-survey",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "做一个高一年级学习压力调查问卷，8 道题：3 道单选、2 道量表题、2 道填空、1 道简答。这是问卷，不要标准答案，也不要分值。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3031,
+      "eventCount": 19,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 724,
+        "completionTokens": 509,
+        "ms": 3014
+      },
+      "done": {
+        "fields": 9,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3014
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 9 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：survey"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：8 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 fill×2 short×1 scale×2"
+        },
+        {
+          "layer": "validation",
+          "name": "survey-no-answer",
+          "ok": true,
+          "detail": "问卷未携带答案与分值（规则 R3/R5 成立）"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": null,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q16-service-survey",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "做一份初三课后服务满意度问卷，6 道题：3 道单选、2 道量表题、1 道简答。问卷不要答案和分值。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 4007,
+      "eventCount": 24,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {
+        "E_SURVEY_HAS_ANSWER": 3
+      },
+      "repairs": [
+        {
+          "id": "q01",
+          "round": 1,
+          "status": "fixed",
+          "codesBefore": [
+            "E_SURVEY_HAS_ANSWER"
+          ],
+          "codesAfter": []
+        },
+        {
+          "id": "q02",
+          "round": 1,
+          "status": "fixed",
+          "codesBefore": [
+            "E_SURVEY_HAS_ANSWER"
+          ],
+          "codesAfter": []
+        },
+        {
+          "id": "q03",
+          "round": 1,
+          "status": "fixed",
+          "codesBefore": [
+            "E_SURVEY_HAS_ANSWER"
+          ],
+          "codesAfter": []
+        }
+      ],
+      "usage": {
+        "promptTokens": 715,
+        "completionTokens": 446,
+        "ms": 3989
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 3,
+        "ms": 3989
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：survey"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 short×1 scale×2"
+        },
+        {
+          "layer": "validation",
+          "name": "survey-no-answer",
+          "ok": true,
+          "detail": "问卷未携带答案与分值（规则 R3/R5 成立）"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": null,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q17-family-survey",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "做一份小学家长家庭教育情况调查，6 道题：2 道单选、2 道量表题、2 道简答。属于问卷，不要标准答案，也不要分数。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 2818,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 719,
+        "completionTokens": 432,
+        "ms": 2802
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 2802
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：survey"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×2 short×2 scale×2"
+        },
+        {
+          "layer": "validation",
+          "name": "survey-no-answer",
+          "ok": true,
+          "detail": "问卷未携带答案与分值（规则 R3/R5 成立）"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": null,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q18-philosophy",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "高二政治哲学基础小测，6 道题：4 道单选、2 道简答，共 30 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 4122,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 714,
+        "completionTokens": 674,
+        "ms": 4104
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 4104
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 30 分，逐题合计 20 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q19-data-processing",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "初一信息技术数据处理测验，5 道题：3 道单选、2 道数值题，共 25 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3392,
+      "eventCount": 16,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 712,
+        "completionTokens": 606,
+        "ms": 3374
+      },
+      "done": {
+        "fields": 6,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3374
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 6 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：5 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 number×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": true,
+          "detail": "分值一致：逐题合计 25 分"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": 0,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q20-cloze",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "初三英语完形与语法综合测验，8 道题：6 道单选、2 道填空，共 40 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 4589,
+      "eventCount": 19,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 715,
+        "completionTokens": 942,
+        "ms": 4572
+      },
+      "done": {
+        "fields": 9,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 4572
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 9 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：8 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×6 fill×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": true,
+          "detail": "分值一致：逐题合计 40 分"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": 0,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q21-set-theory",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "高一数学集合运算小测，6 道题：3 道单选、2 道填空、1 道简答，共 30 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3630,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 719,
+        "completionTokens": 816,
+        "ms": 3613
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3613
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 fill×2 short×1"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 30 分，逐题合计 25 分（差 -5），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "1 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -5,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q22-diplomacy",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "初二历史新中国外交成就小测，5 道题：3 道单选、2 道简答，共 25 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3198,
+      "eventCount": 16,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 715,
+        "completionTokens": 534,
+        "ms": 3180
+      },
+      "done": {
+        "fields": 6,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3180
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 6 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：5 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 25 分，逐题合计 15 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q23-lab-interest",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "做一份高二生物实验兴趣问卷，6 道题：3 道单选、1 道量表题、2 道填空。问卷，不要答案，不要分值。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 2407,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 716,
+        "completionTokens": 387,
+        "ms": 2390
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 2390
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：survey"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 fill×2 scale×1"
+        },
+        {
+          "layer": "validation",
+          "name": "survey-no-answer",
+          "ok": true,
+          "detail": "问卷未携带答案与分值（规则 R3/R5 成立）"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": null,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q24-organic",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "高三化学有机推断专项测验，4 道题：2 道单选、2 道简答，共 20 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3666,
+      "eventCount": 15,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 714,
+        "completionTokens": 610,
+        "ms": 3649
+      },
+      "done": {
+        "fields": 5,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3649
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 5 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：4 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×2 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 20 分，逐题合计 10 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q25-time-calc",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "小学三年级数学时间计算随堂测，6 道题：4 道单选、2 道填空，每题 5 分，共 30 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 3608,
+      "eventCount": 17,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 715,
+        "completionTokens": 761,
+        "ms": 3590
+      },
+      "done": {
+        "fields": 7,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 3590
+      },
+      "passed": true,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 7 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：6 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×4 fill×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": true,
+          "detail": "分值一致：逐题合计 30 分"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": 0,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "q26-color",
+      "set": "holdout",
+      "judgeable": true,
+      "requirement": "初一美术色彩基础小测，5 道题：3 道单选、2 道简答，共 25 分，每题 5 分。",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 2683,
+      "eventCount": 16,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 714,
+        "completionTokens": 460,
+        "ms": 2667
+      },
+      "done": {
+        "fields": 6,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 2667
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "blueprint",
+          "name": "form-present",
+          "ok": true,
+          "detail": "成品有 6 个结构节点"
+        },
+        {
+          "layer": "blueprint",
+          "name": "kind",
+          "ok": true,
+          "detail": "类型一致：quiz"
+        },
+        {
+          "layer": "blueprint",
+          "name": "count",
+          "ok": true,
+          "detail": "题量一致：5 题"
+        },
+        {
+          "layer": "blueprint",
+          "name": "type-mix",
+          "ok": true,
+          "detail": "题型一致：single×3 short×2"
+        },
+        {
+          "layer": "blueprint",
+          "name": "total-score",
+          "ok": false,
+          "detail": "需求 25 分，逐题合计 15 分（差 -10），其中简答题无分值字段"
+        },
+        {
+          "layer": "capability",
+          "name": "short-unscored",
+          "ok": false,
+          "detail": "2 道简答题没有分值字段（schema 不支持），该需求的总分在当前结构下无法表达"
+        }
+      ],
+      "deviation": {
+        "countDelta": 0,
+        "typeDiff": [],
+        "scoreDelta": -10,
+        "missingObjectives": []
+      }
+    },
+    {
+      "id": "c01-vague-english",
+      "set": "holdout",
+      "judgeable": false,
+      "requirement": "帮我出一份英语卷子",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 2539,
+      "eventCount": 16,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 686,
+        "completionTokens": 483,
+        "ms": 2522
+      },
+      "done": {
+        "fields": 6,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 2522
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "clarify",
+          "name": "clarify-needed",
+          "ok": false,
+          "detail": "该需求缺槽位（题量/题型/分值），本应先追问再生成；产品当前没有追问层"
+        }
+      ],
+      "deviation": null
+    },
+    {
+      "id": "c02-vague-survey",
+      "set": "holdout",
+      "judgeable": false,
+      "requirement": "做个问卷",
+      "httpStatus": 200,
+      "failure": null,
+      "ms": 2130,
+      "eventCount": 18,
+      "gateBlocked": false,
+      "terminalError": null,
+      "errorCodes": {},
+      "repairs": [],
+      "usage": {
+        "promptTokens": 682,
+        "completionTokens": 261,
+        "ms": 2113
+      },
+      "done": {
+        "fields": 8,
+        "errors": 0,
+        "repairs": 0,
+        "ms": 2113
+      },
+      "passed": false,
+      "checks": [
+        {
+          "layer": "clarify",
+          "name": "clarify-needed",
+          "ok": false,
+          "detail": "该需求缺槽位（题量/题型/分值），本应先追问再生成；产品当前没有追问层"
+        }
+      ],
+      "deviation": null
+    }
+  ]
+}
