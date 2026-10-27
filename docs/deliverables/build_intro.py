@@ -682,7 +682,7 @@ code_block(
         "pnpm typecheck && npx vitest run && pnpm lint",
         "node scripts/verify.mjs              # 期望：VC1..VC4 全部通过，exit 0",
         "node scripts/browser-closed-loop.mjs # 期望：六步截图落盘 + stdout 打 JSON 摘要（需本机 Chrome）",
-        "LLM_MODE=replay pnpm eval             # 期望：整份达标率报告，不用 Key（数字与 live 不同，仅验通路）",
+        "pnpm eval --mode replay               # 不用 Key：复核 3 条既有录像，其余记 miss，仅验通路与判据",
     ],
 )
 para(
@@ -957,7 +957,7 @@ code_block(
         "npx vitest run                        # 53 文件 / 590 用例",
         "node scripts/verify.mjs               # VC1–VC4，4/4",
         "node scripts/browser-closed-loop.mjs  # 6 步 8 图（需 Chrome，找不到 exit 2）",
-        "LLM_MODE=replay pnpm eval             # 整份达标率报告，不用 Key",
+        "pnpm eval --mode replay               # 不用 Key（只复核 3 条既有录像）",
     ],
 )
 para(doc, "期望输出（verify.mjs）：", size=10, space_after=2)

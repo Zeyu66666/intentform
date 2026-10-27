@@ -14,6 +14,7 @@
  *
  * 用法：
  *   node eval/run.mjs --mode mock                 # 不联网，演练链路与判据
+ *   LLM_MODE=replay node eval/run.mjs             # 不写 --mode 时跟随 LLM_MODE（缺省 mock） 
  *   node eval/run.mjs --mode replay --set debug   # 复核 3 条回放录像
  *   node --env-file=D:/project1/.secrets/live.env eval/run.mjs --mode live
  *   常用开关：--set all|debug|holdout  --only id1,id2  --limit 5  --delay-ms 0
@@ -44,7 +45,11 @@ const SOURCE_NOTE = {
 };
 
 function parseArgs(argv) {
-  const args = { mode: "mock", set: "all", only: null, limit: 0, delayMs: 0, timeoutMs: 120_000, out: "eval/runs", label: "" };
+  // 默认模式跟随仓库既有约定 LLM_MODE（服务端、录制脚本都认这个变量），没有则 mock。
+  // 这样 `LLM_MODE=replay pnpm eval` 与 `pnpm eval --mode replay` 等价，不会出现
+  // 「设了环境变量却仍在跑 mock」这种静默不一致。
+  const envMode = VALID_MODES.includes(process.env.LLM_MODE) ? process.env.LLM_MODE : "mock";
+  const args = { mode: envMode, set: "all", only: null, limit: 0, delayMs: 0, timeoutMs: 120_000, out: "eval/runs", label: "" };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (!token.startsWith("--")) continue;
