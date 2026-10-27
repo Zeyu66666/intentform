@@ -6,13 +6,17 @@
  * 回放当场未命中（见 `packages/schema/src/presets.ts` 顶部注释）。
  */
 
-import { GENERATE_PRESETS, LIMITS } from "@intentform/schema";
+import { FORM_KINDS, GENERATE_PRESETS, LIMITS, type FormKind } from "@intentform/schema";
 
+import { FORM_KIND_LABELS } from "../dashboard/model";
 import type { RunStatus } from "../stream/generate-machine";
 
 export interface RequirementPanelProps {
   readonly requirement: string;
   readonly status: RunStatus;
+  /** 要生成的表类型：测验判分、问卷不判分（`survey` 会把分值/答案从草稿里剥掉）。 */
+  readonly kind: FormKind;
+  readonly onKindChange: (kind: FormKind) => void;
   readonly onRequirementChange: (value: string) => void;
   readonly onStart: () => void;
   readonly onCancel: () => void;
@@ -40,6 +44,8 @@ const STATUS_TONE: Record<RunStatus, string> = {
 export function RequirementPanel({
   requirement,
   status,
+  kind,
+  onKindChange,
   onRequirementChange,
   onStart,
   onCancel,
@@ -101,6 +107,36 @@ export function RequirementPanel({
             {preset.label}
           </button>
         ))}
+      </section>
+
+      <section className="flex flex-col gap-1">
+        <h3 className="m-0 text-xs font-semibold text-muted">表单类型</h3>
+        <div role="group" aria-label="表单类型" className="flex gap-1">
+          {FORM_KINDS.map((value) => {
+            const selected = value === kind;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={selected}
+                disabled={streaming}
+                onClick={() => {
+                  onKindChange(value);
+                }}
+                className={`flex-1 rounded-sm border px-2 py-1 text-xs disabled:opacity-50 ${
+                  selected
+                    ? "border-accent bg-accent text-white"
+                    : "border-line bg-surface text-muted hover:border-accent hover:text-accent"
+                }`}
+              >
+                {FORM_KIND_LABELS[value]}
+              </button>
+            );
+          })}
+        </div>
+        {kind === "survey" ? (
+          <p className="m-0 text-xs text-muted">问卷不判分，题目不带答案</p>
+        ) : null}
       </section>
 
       <div className="mt-auto flex flex-col gap-1">

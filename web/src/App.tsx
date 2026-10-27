@@ -14,9 +14,15 @@
 
 import { useMemo, useState } from "react";
 
+import type { FormKind } from "@intentform/schema";
+
+import { createHttpClient } from "./api/http";
+import { createTeacherApi } from "./api/teacher";
 import { RequirementPanel } from "./panels/RequirementPanel";
 import { PreviewPanel, type PreviewMode } from "./panels/PreviewPanel";
 import { TimelinePanel } from "./panels/TimelinePanel";
+import { PublishPanel } from "./publish/PublishPanel";
+import type { PublishedForm } from "./publish/publish-flow";
 import { readWebConfig } from "./config";
 import { selectPreviewFields, selectUnresolvedErrors, type RunStatus } from "./stream/generate-machine";
 import { createDemoStreamSource, DEMO_NOTICE } from "./stream/demo-source";
@@ -72,8 +78,17 @@ export function App(): JSX.Element {
 
   const [requirement, setRequirement] = useState("");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("edit");
+  const [kind, setKind] = useState<FormKind>("quiz");
+
+  // 发布结果留在 App：`PublishPanel` 只在 done 之后挂载，把结果存在它自己里面的化，
+  // 下面任何一次重渲染（预览视角切换、时间线更新）都可能把刚拿到的短链弄丢。
+  const [published, setPublished] = useState<PublishedForm | null>(null);
+
+  // 唯一的 HTTP 出口（`credentials: "include"` + CSRF 头都在 `http.ts` 里）。
+  const api = useMemo(() => createTeacherApi(createHttpClient()), []);
 
   const fields = selectPreviewFields(state);
+  const fieldNodes = useMemo(() => fields.map((entry) => entry.node), [fields]);
   const errors = selectUnresolvedErrors(state);
   const terminalText = TERMINAL_TEXT[state.status];
   const terminalTone =
@@ -100,22 +115,38 @@ export function App(): JSX.Element {
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-[var(--layout-gap)] overflow-y-auto p-2 xl:grid-cols-[var(--layout-left)_minmax(0,1fr)_var(--layout-right)] xl:overflow-hidden">
         <section
           aria-label="需求输入"
-          className="min-h-0 min-w-0 overflow-hidden rounded-md border border-line bg-surface"
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-line bg-surface"
         >
-          <RequirementPanel
-            requirement={requirement}
-            status={state.status}
-            onRequirementChange={setRequirement}
-            onStart={() => {
-              start(requirement);
-            }}
-            onCancel={cancel}
-            onReset={() => {
-              reset();
-              setRequirement("");
-            }}
-            demoNotice={mode === "fixture" ? DEMO_NOTICE : null}
-          />
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <RequirementPanel
+              requirement={requirement}
+              status={state.status}
+              kind={kind}
+              onKindChange={setKind}
+              onRequirementChange={setRequirement}
+              onStart={() => {
+                setPublished(null);
+                start(requirement);
+              }}
+              onCancel={cancel}
+              onReset={() => {
+                reset();
+                setRequirement("");
+                setPublished(null);
+              }}
+              demoNotice={mode === "fixture" ? DEMO_NOTICE : null}
+            />
+          </div>
+          {state.status === "done" ? (
+            <PublishPanel
+              fields={fieldNodes}
+              requirementText={requirement}
+              kind={kind}
+              api={api}
+              published={published}
+              onPublished={setPublished}
+            />
+          ) : null}
         </section>
 
         <section
