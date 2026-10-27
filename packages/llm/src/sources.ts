@@ -309,7 +309,9 @@ export function mockLines(requirement: string): readonly string[] {
       knowledgePoint: "kp_basic",
       answer: { value: 9, tolerance: 0 },
     },
-    { type: "short", id: "q_short", title: "示例简答题：还有什么想补充的？", required: false },
+    // 省赛 R-01 之后简答也带分值：它是唯一走「教师人工批改」的题型，mock 里必须有一个，
+    // 否则演示链路永远看不到「待批改」这一态（浏览器闭环第 8 步批的就是这一题）。
+    { type: "short", id: "q_short", title: "示例简答题：还有什么想补充的？", required: false, score: 5 },
   ];
   return lines.map((line) => `${JSON.stringify(line)}\n`);
 }

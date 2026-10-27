@@ -13,7 +13,7 @@ import type { ZodError } from "zod";
 
 import { schemaError, type SchemaError } from "./errors.ts";
 import { formSchema } from "./types.ts";
-import type { FormItem, FormSchema, ScoredField } from "./types.ts";
+import type { FormItem, FormSchema, ScorableField, ScoredField } from "./types.ts";
 
 /** LaTeX 校验函数：返回 `null` 表示可解析，返回字符串表示错误原因。 */
 export type LatexChecker = (text: string) => string | null;
@@ -28,13 +28,13 @@ export type ValidationResult =
   | { readonly ok: false; readonly errors: readonly SchemaError[] };
 
 /**
- * 「可判分题型」：选择题 / 填空 / 数值。
+ * 「可自动判分题型」：选择题 / 填空 / 数值。
  *
  * 注意它与「这道题**带不带**答案、带不带分值」是两件事——《计划 v3.0》附录 A 之后
  * 结构上四项都可选，一道 single 可能既没 score 也没 answer（survey 里的选择题就该这样）。
  * 所以判断 kind 约束时要同时看 `type` 与字段是否存在，不能只看 type。
  */
-function isScoredItem(item: FormItem): item is ScoredField {
+function isAutoGradedItem(item: FormItem): item is ScoredField {
   return (
     item.type === "single" ||
     item.type === "multi" ||
@@ -43,9 +43,21 @@ function isScoredItem(item: FormItem): item is ScoredField {
   );
 }
 
-/** 取值：没有分值的题按 0 计（survey 无分值语义）。 */
+/**
+ * 「结构上带 score 的题型」：自动判分四种 + **简答**。
+ *
+ * 省赛 R-01 之后简答也有分值，但它要人工批改，所以：
+ * - 核算 `totalScore`、校验 `objectives` 引用、阻止 survey 带分值 → 用这个（`hasScore`）；
+ * - 累加自动得分、要求"必须有 answer" → 用 `isAutoGradedItem`。
+ * 两个概念混用一次，就会出现「简答必须有 answer」或「简答分值不算总分」这类错。
+ */
+function hasScore(item: FormItem): item is ScorableField {
+  return isAutoGradedItem(item) || item.type === "short";
+}
+
+/** 取值：没有分值的题按 0 计（survey 无分值语义；quiz 的简答允许不给分值）。 */
 function scoreOf(item: FormItem): number {
-  return isScoredItem(item) ? (item.score ?? 0) : 0;
+  return hasScore(item) ? (item.score ?? 0) : 0;
 }
 
 /** 需要做 LaTeX 校验的文本片段（题干、分节描述、选项文本、量表锚点）。 */
@@ -210,9 +222,12 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
 
     // kind 约束（附录 A 表第 1 行）：quiz 判分题必有答案；survey 既不许答案也不许分值。
     // 这两条正是审查问题 10 说"永远不可能触发"的规则——结构放开之后才真正生效。
-    if (isScoredItem(item)) {
+    //
+    // 省赛 R-01：简答也带 score 了，但它不是判分题——「必须有 answer」的强制只对
+    // 自动判分四种生效；简答的分值可选（不给就是纯收集题，进不了总分）。
+    if (hasScore(item)) {
       if (survey) {
-        if (item.answer !== undefined) {
+        if (isAutoGradedItem(item) && item.answer !== undefined) {
           errors.push(
             schemaError(
               "E_SURVEY_HAS_ANSWER",
@@ -230,7 +245,7 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
             ),
           );
         }
-      } else {
+      } else if (isAutoGradedItem(item)) {
         if (item.answer === undefined) {
           errors.push(
             schemaError(
@@ -253,7 +268,7 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
     }
 
     // R8：知识点必须已声明（可选字段，有则校验；bloom 的枚举在结构层）
-    if (isScoredItem(item) && item.knowledgePoint !== undefined) {
+    if (hasScore(item) && item.knowledgePoint !== undefined) {
       if (!objectiveIds.has(item.knowledgePoint)) {
         errors.push(
           schemaError(
@@ -269,7 +284,8 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
   });
 
   // R6：分值合计（quiz 必须有 totalScore 且等于合计；survey 不该声明总分）
-  const scoredItems = schema.items.filter(isScoredItem);
+  // 省赛 R-01：合计含简答的分值——学生看到的满分就是全卷满分，不是"自动判分部分"。
+  const scoredItems = schema.items.filter(hasScore);
   const scoreSum = scoredItems.reduce((total, item) => total + scoreOf(item), 0);
 
   if (survey) {
@@ -287,7 +303,7 @@ export function validateForm(input: unknown, options: ValidateOptions = {}): Val
       schemaError(
         "E_SCORE_SUM",
         "meta.totalScore",
-        `声明为 ${schema.meta.totalScore}，实际自动判分题合计 ${scoreSum}`,
+        `声明为 ${schema.meta.totalScore}，实际带分值的题合计 ${scoreSum}`,
       ),
     );
   }

@@ -34,6 +34,9 @@ export const API_PATHS = {
   publish: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/publish`,
   submissions: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions`,
   submissionsCsv: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions.csv`,
+  /** 教师给某条提交里的某道简答打分（省赛 R-02）。 */
+  gradeSubmission: (formId: string, submissionId: string) =>
+    `/api/forms/${encodeURIComponent(formId)}/submissions/${encodeURIComponent(submissionId)}/grades`,
   submit: "/api/submissions",
   /** 学生收集页；`web/src/config.ts` 的 `fillPathPrefix` 与这里必须一致。 */
   fill: (slug: string) => `/f/${encodeURIComponent(slug)}`,
@@ -243,6 +246,12 @@ export interface SubmitResponse {
   readonly submissionId: string;
   readonly score: number;
   readonly maxScore: number;
+  /**
+   * 满分里**需要人工批改**的部分（简答分值之和，省赛 R-01）。
+   * `score` 只含自动判分得分，所以 `score + pendingScore ≤ maxScore` 恒成立；
+   * 学生看到「28 / 40 分，其中 10 分待老师批改」时不至于以为自己被误判。
+   */
+  readonly pendingScore: number;
 }
 
 /** 版本冲突时给人类看的话。前端直接展示，所以文案放在契约里而不是各处硬编码。 */
@@ -253,8 +262,29 @@ export const VERSION_CONFLICT_MESSAGE = "版本已更新，请刷新页面后重
 export interface SubmissionRow {
   readonly submissionId: string;
   readonly createdAt: string;
+  /** 自动判分得分 + 已批改的人工分。 */
   readonly score: number;
   readonly maxScore: number;
+  /** 该条提交里还没批改的简答分值之和；0 表示这条已经"结清"。 */
+  readonly pendingScore: number;
+  /** 已录入的人工分：`itemId -> 分值`。没有批改过就是空对象，不是 undefined。 */
+  readonly manualScores: Readonly<Record<string, number>>;
+  /**
+   * 学生答案原样返回（只给教师端看板用）。
+   *
+   * 学生提交的响应里**永远不出现**这个字段（`SubmissionsResponse` 与 `SubmitResponse`
+   * 是两套类型）；把它放看板行里，是为了让「批改简答」这个界面不用再发一次请求，
+   * 也不必为此新增一条按 id 读单条提交的路由。
+   */
+  readonly answers: Readonly<Record<string, string | readonly string[]>>;
+}
+
+/** 待批改的一道简答：看板靠它渲染批改表单，不必再拉一次表单详情。 */
+export interface GradableShortItem {
+  readonly itemId: string;
+  readonly title: string;
+  /** 这题的满分；教师录入的分数不能超过它。 */
+  readonly score: number;
 }
 
 export interface SubmissionSummary {
@@ -264,12 +294,43 @@ export interface SubmissionSummary {
   /** 无提交时为 `null`，不要补 0——0 分和"还没有人交"是两件事。 */
   readonly avgScore: number | null;
   readonly maxScore: number;
+  /** 还有待批改简答的提交条数；`0` 表示这个版本已经全部批完。 */
+  readonly pendingCount: number;
 }
 
 export interface SubmissionsResponse {
   readonly ok: true;
   readonly summary: SubmissionSummary;
   readonly rows: readonly SubmissionRow[];
+  /** 这个版本里需要人工批改的题目（按 schema 顺序）；空数组表示全自动判分。 */
+  readonly shortItems: readonly GradableShortItem[];
+}
+
+/* ------------------------------- 人工批改 -------------------------------- */
+
+/**
+ * 给一条提交里的一道简答打分（省赛 R-02）。
+ *
+ * `score` 是**这道题的得分**，不是"再给几分"：重复提交同一题按覆盖处理，
+ * 所以教师改错了直接改数字重发，不需要先撤销。
+ */
+export const gradeRequestSchema = z.object({
+  itemId: z.string().regex(LIMITS.shortIdPattern, "itemId 需匹配 ^[a-z0-9_-]{1,32}$"),
+  score: z
+    .number()
+    .int("分值必须是整数")
+    .min(0, "分值不能是负数")
+    // 与 schema 的单题分值上限用同一个数字：两处各写一份迟早会漂移，届时
+    // 会出现「schema 里 120 分的题，教师端永远打不了满分」这种荒唐状态。
+    .max(LIMITS.scoreMax, `单题分值不能超过 ${String(LIMITS.scoreMax)}`),
+});
+
+export type GradeRequest = z.infer<typeof gradeRequestSchema>;
+
+export interface GradeResponse {
+  readonly ok: true;
+  /** 打完这一题之后，该条提交的最新状态（得分/待批改额度都已重算）。 */
+  readonly submission: SubmissionRow;
 }
 
 /**

@@ -22,6 +22,7 @@ import { join } from "node:path";
 
 import { DEFAULT_FIXTURE_DIR } from "./config.ts";
 import { FIXTURE_MAX_BYTES, fixturePaths } from "./fixtures.ts";
+import { inferFormKind } from "./generate.ts";
 import { LineSplitter } from "./line-splitter.ts";
 import { REPLAY_HASH_PATTERN, normalizeRequirement, replayKey } from "./replay-key.ts";
 import { validateLine } from "./validate-line.ts";
@@ -217,7 +218,10 @@ async function checkOne(dir: string, hash: string, problems: string[]): Promise<
   const lines: string[] = [];
   for (const chunk of chunks) lines.push(...splitter.push(chunk.d));
   lines.push(...splitter.flush());
-  const badLines = lines.filter((line) => line.trim() !== "" && !validateLine(line).ok);
+  // 逐行校验必须带 kind：`validateLine` 默认按 quiz 判（判分题没有 answer/score 就报错），
+  // 拿它去校验问卷回放会把「问卷里合法的无答案选择题」全判成非法——这是校验器的错，不是 fixture 的。
+  const kind = inferFormKind(meta === null ? "" : (readString(meta, "requirementPreview") ?? ""));
+  const badLines = lines.filter((line) => line.trim() !== "" && !validateLine(line, { kind }).ok);
   const linesOk = lines.filter((line) => line.trim() !== "").length > 0 && badLines.length === 0;
   items.push({
     name: "回放行能被 formItemSchema 吃下",

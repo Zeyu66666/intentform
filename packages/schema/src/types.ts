@@ -54,7 +54,10 @@ const baseFieldSchema = z.object({
 });
 
 /**
- * 判分型字段的公共部分：分值、布鲁姆层级、知识点，外加教师侧解析。
+ * 带分值字段的公共部分：分值、布鲁姆层级、知识点，外加教师侧解析。
+ *
+ * 「带分值」不等于「能自动判分」：`short` 也从这里继承分值（省赛 R-01），但它的得分
+ * 需要人工批改。自动判分的题型边界只看 `AUTO_GRADED_TYPES`（四种），不看这层。
  *
  * 《计划 v3.0》附录 A：这四项一律**可选**。"quiz 的判分题必须带分值/答案、survey 一律
  * 不许带"是**语义规则**（`rules.ts` 的 R5/R6 与 kind 规则），不是结构约束。
@@ -96,7 +99,18 @@ export const numberFieldSchema = scoredFieldSchema.extend({
     .optional(),
 });
 
-export const shortFieldSchema = baseFieldSchema.extend({
+/**
+ * 简答：**可以带分值，但不自动判分**。
+ *
+ * 省赛迭代（R-01）之前这里是 `baseFieldSchema`——简答结构上就没有 `score`，于是
+ * 「8 题共 40 分，含 2 道简答」这种需求在 schema 里根本无法表达：模型只能要么漏掉
+ * 分值，要么放弃简答改用填空。现在简答继承 `scoredFieldSchema`，分值进 `totalScore`
+ * 核算，但**不进自动判分**（`server/src/grading.ts` 只累加四种可判分题型），
+ * 差额以 `pendingScore` 的形式显式交还给人工批改——不假装它自动得了 0 分。
+ *
+ * 仍然禁止 `answer`：简答没有标准答案，强行给一个会让"自动判分"的边界糊掉。
+ */
+export const shortFieldSchema = scoredFieldSchema.extend({
   type: z.literal("short"),
   maxLength: z
     .number()
@@ -175,7 +189,10 @@ export type ShortField = DeepReadonly<z.infer<typeof shortFieldSchema>>;
 export type ScaleField = DeepReadonly<z.infer<typeof scaleFieldSchema>>;
 export type SectionField = DeepReadonly<z.infer<typeof sectionFieldSchema>>;
 
+/** 可**自动**判分的四种题型（`AUTO_GRADED_TYPES`）。简答不在这里——它要人工批改。 */
 export type ScoredField = SingleField | MultiField | FillField | NumberField;
+/** 结构上带 `score` 的题型：自动判分四种 + 简答（人工批改）。核算总分用它，判分不用。 */
+export type ScorableField = ScoredField | ShortField;
 export type CollectField = ShortField | ScaleField;
 export type ChoiceField = SingleField | MultiField;
 export type FormItem = DeepReadonly<z.infer<typeof formItemSchema>>;

@@ -10,6 +10,7 @@ import { GENERATE_PRESETS, SCHEMA_VERSION } from "@intentform/schema";
 import { DEFAULT_CHAT_MODEL, DEFAULT_PROMPT_VERSION } from "./config.ts";
 import { LlmError } from "./errors.ts";
 import { createFixtureMeta, readFixture, writeFixture } from "./fixtures.ts";
+import { inferFormKind } from "./generate.ts";
 import { normalizeRequirement, replayKey } from "./replay-key.ts";
 import { validateLine } from "./validate-line.ts";
 
@@ -153,8 +154,11 @@ describe("仓库里已录制的 3 条 fixture", () => {
       const text = fixture.chunks.map((chunk) => chunk.d).join("");
       const lines = text.split("\n").filter((line) => line.trim() !== "");
       expect(lines.length).toBeGreaterThan(2);
+      // kind 必须跟着预置需求走：问卷里"没有 answer 的选择题"是合法的，
+      // 用 quiz 口径去校验它，校验器自己会造出 5 个假缺陷。
+      const kind = inferFormKind(preset.requirement);
       for (const line of lines) {
-        const result = validateLine(line);
+        const result = validateLine(line, { kind });
         expect(result.ok, `${preset.id} 的回放里有一行不合法：${line}`).toBe(true);
       }
     }

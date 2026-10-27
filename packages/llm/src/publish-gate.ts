@@ -17,7 +17,7 @@
  */
 
 import { LIMITS, validateForm } from "@intentform/schema";
-import type { ErrorCode, FormItem, FormKind, SchemaError, ScoredField } from "@intentform/schema";
+import type { ErrorCode, FormItem, FormKind, SchemaError } from "@intentform/schema";
 
 /** 门禁输入：已通过逐行校验的节点，`index` 是它在本次生成里的序位。 */
 export interface GateField {
@@ -57,8 +57,33 @@ function itemIndexOf(path: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function isScored(node: FormItem): node is ScoredField {
-  return node.type === "single" || node.type === "multi" || node.type === "fill" || node.type === "number";
+/**
+ * 可**自动**判分的四种题型。与 `hasScore` 分开：简答有分值但不自动判分，
+ * 所以「至少一道可判分题」不能拿简答凑数——整卷只有简答的测验，交上来一分也判不了。
+ */
+function isAutoGraded(node: FormItem): boolean {
+  return (
+    node.type === "single" ||
+    node.type === "multi" ||
+    node.type === "fill" ||
+    node.type === "number"
+  );
+}
+
+/**
+ * 带分值的节点：自动判分四种 + 简答（省赛 R-01）。
+ *
+ * 门禁在这里必须与 `rules.ts` 的 R6 用同一口径：简答的分值也进 `totalScore`，
+ * 否则「8 题 40 分含 2 简答」会被门禁判成 30 分合计不符，整表被打回。
+ */
+function hasScore(node: FormItem): node is FormItem & { readonly score?: number } {
+  return (
+    node.type === "single" ||
+    node.type === "multi" ||
+    node.type === "fill" ||
+    node.type === "number" ||
+    node.type === "short"
+  );
 }
 
 /**
@@ -74,11 +99,12 @@ export function buildCandidateForm(
   const objectiveIds = new Set<string>();
   let totalScore = 0;
   for (const node of items) {
-    if (!isScored(node)) continue;
+    if (!hasScore(node)) continue;
     // 附录 A 之后 score / knowledgePoint 都可选：缺了就按 0 分记、就不进 objectives。
     // 缺分值本身由 `rules.ts` 报 `E_SCORE_SUM`（items[i].score），这里不替它下判断。
     totalScore += node.score ?? 0;
-    if (node.knowledgePoint !== undefined) objectiveIds.add(node.knowledgePoint);
+    const kp = "knowledgePoint" in node ? node.knowledgePoint : undefined;
+    if (kp !== undefined) objectiveIds.add(kp);
   }
   const objectives = [...objectiveIds].map((id) => ({ id, name: id }));
   if (objectives.length > LIMITS.fieldsMax) objectives.length = LIMITS.fieldsMax;
@@ -113,7 +139,7 @@ export function runPublishGate(
   }
 
   // §2.5「空表」判据：字段数 ≥ 1 **且**至少一个可判分题。只有分节的整表不算表。
-  if (kind === "quiz" && !fields.some((field) => isScored(field.node))) {
+  if (kind === "quiz" && !fields.some((field) => isAutoGraded(field.node))) {
     return {
       ok: false,
       itemErrors: [],

@@ -41,7 +41,7 @@ export const ERROR_HINTS: Record<ErrorCode, string> = {
   E_MULTI_ANSWER_INVALID: "多选题的 answer 必须是非空、无重复、且全部来自 options 的 id 数组。",
   E_OPTIONS_INVALID: "选项需 2–8 个，且同一题内选项 id 与选项文本都不得重复。",
   E_ANSWER_MISSING: "该题缺少可用答案：填空题至少给 1 个非空答案，数值题的 tolerance 必须 ≥ 0。",
-  E_SCORE_SUM: "quiz 的 meta.totalScore 必须等于所有自动判分题 score 之和（整数）。",
+  E_SCORE_SUM: "quiz 的 meta.totalScore 必须等于所有带分值题目（含简答）score 之和（整数）。",
   E_SURVEY_HAS_ANSWER:
     "survey 只收集不判分：请移除 single/multi/fill/number 题型，只保留 short/scale/section。",
   E_LATEX_INVALID: "公式无法被 KaTeX 解析：请修正 $...$ 或 $$...$$ 内的语法，或改用纯文本。",

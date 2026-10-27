@@ -210,6 +210,62 @@ describe("validateForm / R6 分值", () => {
     delete form.meta.totalScore;
     expect(codesOf(validateForm(form))).toContain("E_SURVEY_HAS_ANSWER");
   });
+
+  // ---- 省赛 R-01：简答带分值 ----
+  it("简答的分值计入 totalScore（单选 10 + 多选 10 + 两道简答 5 = 30）", () => {
+    const form = baseQuiz();
+    form.items = [
+      { ...at(form, 0), score: 10 },
+      { ...at(form, 1), score: 10 },
+      { id: "q03", type: "short", title: "简答一", score: 5, maxLength: 200 },
+      { id: "q04", type: "short", title: "简答二", score: 5, maxLength: 200 },
+    ];
+
+    form.meta.totalScore = 30;
+    expect(validateForm(form).ok).toBe(true);
+
+    // 只算自动判分题（20）会漏掉简答的 10 分：这是 R-01 之前的口径，现在必须报错。
+    form.meta.totalScore = 20;
+    const autoOnly = validateForm(form);
+    expect(codesOf(autoOnly)).toContain("E_SCORE_SUM");
+    expect(errorsOf(autoOnly)[0]?.message).toContain("30");
+  });
+
+  it("quiz 的简答不强制 score、也绝不要求 answer（它不是判分题）", () => {
+    const form = baseQuiz();
+    form.items.push({ id: "q03", type: "short", title: "说说你的思路", maxLength: 200 });
+    expect(validateForm(form).ok).toBe(true);
+
+    form.items[2] = { id: "q03", type: "short", title: "说说你的思路", maxLength: 200, answer: "略" };
+    // answer 不是 short 的结构字段：Zod 直接吃掉多余键，不会因此报错，也不会被当成答案。
+    const result = validateForm(form);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect("answer" in result.data.items[2]!).toBe(false);
+    }
+  });
+
+  it("survey 里的简答带分值时报 E_SURVEY_HAS_ANSWER", () => {
+    const form = baseQuiz();
+    form.meta.kind = "survey";
+    delete form.meta.totalScore;
+    form.items = [{ id: "q01", type: "short", title: "你的困惑", score: 5, maxLength: 200 }];
+    expect(codesOf(validateForm(form))).toContain("E_SURVEY_HAS_ANSWER");
+  });
+
+  it("简答的 knowledgePoint 同样要已在 objectives 中声明", () => {
+    const form = baseQuiz();
+    form.items.push({
+      id: "q03",
+      type: "short",
+      title: "简答",
+      score: 5,
+      knowledgePoint: "kp-missing",
+      maxLength: 200,
+    });
+    form.meta.totalScore = 15;
+    expect(codesOf(validateForm(form))).toContain("E_KP_UNKNOWN");
+  });
 });
 
 describe("validateForm / R8 教学法元数据", () => {

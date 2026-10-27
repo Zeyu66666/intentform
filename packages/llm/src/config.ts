@@ -33,8 +33,12 @@ export const DEFAULT_TEMPERATURE = 0;
 /**
  * prompt 版本号（`prompts/generate.v1.md` 里的文件名部分）。它进回放键，
  * 所以改 prompt 必须递增版本号，否则旧 fixture 会被当成「同一次请求」而命中。
+ *
+ * v2（省赛 R-01）：简答可带 `score`——"8 题 40 分含 2 简答"这类需求以前被 prompt
+ * 明确禁止（「section/short/scale 不带 score」），模型只能漏分值或改题型。
+ * 升版是强制的：同一份需求在 v1 下生成的输出与 v2 不同，两者不能共用一个回放键。
  */
-export const DEFAULT_PROMPT_VERSION = "generate.v1";
+export const DEFAULT_PROMPT_VERSION = "generate.v2";
 
 export const REPLAY_SPEEDS = ["1x", "2x", "instant"] as const;
 

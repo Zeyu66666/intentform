@@ -79,10 +79,10 @@ function projectOption(option: ChoiceOption): ChoiceOption {
 }
 
 /**
- * 判分型字段共享的元数据。短答与量表是收集型字段，结构上就没有这三项
- * （见 `types.ts` 的 `collectFieldSchema`），所以这里只接受判分型。
+ * 带分值字段共享的元数据。自动判分四种与简答都从 `scoredFieldSchema` 继承 `score`
+ * （省赛 R-01 之后），所以这里接受这五型；`scale` / `section` 没有分值字段，进不来。
  */
-function projectScored(item: SingleField | MultiField | FillField | NumberField): {
+function projectScored(item: SingleField | MultiField | FillField | NumberField | ShortField): {
   readonly score?: number;
 } {
   // 附录 A 之后 score 可选：没有分值就**不出现**这个键，而不是补一个 0 冒充。
@@ -137,6 +137,9 @@ function projectItem(item: FormItem): PublicFormItem {
         title: item.title,
         required: item.required,
         maxLength: item.maxLength,
+        // 省赛 R-01：简答的分值对学生可见（"这题 5 分，需老师批改"），
+        // 没有分值就不出现这个键——不补 0 冒充。
+        ...projectScored(item),
       };
     }
     case "scale": {
