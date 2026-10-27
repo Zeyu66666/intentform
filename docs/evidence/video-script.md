@@ -229,7 +229,7 @@ git clean -f fixtures/                # 真正删除（只删未跟踪文件，�
 
 ```powershell
 cd D:\project1\intentform
-git log --oneline -1
+git --no-pager log --oneline -1
 ```
 
 > 记下这行开头的 7 位字符（叫 commit hash，比如 `fd02180`）。视频第一帧的字幕要写它。
@@ -338,9 +338,10 @@ curl.exe -s http://127.0.0.1:8790/healthz
 | 顶栏写"未知（等待响应头回执）" | 后端没起或代理指错 | 同上 |
 | 生成一半红字 `HTTP 401` | Key 错/过期/余额不足 | 检查 `.secrets\intentform.env` 里那行 Key |
 | 点了生成立刻报 429 | 生成限流 **10 次/分钟** | 等一分钟再点 |
-| 点选项不变色 | 用了太旧的代码 | `git log --oneline -1` 必须晚于 `f63613d` |
+| 点选项不变色 | 用了太旧的代码 | `git --no-pager log --oneline -1` 必须晚于 `f63613d` |
 | 视频里出现"待补" | 用了模板没填 | 录前把要展示的页面都点一遍 |
 | `pnpm dev:server` 报端口占用 | 8787 上还有旧进程 | `netstat -ano \| findstr :8787`，拿最后一列 PID 后 `taskkill /PID <pid> /F` |
+| 敲 `git` 命令报 `cannot spawn less` / `unable to execute pager 'less'` | 系统里找不到 `less`，git 默认还想拿它做分页 | 一次性：命令改成 `git --no-pager log --oneline -1`；永久：`git config --global core.pager cat`（本仓库已设好，只有新电脑要设） |
 
 ---
 
@@ -379,5 +380,5 @@ cd D:\project1\intentform; pnpm dev:web
 node scripts/verify.mjs
 node scripts/browser-closed-loop.mjs
 # 当前版本（字幕用）
-git log --oneline -1
+git --no-pager log --oneline -1
 ```
