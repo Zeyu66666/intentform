@@ -10,11 +10,17 @@
 
 ```bash
 pnpm install
-cp .env.example .env          # 不填 Key 也能跑：默认 LLM_MODE=replay
+cp .env.example .env          # 只是模板：不填 Key 也能跑，默认 LLM_MODE=replay
 pnpm seed                     # 重建 demo 库，打印演示账号与两个学生短链
 pnpm dev:server               # http://127.0.0.1:8787
 pnpm dev:web                  # http://127.0.0.1:5173
 ```
+
+> **注意**：服务端**不会自动读 `.env`**（仓库里没有 dotenv，`server/src/env.ts` 只认进程环境变量）。
+> 默认的 `replay` / `mock` 模式不需要任何变量，所以上面四步直接能跑；要改配置或填 Key，
+> 用 `node --env-file=.env --experimental-strip-types server/src/main.ts` 显式指定，
+> 或者直接把变量写在前缀上（`LLM_MODE=live LLM_API_KEY=... pnpm dev:server`）。
+> 涉及 Key 的文件建议放在仓库外（例如 `D:/project1/.secrets/intentform.env`），别提交。
 
 浏览器打开 **http://127.0.0.1:5173**（别用 `localhost`：服务端按 `APP_ORIGIN` 校验来源，写死的是 `127.0.0.1:5173`）。
 
