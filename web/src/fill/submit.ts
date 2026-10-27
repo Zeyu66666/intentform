@@ -102,9 +102,22 @@ export type SubmitState =
   | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "failed"; readonly message: string };
 
-/** 成功后只报"得分 / 满分"或"已提交"，不回显作答内容、不报每题对错。 */
-export function formatSuccess(kind: FormKind, score: number, maxScore: number): string {
-  return kind === "quiz" ? `${String(score)} / ${String(maxScore)} 分` : "已提交";
+/**
+ * 成功后只报"得分 / 满分"或"已提交"，不回显作答内容、不报每题对错。
+ *
+ * 省赛 R-01：简答计分但不自动判分，于是 `maxScore` 可能大于学生此刻能拿到的上限。
+ * 这时必须把"其中 N 分待人工批改"说出来——否则学生看到 28/40 会以为自己错了两题，
+ * 而实际上那 10 分还在老师手里。`pendingScore` 为 0 时不加这句，避免噪声。
+ */
+export function formatSuccess(
+  kind: FormKind,
+  score: number,
+  maxScore: number,
+  pendingScore = 0,
+): string {
+  if (kind !== "quiz") return "已提交";
+  const base = `${String(score)} / ${String(maxScore)} 分`;
+  return pendingScore > 0 ? `${base}（其中 ${String(pendingScore)} 分待人工批改）` : base;
 }
 
 export function missingSummary(missing: readonly MissingField[]): string {
@@ -130,7 +143,14 @@ export function mapSubmitOutcome(
   if (outcome.ok) {
     return {
       kind: "success",
-      success: { summary: formatSuccess(kind, outcome.data.score, outcome.data.maxScore) },
+      success: {
+        summary: formatSuccess(
+          kind,
+          outcome.data.score,
+          outcome.data.maxScore,
+          outcome.data.pendingScore,
+        ),
+      },
     };
   }
 

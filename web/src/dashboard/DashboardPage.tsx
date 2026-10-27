@@ -21,13 +21,15 @@ import type { FormSummary, SubmissionsResponse } from "@intentform/schema";
 import { describeFailure, isUnauthorized } from "../api/failures";
 import type { ApiFailure } from "../api/http";
 import { createHttpClient } from "../api/http";
-import { createTeacherApi } from "../api/teacher";
+import { createTeacherApi, type TeacherApi } from "../api/teacher";
 import { csvFileName, csvHref } from "../dashboard/csv";
+import { GradeForm } from "../dashboard/GradeForm";
 import {
   EMPTY_SUBMISSIONS_TEXT,
   NO_AVERAGE_TEXT,
   UNPUBLISHED_TEXT,
   formOptionLabel,
+  needsGrading,
   pickInitialForm,
   rowScoreText,
   sharePath,
@@ -57,6 +59,10 @@ export function DashboardPage({ formId }: { readonly formId: string | null }): J
 
   const [formsState, setFormsState] = useState<FormsState>({ status: "loading" });
   const [submissionsState, setSubmissionsState] = useState<SubmissionsState>({ status: "idle" });
+  /** 正在批改的提交；`null` 表示面板收起。 */
+  const [gradingId, setGradingId] = useState<string | null>(null);
+  /** 批完一题就 +1，触发提交记录重新拉取：均分与待批数都只有服务端算得对。 */
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,7 +102,7 @@ export function DashboardPage({ formId }: { readonly formId: string | null }): J
     return () => {
       cancelled = true;
     };
-  }, [api, selectedId]);
+  }, [api, selectedId, reloadToken]);
 
   return (
     <main className={MAX_WIDTH}>
@@ -159,6 +165,14 @@ export function DashboardPage({ formId }: { readonly formId: string | null }): J
             state={submissionsState}
             formId={selected.id}
             isPublished={selected.publishedVersionId !== undefined}
+            api={api}
+            gradingId={gradingId}
+            onToggleGrading={(submissionId) => {
+              setGradingId((current) => (current === submissionId ? null : submissionId));
+            }}
+            onGraded={() => {
+              setReloadToken((token) => token + 1);
+            }}
           />
         </>
       )}
@@ -209,10 +223,18 @@ function SubmissionsSection({
   state,
   formId,
   isPublished,
+  api,
+  gradingId,
+  onToggleGrading,
+  onGraded,
 }: {
   readonly state: SubmissionsState;
   readonly formId: string;
   readonly isPublished: boolean;
+  readonly api: TeacherApi;
+  readonly gradingId: string | null;
+  readonly onToggleGrading: (submissionId: string) => void;
+  readonly onGraded: () => void;
 }): JSX.Element {
   if (state.status === "loading" || state.status === "idle") {
     return <p className="mt-2 text-sm text-muted">正在加载提交记录…</p>;
@@ -233,6 +255,8 @@ function SubmissionsSection({
   const summary = state.data.summary;
   const stats = statsOf(summary);
   const rows = sortRowsNewestFirst(state.data.rows);
+  const gradingRow = gradingId === null ? null : (rows.find((row) => row.submissionId === gradingId) ?? null);
+  const hasManualItems = state.data.shortItems.length > 0;
 
   return (
     <section className="mt-2 rounded-md border border-line bg-surface p-2">
@@ -286,6 +310,9 @@ function SubmissionsSection({
               <th scope="col" className="py-1 pr-2 text-right font-medium">
                 得分
               </th>
+              <th scope="col" className="py-1 pr-2 text-right font-medium">
+                简答
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -293,11 +320,52 @@ function SubmissionsSection({
               <tr key={row.submissionId} className="border-b border-line last:border-0" data-testid="dash-row">
                 <td className="py-1 pr-2 text-ink">{formatDateTime(row.createdAt)}</td>
                 <td className="py-1 pr-2 text-right tabular-nums text-ink">{rowScoreText(row)}</td>
+                <td className="py-1 pr-2 text-right">
+                  {needsGrading(row) ? (
+                    <button
+                      type="button"
+                      data-testid={`dash-grade-${row.submissionId}`}
+                      className="min-h-[44px] rounded-sm border border-accent px-2 text-sm text-accent"
+                      onClick={() => {
+                        onToggleGrading(row.submissionId);
+                      }}
+                    >
+                      {gradingId === row.submissionId ? "收起批改" : "批改"}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted">{pendingLabel(row.pendingScore, hasManualItems)}</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+
+      {gradingRow === null ? null : (
+        <GradeForm
+          formId={formId}
+          row={gradingRow}
+          shortItems={state.data.shortItems}
+          api={api}
+          onGraded={onGraded}
+          onClose={() => {
+            onToggleGrading(gradingRow.submissionId);
+          }}
+        />
+      )}
     </section>
   );
+}
+
+/**
+ * 批完的标记。
+ *
+ * 「已批完」只有在**这张表确实有需要人工批改的题**时才有信息量；一份纯客观题的表
+ * 每行都挂个「已批完」，等于告诉教师「这里有东西要批、已经批完了」，而实际上从来没有。
+ * 省赛 R-02 加人工批改时踩到过这个措辞问题，所以判定改成两段：有简答分值才算「批完」。
+ */
+function pendingLabel(pendingScore: number, hasManualItems: boolean): string {
+  if (!hasManualItems) return "";
+  return pendingScore > 0 ? "" : "已批完";
 }

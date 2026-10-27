@@ -9,8 +9,13 @@ import {
   formOptionLabel,
   isPublished,
   kindLabel,
+  gradeInputValue,
+  needsGrading,
+  parseGradeInput,
+  pendingText,
   pickInitialForm,
   rowScoreText,
+  ungradedCount,
   sharePath,
   sortRowsNewestFirst,
   statsOf,
@@ -29,7 +34,20 @@ function form(partial: Partial<FormSummary> & Pick<FormSummary, "id">): FormSumm
 }
 
 function summary(partial: Partial<SubmissionSummary>): SubmissionSummary {
-  return { versionId: "ver-2", versionN: 2, count: 0, avgScore: null, maxScore: 20, ...partial };
+  return { versionId: "ver-2", versionN: 2, count: 0, avgScore: null, maxScore: 20, pendingCount: 0, ...partial };
+}
+
+/** 一行提交的最小合法形状：新字段（R-02 之后）统一从这里补，免得每个用例都写一遍。 */
+function row(partial: Partial<SubmissionRow> & Pick<SubmissionRow, "submissionId">): SubmissionRow {
+  return {
+    createdAt: "",
+    score: 0,
+    maxScore: 10,
+    pendingScore: 0,
+    manualScores: {},
+    answers: {},
+    ...partial,
+  };
 }
 
 describe("statsOf", () => {
@@ -108,9 +126,9 @@ describe("pickInitialForm", () => {
 
 describe("sortRowsNewestFirst", () => {
   const rows: readonly SubmissionRow[] = [
-    { submissionId: "s-old", createdAt: "2024-05-01T08:00:00.000Z", score: 5, maxScore: 20 },
-    { submissionId: "s-new", createdAt: "2024-05-02T08:00:00.000Z", score: 12, maxScore: 20 },
-    { submissionId: "s-mid", createdAt: "2024-05-01T09:00:00.000Z", score: 8, maxScore: 20 },
+    row({ submissionId: "s-old", createdAt: "2024-05-01T08:00:00.000Z", score: 5, maxScore: 20 }),
+    row({ submissionId: "s-new", createdAt: "2024-05-02T08:00:00.000Z", score: 12, maxScore: 20 }),
+    row({ submissionId: "s-mid", createdAt: "2024-05-01T09:00:00.000Z", score: 8, maxScore: 20 }),
   ];
 
   it("时间倒序：最近提交在最上面", () => {
@@ -119,8 +137,8 @@ describe("sortRowsNewestFirst", () => {
 
   it("同一时刻用 submissionId 兜底，顺序稳定且不改入参", () => {
     const same: readonly SubmissionRow[] = [
-      { submissionId: "b", createdAt: "2024-05-01T08:00:00.000Z", score: 1, maxScore: 2 },
-      { submissionId: "a", createdAt: "2024-05-01T08:00:00.000Z", score: 1, maxScore: 2 },
+      row({ submissionId: "b", createdAt: "2024-05-01T08:00:00.000Z", score: 1, maxScore: 2 }),
+      row({ submissionId: "a", createdAt: "2024-05-01T08:00:00.000Z", score: 1, maxScore: 2 }),
     ];
     expect(sortRowsNewestFirst(same).map((row) => row.submissionId)).toEqual(["a", "b"]);
     expect(same.map((row) => row.submissionId)).toEqual(["b", "a"]);
@@ -133,7 +151,52 @@ describe("sortRowsNewestFirst", () => {
 
 describe("rowScoreText", () => {
   it("得分 / 满分，都用服务端给的值", () => {
-    expect(rowScoreText({ submissionId: "s1", createdAt: "", score: 8, maxScore: 10 })).toBe("8 / 10");
-    expect(rowScoreText({ submissionId: "s2", createdAt: "", score: 2.5, maxScore: 10 })).toBe("2.5 / 10");
+    expect(rowScoreText(row({ submissionId: "s1", createdAt: "", score: 8, maxScore: 10 }))).toBe("8 / 10");
+    expect(rowScoreText(row({ submissionId: "s2", createdAt: "", score: 2.5, maxScore: 10 }))).toBe("2.5 / 10");
+  });
+});
+
+describe("待批改（R-02）", () => {
+  const shortItems = [
+    { itemId: "q03", title: "第一道简答", score: 5 },
+    { itemId: "q04", title: "第二道简答", score: 5 },
+  ];
+
+  it("pendingText 只在还有待批分时附加说明，批完就是空串", () => {
+    expect(pendingText(row({ submissionId: "s1", score: 28, maxScore: 40, pendingScore: 10 }))).toContain("10");
+    expect(pendingText(row({ submissionId: "s2", score: 40, maxScore: 40, pendingScore: 0 }))).toBe("");
+  });
+
+  it("rowScoreText 把待批额度挂在得分后面，不再让 28/40 看起来像扣了 12 分", () => {
+    const text = rowScoreText(row({ submissionId: "s1", score: 28, maxScore: 40, pendingScore: 10 }));
+    expect(text).toContain("28 / 40");
+    expect(text).toContain("待批改");
+  });
+
+  it("needsGrading 只看 pendingScore：0 分但是批过的不再要求教师动手", () => {
+    expect(needsGrading(row({ submissionId: "s1", pendingScore: 5 }))).toBe(true);
+    expect(needsGrading(row({ submissionId: "s2", pendingScore: 0, manualScores: { q03: 0 } }))).toBe(false);
+  });
+
+  it("gradeInputValue 区分「没批」（空串）与「批了 0 分」（\"0\"）", () => {
+    expect(gradeInputValue(row({ submissionId: "s1" }), "q03")).toBe("");
+    expect(gradeInputValue(row({ submissionId: "s1", manualScores: { q03: 0 } }), "q03")).toBe("0");
+  });
+
+  it("parseGradeInput 拒绝空、非整数、负号与超满分，且不做静默取整", () => {
+    const emptyResult = parseGradeInput("", 5);
+    expect(emptyResult.ok).toBe(false);
+    if (!emptyResult.ok) expect(emptyResult.reason).toContain("请填写");
+    expect(parseGradeInput("3.7", 5).ok).toBe(false);
+    expect(parseGradeInput("-1", 5).ok).toBe(false);
+    expect(parseGradeInput("6", 5).ok).toBe(false);
+    expect(parseGradeInput(" 5 ", 5)).toEqual({ ok: true, score: 5 });
+    expect(parseGradeInput("0", 5)).toEqual({ ok: true, score: 0 });
+  });
+
+  it("ungradedCount 与 pendingScore 对账：两者不能各算一套", () => {
+    const graded = row({ submissionId: "s1", manualScores: { q03: 5 } });
+    expect(ungradedCount(graded, shortItems)).toBe(1);
+    expect(ungradedCount(row({ submissionId: "s2", manualScores: { q03: 5, q04: 4 } }), shortItems)).toBe(0);
   });
 });

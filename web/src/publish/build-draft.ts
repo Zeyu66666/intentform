@@ -104,15 +104,21 @@ function deriveMetaTitle(requirementText: string): string {
   return single === "" ? DEFAULT_FORM_TITLE : single;
 }
 
-/** 只有这四种题型参与判分与 `totalScore`（与 `rules.ts` 的 `isScoredItem` 一致）。 */
+/**
+ * 进 `meta.totalScore` 的分值。
+ *
+ * 省赛 R-01 之前这里对 `short` 返回 0，理由是"简答不判分"。但 `totalScore` 是**全卷满分**，
+ * 不是"自动判分部分"——`rules.ts` 的 R6 与 `server/src/grading.ts` 的 `maxScoreOf` 都含简答。
+ * 三处口径必须一致，否则前端把 20 分卷子发给服务端、服务端按 25 分判，学生对不上账。
+ */
 function scoreOf(item: FormItem): number {
   switch (item.type) {
     case "single":
     case "multi":
     case "fill":
     case "number":
-      return item.score ?? 0;
     case "short":
+      return item.score ?? 0;
     case "scale":
     case "section":
       return 0;
@@ -234,6 +240,7 @@ function toWireItem(item: FormItem, kind: FormKind): WireItem {
         id: item.id,
         title: item.title,
         required: item.required,
+        ...(quiz && item.score !== undefined ? { score: item.score } : {}),
         maxLength: item.maxLength,
       };
     case "scale":

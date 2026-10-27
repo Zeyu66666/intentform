@@ -101,7 +101,73 @@ export function sortRowsNewestFirst(rows: readonly SubmissionRow[]): readonly Su
   });
 }
 
-/** 一行的得分文本：`8 / 10`。满分与得分都来自服务端，前端不重算。 */
+/**
+ * 得分后面那句话：`（2 题待批改，共 10 分）`。批完了就是空串。
+ *
+ * 单独成函数而不是塞进 `rowScoreText`，是因为看板与批改面板都要显示它，
+ * 两处各写一遍必然有一处忘了乘或忘了减。
+ */
+export function pendingText(row: SubmissionRow): string {
+  if (row.pendingScore <= 0) return "";
+  return `（另有 ${formatScoreNumber(row.pendingScore)} 分待批改）`;
+}
+
+/**
+ * 一行的得分文本：`8 / 10`，简答没批完时追加待批改额度。
+ *
+ * 满分与得分都来自服务端（已把人工分并进去），前端**不重算**：
+ * 重算意味着前端也要知道每题满分，那是第二份判分口径。
+ */
 export function rowScoreText(row: SubmissionRow): string {
-  return `${formatScoreNumber(row.score)} / ${formatScoreNumber(row.maxScore)}`;
+  const base = `${formatScoreNumber(row.score)} / ${formatScoreNumber(row.maxScore)}`;
+  const pending = pendingText(row);
+  return pending === "" ? base : `${base}${pending}`;
+}
+
+/** 这条提交还需不需要教师动手。 */
+export function needsGrading(row: SubmissionRow): boolean {
+  return row.pendingScore > 0;
+}
+
+/* ------------------------------ 人工批改（R-02） ------------------------------ */
+
+/**
+ * 批改输入框的初值：已录过分的题显示原值，没录过的是空串。
+ *
+ * 空串而不是 `0`：`0` 是"批了、给 0 分"，空是"还没批"。这两件事在界面上长得像，
+ * 在库里完全不同（一条 `manual_grades` 记录 vs 没有记录），初始值不能混。
+ */
+export function gradeInputValue(row: SubmissionRow, itemId: string): string {
+  const recorded = row.manualScores[itemId];
+  return recorded === undefined ? "" : String(recorded);
+}
+
+export type GradeInputResult =
+  | { readonly ok: true; readonly score: number }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * 把输入框里的字符串变成要提交的分值。
+ *
+ * 只做三件事：非空、整数、0..满分。**不截断、不四舍五入**——静默改数字会让
+ * 教师以为"我给了 3.7，系统记 4"，成绩单上出现没人给过的分。
+ * 小数只可能是手滑，直接拒绝并要求重输。
+ */
+export function parseGradeInput(raw: string, maxScore: number): GradeInputResult {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { ok: false, reason: "请填写分数（0 分也要填 0）" };
+  if (!/^\d+$/.test(trimmed)) return { ok: false, reason: "只填整数，不要带小数点或正负号" };
+  const score = Number(trimmed);
+  if (score > maxScore) {
+    return { ok: false, reason: `这道题满分 ${String(maxScore)} 分` };
+  }
+  return { ok: true, score };
+}
+
+/** 还有几道简答没批（按题目清单与已录分值算，不看 pendingScore，两者互为校验）。 */
+export function ungradedCount(
+  row: SubmissionRow,
+  shortItems: readonly { readonly itemId: string; readonly score: number }[],
+): number {
+  return shortItems.filter((item) => row.manualScores[item.itemId] === undefined).length;
 }

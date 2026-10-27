@@ -97,7 +97,7 @@ describe("beginSubmit", () => {
 describe("mapSubmitOutcome", () => {
   it("quiz 成功只给「得分 / 满分」", () => {
     const state = mapSubmitOutcome(
-      { ok: true, data: { ok: true, submissionId: "s1", score: 8, maxScore: 10 } },
+      { ok: true, data: { ok: true, submissionId: "s1", score: 8, maxScore: 10, pendingScore: 0 } },
       "quiz",
     );
     expect(state.kind).toBe("success");
@@ -106,9 +106,21 @@ describe("mapSubmitOutcome", () => {
     expect(canSubmit(state)).toBe(false);
   });
 
+  it("有简答时把「待人工批改」说出来（省赛 R-01：28/40 不是误判）", () => {
+    const state = mapSubmitOutcome(
+      {
+        ok: true,
+        data: { ok: true, submissionId: "s3", score: 28, maxScore: 40, pendingScore: 10 },
+      },
+      "quiz",
+    );
+    if (state.kind !== "success") throw new Error("应为 success");
+    expect(state.success.summary).toBe("28 / 40 分（其中 10 分待人工批改）");
+  });
+
   it("survey 成功只说「已提交」，不显示分数", () => {
     const state = mapSubmitOutcome(
-      { ok: true, data: { ok: true, submissionId: "s2", score: 0, maxScore: 0 } },
+      { ok: true, data: { ok: true, submissionId: "s2", score: 0, maxScore: 0, pendingScore: 0 } },
       "survey",
     );
     if (state.kind !== "success") throw new Error("应为 success");

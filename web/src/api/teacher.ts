@@ -10,6 +10,8 @@ import {
   type CreateFormRequest,
   type CreateFormResponse,
   type FormDetailResponse,
+  type GradeRequest,
+  type GradeResponse,
   type ListFormsResponse,
   type LoginRequest,
   type LoginResponse,
@@ -34,6 +36,17 @@ export interface TeacherApi {
   readonly createForm: (request: CreateFormRequest) => Promise<ApiResult<CreateFormResponse>>;
   /** 发布某个版本（第二步）：成功后拿到学生短链的 slug。 */
   readonly publishForm: (formId: string, request: PublishRequest) => Promise<ApiResult<PublishResponse>>;
+  /**
+   * 给一条提交里的一道简答打分（省赛 R-02）。
+   *
+   * `score` 是这道题的**最终得分**（覆盖写），不是增量。返回该条提交的最新状态，
+   * 调用方据此更新那一行，不必自己算总分——总分口径只有服务端一份。
+   */
+  readonly grade: (
+    formId: string,
+    submissionId: string,
+    request: GradeRequest,
+  ) => Promise<ApiResult<GradeResponse>>;
   /** 只读详情：排障与回跳用，界面当前不依赖它。 */
   readonly getForm: (formId: string) => Promise<ApiResult<FormDetailResponse>>;
 }
@@ -56,6 +69,12 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
       }),
     publishForm: (formId, request) =>
       client.request<PublishResponse>(API_PATHS.publish(formId), {
+        method: "POST",
+        body: request,
+        csrf: true,
+      }),
+    grade: (formId, submissionId, request) =>
+      client.request<GradeResponse>(API_PATHS.gradeSubmission(formId, submissionId), {
         method: "POST",
         body: request,
         csrf: true,

@@ -53,7 +53,7 @@ function assertNever(value: never): never {
 interface FieldMeta {
   readonly typeLabel: string;
   readonly required: boolean;
-  /** `section`/`short`/`scale` 不判分，这里为 `null`。 */
+  /** `section`/`scale` 不判分，这里为 `null`；简答可能为 `null`（没给分值）。 */
   readonly score: number | null;
   readonly bloom: string | null;
   readonly knowledgePoint: string | null;
@@ -79,6 +79,16 @@ function metaOf(item: FormItem): FieldMeta {
         explanation: item.explanation ?? null,
       };
     case "short":
+      // 省赛 R-01：简答带分值（人工批改），所以分数照常显示；
+      // 它没有 bloom/knowledgePoint 以外的判分元数据？有：三者都从 scoredFieldSchema 继承。
+      return {
+        ...base,
+        required: item.required,
+        score: item.score ?? null,
+        bloom: item.bloom === undefined ? null : BLOOM_LABELS[item.bloom],
+        knowledgePoint: item.knowledgePoint ?? null,
+        explanation: item.explanation ?? null,
+      };
     case "scale":
       return {
         ...base,

@@ -252,6 +252,41 @@ describe("buildPublishDraft — quiz", () => {
   });
 });
 
+describe("buildPublishDraft — 简答分值（省赛 R-01/R-02）", () => {
+  const SCORED_SHORT: FormItem = {
+    type: "short",
+    id: "q-open",
+    title: "说说你卡在哪一步。",
+    required: false,
+    score: 6,
+    maxLength: 300,
+  };
+  const FIELDS: readonly FormItem[] = [SINGLE, FILL, SCORED_SHORT];
+
+  it("简答的分值进 meta.totalScore（全卷满分含简答，与 R6、maxScoreOf 同口径）", () => {
+    const result = buildPublishDraft(FIELDS, REQUIREMENT, "quiz");
+    if (!result.ok) throw new Error(`草稿应通过预检，实际 ${result.message}`);
+    // 4（单选）+ 4（填空）+ 6（简答）= 14：漏掉简答就是 8，学生对不上账。
+    expect(result.request.schema.meta.totalScore).toBe(14);
+    expect(result.totalScore).toBe(14);
+  });
+
+  it("简答的 score 必须真的写进请求体，不能只算在 totalScore 里", () => {
+    const result = buildPublishDraft(FIELDS, REQUIREMENT, "quiz");
+    if (!result.ok) throw new Error(`草稿应通过预检，实际 ${result.message}`);
+    const short = result.request.schema.items.find((item) => item.id === "q-open");
+    expect(short).toMatchObject({ type: "short", score: 6 });
+  });
+
+  it("问卷里简答仍然不许带 score（R6：survey 没有分值语义）", () => {
+    const result = buildPublishDraft(FIELDS, REQUIREMENT, "survey");
+    if (!result.ok) throw new Error(`问卷草稿应通过预检，实际 ${result.message}`);
+    const short = result.request.schema.items.find((item) => item.id === "q-open");
+    expect(short).not.toHaveProperty("score");
+    expect(result.request.schema.meta.totalScore).toBeUndefined();
+  });
+});
+
 describe("buildPublishDraft — survey", () => {
   it("剥掉 score 与 answer，且不写 totalScore", () => {
     const result = buildPublishDraft(QUIZ_FIELDS, REQUIREMENT, "survey");
