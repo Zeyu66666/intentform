@@ -116,6 +116,35 @@ function collect(child, sink) {
   child.stderr?.on("data", (chunk) => sink.stderr.push(String(chunk)));
 }
 
+/**
+ * 尽力删除临时目录，**绝不让清理失败拖垮一次成功的运行**。
+ *
+ * Windows 上 Chrome 刚被 `taskkill /T /F` 杀掉时，句柄释放有延迟：目录里还剩着
+ * `DevToolsActivePort`、`SingletonLock`、缓存文件，`rmSync` 会抛 `EPERM`。
+ * 这个错误唯一的具体后果是"临时目录没删掉"——把它变成 exit 1 会让一次 6 步全绿
+ * 的验证看起来像失败，比不删脏得多。所以：多试几次；还不行就打印路径，让人自己删。
+ */
+async function removeDirQuietly(dir) {
+  const attempts = 6;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
+      return true;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : "unknown";
+      if (attempt === attempts) {
+        process.stderr.write(
+          `[loop] 警告：临时目录删不掉（${code}），已保留：${dir}\n` +
+            "[loop] 这不影响本次验证结果；可以稍后手动删除，或下次用 KEEP_RUN_DIR=1 直接保留。\n",
+        );
+        return false;
+      }
+      await sleepMs(300 * attempt);
+    }
+  }
+  return false;
+}
+
 async function runToCompletion(entry, env, label) {
   const sink = { stdout: [], stderr: [] };
   const child = spawn(process.execPath, ["--experimental-strip-types", entry], {
@@ -826,11 +855,11 @@ async function main() {
   } finally {
     cdp?.close();
     for (const child of children.reverse()) killTree(child);
-    await sleepMs(400);
+    await sleepMs(800);
     if (process.env["KEEP_RUN_DIR"] === "1") {
       process.stdout.write(`[loop] 临时目录已保留：${runDir}\n`);
     } else {
-      rmSync(runDir, { recursive: true, force: true });
+      await removeDirQuietly(runDir);
     }
   }
 
