@@ -7,13 +7,20 @@
  *   VC2 判分与版本冲突：正常提交得分正确；用旧 versionId 提交返回 409 + version_conflict。
  *   VC3 学生端零泄漏：`/f/:slug` 与 `POST /api/submissions` 的响应体字节里不含
  *                 answer / explanation / bloom / knowledgePoint / objectives。
+ *   VC4 生成→发布→提交→看板：`LLM_MODE=mock` 走完整的 SSE 生成，把 `field` 事件里
+ *                 的节点组装成 quiz 表单，发布后提交一份**故意只对一半**的答卷，
+ *                 得分必须等于脚本自己算出的期望值（不是"大于 0"），再看板与 CSV 对账。
+ *
+ * 服务进程统一用 `LLM_MODE=mock`：VC1–VC3 完全不碰 `/api/generate`，所以换模式对它们
+ * 零影响；而 VC4 需要一条**确定性**的生成流（mock 是内置脚本 + 一条故意写坏再修复的题，
+ * 不调模型、每次事件序列相同），否则「期望得分」本身就不成立。
  *
  * 为什么用 `node:sqlite` 写 v2：本轮还没有 PATCH 路由（补丁编辑器属于前端 I3），
  * 而 VC1 的命题恰恰是「版本追加 + 指针移动」这两件事彼此独立。所以这里用 Node
  * 内置的 SQLite 直接做「补丁路由本该做的两行写入」，走的仍然是同一套表约束
  * （`form_versions` 的追加式触发器照样生效）。除 Node 内置外不引入任何依赖。
  *
- * 退出码：三条全过 0；任何一条失败非 0，并打印失败原因。
+ * 退出码：四条全过 0；任何一条失败非 0，并打印失败原因。
  */
 
 import { spawn } from "node:child_process";
@@ -36,6 +43,14 @@ const DEMO_EMAIL = "teacher@example.com";
 const DEMO_PASSWORD = "intentform-demo";
 /** VC3 的关键字：这些字符串一旦出现在学生端响应体里，就是把答案泄出去了。 */
 const FORBIDDEN_STUDENT_KEYS = ["answer", "explanation", "bloom", "knowledgePoint", "objectives"];
+
+/**
+ * VC4 用的需求文本。有两个刻意的约束：
+ * - 不能出现「问卷/调查/反馈/收集」这类词：`inferFormKind` 见到就把表单判成 survey，
+ *   而 survey 不许带答案与分值（R3），VC4 就没法做判分对账了；
+ * - 要覆盖单选/填空/数值/简答四类，这样 `mockLines()` 的分支与修复环都会被走到。
+ */
+const GEN_REQUIREMENT = "出一份二次函数随堂测：单选、填空、数值和简答各一道，共 20 分";
 
 // ── 被测表单 ──────────────────────────────────────────────────────────────
 const QUIZ_SCHEMA = {
@@ -377,11 +392,225 @@ async function vc3NoLeak(request, ctx) {
   checkNoLeak("POST /api/submissions", submit.text);
 }
 
+/**
+ * VC4：生成 → 发布 → 提交 → 看板，全部走真 HTTP。
+ *
+ * 唯一"合成"的东西是 `FormSchema` 的外壳（`meta`）：`POST /api/generate` 只发节点
+ * （`field.node`），不发整表——生成接口的契约从来没有"交回一份完整表单"这回事，
+ * 组装是前端预览面板的活。所以这里照前端同一套规则组装：节点顺序即到达顺序，
+ * `objectives` 由节点上的 `knowledgePoint` 反推，`totalScore` 等于自动判分题分值之和
+ * （R6）。组装结果要过服务端的发布门禁，写错一个字段 VC4 就红。
+ */
+async function vc4GeneratedLoop(request, ctx) {
+  const sse = await request("POST", "/api/generate", { json: { requirement: GEN_REQUIREMENT } });
+  must(sse.status === 200, `生成接口失败（${String(sse.status)}）：${firstLine(sse.text)}`);
+  must(
+    (sse.headers.get("content-type") ?? "").startsWith("text/event-stream"),
+    `生成响应不是 SSE：${String(sse.headers.get("content-type"))}`,
+  );
+  must(
+    sse.headers.get("x-intentform-llm-mode") === "mock",
+    `上游模式头应为 mock，实际 ${String(sse.headers.get("x-intentform-llm-mode"))}`,
+  );
+
+  const events = parseSse(sse.text);
+  must(events.length > 0, "SSE 一个事件都没解析出来");
+  // seq 单调 + 无跳号：前端按 seq 排序、按跳号判丢包。
+  for (const [offset, event] of events.entries()) {
+    must(event.seq === offset + 1, `第 ${String(offset + 1)} 个事件的 seq 应为 ${String(offset + 1)}，实际 ${String(event.seq)}`);
+  }
+  const terminal = events.at(-1);
+  must(terminal?.type === "done", `最后一个事件应是 done，实际 ${String(terminal?.type)}`);
+  must(terminal.stats.fields === events.filter((event) => event.type === "field").length,
+    `done.stats.fields=${String(terminal.stats.fields)} 与实际 field 事件数不一致`);
+
+  // mock 的内置脚本里有一条故意写坏的题：它必须真的先被判错、再被修复，
+  // 否则「修复环」在演示里就不存在（这条断言是 I2 语义在 I4 链路上的回归测试）。
+  const failures = events.filter((event) => event.type === "field_error");
+  const repairs = events.filter((event) => event.type === "repair");
+  must(failures.length >= 1, "mock 生成没有出现 field_error（坏行没被校验拦下）");
+  must(repairs.length === 1, `修复事件应为 1 条，实际 ${String(repairs.length)}`);
+  must(repairs[0].status === "fixed", `修复状态应为 fixed，实际 ${String(repairs[0].status)}`);
+  must(repairs[0].codesAfter.length === 0, `修复后仍有错误码：${repairs[0].codesAfter.join(", ")}`);
+  must(terminal.stats.repairs === repairs.length, `done.stats.repairs 与 repair 事件数不一致`);
+
+  const nodes = events.filter((event) => event.type === "field").map((event) => event.node);
+  const schema = buildGeneratedQuiz(nodes);
+  const scoredIds = schema.items.filter((item) => SCORED_TYPES.has(item.type)).map((item) => item.id);
+  must(scoredIds.length >= 2, `生成的表单至少要有 2 道自动判分题，实际 ${String(scoredIds.length)}`);
+
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: schema.meta.title, kind: "quiz", schema, source: "generate" },
+  });
+  must(created.status === 201, `建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const formId = created.json.form.id;
+  const versionId = created.json.version.id;
+  must(
+    typeof created.json.form.draftVersionId === "string",
+    "建表单后草稿指针为空（v1 没落库）",
+  );
+
+  const published = await request("POST", `/api/forms/${formId}/publish`, {
+    cookie: ctx.cookie,
+    json: { versionId },
+  });
+  must(
+    published.status === 200,
+    `发布失败（${String(published.status)}）：${firstLine(published.text)}`,
+  );
+  const slug = published.json.slug;
+  must(typeof slug === "string" && slug.length > 0, "发布没有返回 slug");
+  must(published.json.versionId === versionId, "发布响应的版本与请求的不是同一个");
+
+  const fill = await request("GET", `/f/${slug}`);
+  must(fill.status === 200, `收集页打不开（${String(fill.status)}）：${firstLine(fill.text)}`);
+  must(fill.json.versionId === versionId, `收集页版本不对：${String(fill.json.versionId)}`);
+  must(fill.json.formId === formId, `收集页 formId 不对：${String(fill.json.formId)}`);
+  checkNoLeak("VC4 GET /f/:slug", fill.text);
+
+  // 故意只对一半：单选/数值照抄正确答案，填空答错。得分由脚本自己算，不靠服务端回话。
+  const { answers, expectedScore } = answerPartly(scoredIds, schema.items, ctx);
+  must(expectedScore > 0 && expectedScore < schema.meta.totalScore,
+    `这份答卷应当"部分正确"（期望 ${String(expectedScore)}/${String(schema.meta.totalScore)}）`);
+
+  const submitted = await request("POST", "/api/submissions", {
+    json: { slug, formVersionId: versionId, answers },
+  });
+  must(submitted.status === 201, `提交失败（${String(submitted.status)}）：${firstLine(submitted.text)}`);
+  must(
+    submitted.json.score === expectedScore,
+    `得分应为 ${String(expectedScore)}，实际 ${String(submitted.json.score)}`,
+  );
+  must(
+    submitted.json.maxScore === schema.meta.totalScore,
+    `满分应为 ${String(schema.meta.totalScore)}，实际 ${String(submitted.json.maxScore)}`,
+  );
+  checkNoLeak("VC4 POST /api/submissions", submitted.text);
+
+  const dashboard = await request("GET", `/api/forms/${formId}/submissions`, { cookie: ctx.cookie });
+  must(dashboard.status === 200, `看板失败（${String(dashboard.status)}）：${firstLine(dashboard.text)}`);
+  const summary = dashboard.json.summary;
+  must(summary.versionId === versionId, `看板指向的版本不对：${String(summary.versionId)}`);
+  must(summary.count === 1, `看板条数应为 1，实际 ${String(summary.count)}`);
+  must(
+    summary.avgScore === expectedScore,
+    `单条提交的平均分应等于该条得分 ${String(expectedScore)}，实际 ${String(summary.avgScore)}`,
+  );
+  must(summary.maxScore === schema.meta.totalScore, `看板满分不对：${String(summary.maxScore)}`);
+  must(
+    dashboard.json.rows[0]?.submissionId === submitted.json.submissionId,
+    "看板里没有刚提交的那一条",
+  );
+  must(dashboard.json.rows[0]?.score === expectedScore, "看板行得分与提交响应不一致");
+
+  const csv = await request("GET", `/api/forms/${formId}/submissions.csv`, { cookie: ctx.cookie });
+  must(csv.status === 200, `CSV 失败（${String(csv.status)}）：${firstLine(csv.text)}`);
+  const csvLines = csv.text.split("\r\n").filter((line) => line !== "");
+  const header = csvLines[0] ?? "";
+  must(
+    header.startsWith("submission_id,created_at,score,max_score,"),
+    `CSV 表头前四列不对：${firstLine(header)}`,
+  );
+  must(!header.includes("answer"), `CSV 表头出现了 answer 列：${firstLine(header)}`);
+  for (const fieldId of scoredIds) {
+    must(header.includes(fieldId), `CSV 表头缺少字段列 ${fieldId}：${firstLine(header)}`);
+  }
+  must(
+    csvLines.length === summary.count + 1,
+    `CSV 行数应为 ${String(summary.count + 1)}（表头 + ${String(summary.count)} 行），实际 ${String(csvLines.length)}`,
+  );
+
+  ctx.generatedFormId = formId;
+  ctx.generatedSlug = slug;
+  ctx.generatedExpectedScore = expectedScore;
+}
+
+/**
+ * 把 `field` 事件里的节点组装成一张 quiz 的 `FormSchema`。
+ *
+ * 三条与前端预览面板同源的规则，写在这里而不是「随便造一张」：
+ * - 节点顺序 = 到达顺序（`field.index` 已经是按到达递增的，服务端保证）；
+ * - `objectives` 由节点上的 `knowledgePoint` 去重生成（R8：知识点必须已声明）；
+ * - `totalScore` = 自动判分题分值之和（R6，发布门禁会逐字核对）。
+ */
+const SCORED_TYPES = new Set(["single", "multi", "fill", "number"]);
+
+function buildGeneratedQuiz(nodes) {
+  const objectiveIds = [];
+  for (const node of nodes) {
+    const kp = node.knowledgePoint;
+    if (typeof kp === "string" && !objectiveIds.includes(kp)) objectiveIds.push(kp);
+  }
+  const totalScore = nodes
+    .filter((node) => SCORED_TYPES.has(node.type))
+    .reduce((sum, node) => sum + node.score, 0);
+  return {
+    meta: {
+      // scripts 不依赖业务包（AGENTS.md §「脚本只能用 Node 内置」），所以这里是字面量 1；
+      // 它与 `SCHEMA_VERSION` 的一致性由 packages/schema 的契约测试保证。
+      version: 1,
+      kind: "quiz",
+      title: "verify · mock 生成卷",
+      objectives: objectiveIds.map((id) => ({ id, name: id })),
+      totalScore,
+    },
+    items: nodes,
+  };
+}
+
+/**
+ * 造一份"部分正确"的答卷，并**自己**算出期望得分。
+ *
+ * 单选与数值题照抄节点里的答案（节点是教师侧流，答案本来就在），填空题故意写错。
+ * 期望值只由这份脚本算：服务端判分若把"顺序无关""容差""大小写"中任一条判错，
+ * 这里就会红——这也是 VC2 之外的第二道判分回归。
+ */
+function answerPartly(scoredIds, items, _ctx) {
+  const answers = {};
+  let expectedScore = 0;
+  for (const item of items) {
+    if (!scoredIds.includes(item.id)) continue;
+    if (item.type === "single" && typeof item.answer === "string") {
+      answers[item.id] = item.answer;
+      expectedScore += item.score;
+    } else if (item.type === "multi" && Array.isArray(item.answer)) {
+      // 顺序打乱：多选必须顺序无关（判分口径），所以这里故意反着写。
+      answers[item.id] = [...item.answer].reverse();
+      expectedScore += item.score;
+    } else if (item.type === "number" && typeof item.answer === "object" && item.answer !== null) {
+      answers[item.id] = String(item.answer.value);
+      expectedScore += item.score;
+    } else if (item.type === "fill") {
+      answers[item.id] = "故意答错的填空";
+    }
+  }
+  return { answers, expectedScore };
+}
+
+/** 把 SSE 文本切成事件对象。注释帧（心跳 `: ping`）没有 data，自然被丢掉。 */
+function parseSse(text) {
+  const events = [];
+  for (const block of text.split("\n\n")) {
+    let name = null;
+    let data = null;
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event: ")) name = line.slice("event: ".length).trim();
+      else if (line.startsWith("data: ")) data = line.slice("data: ".length);
+    }
+    if (name === null || data === null) continue;
+    const parsed = JSON.parse(data);
+    events.push({ ...parsed, name });
+  }
+  return events;
+}
+
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const CHECKS = [
   ["VC1 发布快照：改草稿不影响已发布版本的收集页", vc1Snapshot],
   ["VC2 判分与版本冲突：得分正确 / 旧版提交 409", vc2GradingAndConflict],
   ["VC3 学生端零泄漏：响应体不含答案类键", vc3NoLeak],
+  ["VC4 生成→发布→提交→看板：SSE 组装、得分对账、CSV 表头", vc4GeneratedLoop],
 ];
 
 async function main() {
@@ -396,7 +625,7 @@ async function main() {
     SESSION_TTL_HOURS: "1",
     COOKIE_SECURE: "false",
     APP_ORIGIN: baseUrl,
-    LLM_MODE: "replay",
+    LLM_MODE: "mock",
     ARGON2_MEMORY_KIB: "8192",
   };
 
