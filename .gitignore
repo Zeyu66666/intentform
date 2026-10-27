@@ -43,3 +43,6 @@ pnpm-debug.log*
 *.pem
 *.p12
 *.jks
+
+# 评测产物：每次运行的报告与原始事件流（体积大，可重跑生成）
+eval/runs/

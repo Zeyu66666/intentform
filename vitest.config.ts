@@ -7,7 +7,13 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
-    include: ["packages/*/src/**/*.test.ts", "server/src/**/*.test.ts", "web/src/**/*.test.ts"],
+    include: [
+      "packages/*/src/**/*.test.ts",
+      "server/src/**/*.test.ts",
+      "web/src/**/*.test.ts",
+      // eval 是 .mjs（`pnpm eval` 直接跑，不经编译），测试也跟着用 .mjs
+      "eval/**/*.test.mjs",
+    ],
     environment: "node",
     passWithNoTests: true,
     reporters: ["default"],
