@@ -10,13 +10,15 @@
 
 ```bash
 pnpm install
-cp .env.example .env          # 只是模板：不填 Key 也能跑，默认 LLM_MODE=replay
 pnpm seed                     # 重建 demo 库，打印演示账号与两个学生短链
 pnpm dev:server               # http://127.0.0.1:8787
 pnpm dev:web                  # http://127.0.0.1:5173
 ```
 
-> **注意**：服务端**不会自动读 `.env`**（仓库里没有 dotenv，`server/src/env.ts` 只认进程环境变量）。
+三步就够，**不需要 `.env`**：默认 `LLM_MODE=replay`，一个 Key 都不用填。
+`.env.example` 只是「有哪些变量」的模板，拷成 `.env` 不会自动生效（见下一条）。
+
+> **注意**：服务端**不会自动读 `.env`**（仓库里没有 dotenv，`server/src/env.ts` 只认进程环境变量），所以 `cp .env.example .env` 拷了也不起作用。
 > 默认的 `replay` / `mock` 模式不需要任何变量，所以上面四步直接能跑；要改配置或填 Key，
 > 用 `node --env-file=.env --experimental-strip-types server/src/main.ts` 显式指定，
 > 或者直接把变量写在前缀上（`LLM_MODE=live LLM_API_KEY=... pnpm dev:server`）。
@@ -49,10 +51,11 @@ teacher@example.com / intentform-demo
 
 ```bash
 pnpm typecheck                  # 4 个包
-npx vitest run                  # 52 文件 / 566 用例
+npx vitest run                  # 53 文件 / 590 用例
 pnpm lint                       # oxlint --deny-warnings
 node scripts/verify.mjs         # VC1–VC4，HTTP 语义闭环，自起服务 + 临时库
 node scripts/browser-closed-loop.mjs   # 真浏览器六步，落八张图到 docs/evidence/
+pnpm eval                       # 整份需求达标率（默认 replay，不用 Key；出报告到 eval/runs/）
 ```
 
 `verify.mjs` 不用浏览器、不碰你的 `data/intentform.db`，会自己起一个临时服务再关掉。
