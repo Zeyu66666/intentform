@@ -276,8 +276,8 @@ node scripts/verify.mjs
 node scripts/browser-closed-loop.mjs
 ```
 
-> 它会自己开 Chrome、自己点一遍、自己关掉，最后打印六步全绿，并刷新
-> `docs/evidence/` 里的八张截图。如果提示找不到 Chrome，说明没装或路径不对。
+> 它会自己开 Chrome、自己点一遍、自己关掉，最后打印七步全绿，并刷新
+> `docs/evidence/` 里的九张截图（含教师批改那一步）。如果提示找不到 Chrome，说明没装或路径不对。
 
 两条都过了，再回到第 1 步把后端 + 网页起起来，正式开始录。
 

@@ -16,9 +16,10 @@ docs/prompt-log/
 ├── P04/summary.md            # 提交与判分（I4）
 ├── P05/summary.md            # 修复环（I6，★录屏）
 ├── P06/summary.md            # Prompt v1→v3（I6）
-├── P07/summary.md            # Patch（I7，★录屏）
-├── P08/summary.md            # 安全审计（I8）
-└── P09/summary.md            # 设计评审（I9）
+├── P07/summary.md            # 简答带分值 + 人工批改（省赛 R-01/R-02）
+├── P08/summary.md            # Patch（I7，★录屏；原编号 P07，与省赛迭代撞号后顺延）
+├── P09/summary.md            # 安全审计（I8，顺延）
+└── P10/summary.md            # 设计评审（I9，顺延）
 ```
 
 ## 强制规则
@@ -49,7 +50,9 @@ docs/prompt-log/
 | `P03` | I3 | 已归档 | 生成式 UI（6 commit，含两处审查驱动的回退） |
 | `P04` | I4 | 已归档 | 闭环：登录 / 快照 / 提交判分 / 看板（12 commit，含浏览器实测证据） |
 | `P05` | I6 | 已归档 | 修复环与意图控制量化（`pnpm eval`，含两个「尺子」缺陷） |
-| `P06`–`P09` | I6–I9 | 未开始 | Prompt 版本迭代 / Patch / 安全审计 / 设计评审 |
+| `P07` | 省赛 R-01/R-02 | 已归档 | 简答带分值、教师人工批改，含三处口径缺陷与九条测试 |
+| `P06` | I6 | 未开始 | Prompt v1→v3 |
+| `P08`–`P10` | I7–I9 | 未开始 | Patch（原 P07）/ 安全审计 / 设计评审 |
 
 已归档的三条核心链为 `P01` / `P02` / `P04`（《审查报告》裁定 P00 不计入保底三条），**三条都已归档**。
 每条链的 `summary.md` 里「我如何引导 AI 修复 Bug」一节记录的都是当轮真实发生的缺陷，含真实 commit hash。

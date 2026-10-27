@@ -112,7 +112,7 @@ v2 → v3 改了两处，都是「尺子比产品更严」的修正：
 
 | 要证明的事 | 用哪个 |
 |---|---|
-| 一条链能不能跑通（HTTP 语义） | `node scripts/verify.mjs`（VC1–VC4） |
-| 界面能不能点（真浏览器） | `node scripts/browser-closed-loop.mjs`（六步八图） |
+| 一条链能不能跑通（HTTP 语义） | `node scripts/verify.mjs`（VC1–VC5） |
+| 界面能不能点（真浏览器） | `node scripts/browser-closed-loop.mjs`（七步九图，含教师批改） |
 | 需求有没有被满足（结构层面） | `pnpm eval`（本目录） |
 | 题目内容好不好 | 人看 `raw/*.ndjson`，机器不判 |

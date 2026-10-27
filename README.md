@@ -51,16 +51,16 @@ teacher@example.com / intentform-demo
 
 ```bash
 pnpm typecheck                  # 4 个包
-npx vitest run                  # 53 文件 / 590 用例
+npx vitest run                  # 54 文件 / 616 用例
 pnpm lint                       # oxlint --deny-warnings
-node scripts/verify.mjs         # VC1–VC4，HTTP 语义闭环，自起服务 + 临时库
-node scripts/browser-closed-loop.mjs   # 真浏览器六步，落八张图到 docs/evidence/
+node scripts/verify.mjs         # VC1–VC5，HTTP 语义闭环，自起服务 + 临时库
+node scripts/browser-closed-loop.mjs   # 真浏览器七步，落九张图到 docs/evidence/
 pnpm eval                       # 整份需求达标率（默认 replay，不用 Key；出报告到 eval/runs/）
 ```
 
 `verify.mjs` 不用浏览器、不碰你的 `data/intentform.db`，会自己起一个临时服务再关掉。
 `browser-closed-loop.mjs` 需要本机 Chrome（`CHROME_PATH` 可指定；找不到会 `exit 2` 而不是静默跳过），
-它启动服务 + vite + headless Chrome，点完六步并把截图写进 `docs/evidence/`。
+它启动服务 + vite + headless Chrome，点完七步（含教师批改）并把截图写进 `docs/evidence/`。
 
 期望输出：
 
@@ -69,7 +69,8 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 [verify] VC2 判分与版本冲突：得分正确 / 旧版提交 409 … 通过
 [verify] VC3 学生端零泄漏：响应体不含答案类键 … 通过
 [verify] VC4 生成→发布→提交→看板：SSE 组装、得分对账、CSV 表头 … 通过
-[verify] 全部通过（4/4）
+[verify] VC5 人工批改：简答录分、待批归零、看板与 CSV 同口径 … 通过
+[verify] 全部通过（5/5）
 ```
 
 ## 目录

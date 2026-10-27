@@ -108,6 +108,10 @@ def table(doc, rows, widths=None, size=8.5):
         for ci, w in enumerate(widths):
             for row in t.rows:
                 row.cells[ci].width = Cm(w)
+    # 行内禁止跨页断开：否则一行被页边界切开时，下一页会剩一条只有半个单元格的碎行
+    for row in t.rows:
+        trPr = row._tr.get_or_add_trPr()
+        trPr.append(OxmlElement("w:cantSplit"))
     return t
 
 
@@ -213,7 +217,7 @@ table(
         ["作品名称", "意卷 IntentForm：自然语言生成整份在线表单，发布、作答、判分、看板一条链"],
         ["参赛形式", "个人赛（单人完成，AI 助手协同产出代码，架构与验收由本人裁定）"],
         ["代码仓库", "https://github.com/Zeyu66666/intentform"],
-        ["证据版本", "main 分支 9fa7475（2026-10-27 15:43），共 73 次提交，全部发生在 10-26 至 10-27 两天内；第 5 章截图是该分支后于 18:41 整轮重跑的版本"],
+        ["证据版本", "main 分支（2026-10-27 23:39），共 83 次提交，全部发生在 10-26 至 10-27 两天内；第 5 章截图是最后一轮整轮重跑的版本"],
         ["技术栈", "TypeScript · Node 20+ · pnpm monorepo · React 18 + Vite 5 · SQLite（better-sqlite3）· Zod · KaTeX"],
         ["本版说明", "按官方「作品介绍文档」7 项要求重排：第 1–7 章逐项对应 (1)–(7)，技术深度与《技术文档》要求合并进同一份，附录给缺口与复现清单"],
         [
@@ -233,14 +237,13 @@ para(
     color=MUTED,
     space_after=0,
 )
-doc.add_page_break()
-
 # ── 七项对照表 ──────────────────────────────────────────────
-heading(doc, "官方七项要求 · 本文对应位置")
+heading(doc, "官方七项要求 · 本文对应位置").paragraph_format.page_break_before = True
 para(
     doc,
     "官方第 6 节对「作品介绍文档」提出 7 项硬性内容。下表逐项给出本文对应章节，以及该项能被核验的证据放在哪里。"
-    "凡是写「见某 commit / 某脚本输出」的，都能在仓库里原样跑一遍。",
+    "凡是写「见某 commit / 某脚本输出」的，都能在仓库里原样跑一遍。"
+    "本文同时承担官方 2.3「技术文档（≤30 页）」职责，所以第 3、4 章写得更细；若提交页分两个上传栏，同一份文件分别上传即可。",
     size=10,
 )
 table(
@@ -248,7 +251,7 @@ table(
     [
         ["官方要求", "本文位置", "该章用来交差的证据"],
         ["(1) 项目详情及使用方式", "第 1 章", "六步闭环流程表、三条上手路径、四行启动命令；流程截图见第 5 章"],
-        ["(2) 项目亮点", "第 2 章", "六条亮点，每条都跟一句「用户省下什么」，并指向命令或文件"],
+        ["(2) 项目亮点", "第 2 章", "七条亮点，每条都跟一句「用户省下什么」，并指向命令或文件"],
         ["(3) AI 测试技术落地", "第 3 章", "590 个用例、AI 生成用例的两个提交、8 个被测试抓出的真实缺陷；整份需求达标率 42.9%（可表达子集 92.3%）"],
         ["(4) 关键技术", "第 4 章", "三大技术重点（流式管线 / 校验与修复 / 快照与版本）+ 选型与放弃清单"],
         ["(5) 项目相关图片/照片", "第 5 章", "7 张同一次真浏览器运行落盘的截图（含手机视口），文件名与脚本步骤一一对应"],
@@ -266,25 +269,17 @@ table(
     doc,
     [
         ["数字", "本文写法", "一条命令自证"],
-        ["自动化用例", "53 个文件 / 590 个用例全绿", "npx vitest run"],
+        ["自动化用例", "54 个文件 / 616 个用例全绿", "npx vitest run"],
         ["类型与静态检查", "4 个包 typecheck 通过、oxlint 0 警告", "pnpm typecheck；npx oxlint --deny-warnings"],
-        ["HTTP 级闭环", "VC1–VC4 全部通过（4/4）", "node scripts/verify.mjs"],
-        ["浏览器级闭环", "六步全绿，截图落盘 8 张", "node scripts/browser-closed-loop.mjs"],
-        ["提交数", "73 次提交，每条带 [Pxx] / [AI-TEST] 标签", "git rev-list --count HEAD"],
+        ["HTTP 级闭环", "VC1–VC5 全部通过（5/5，含人工批改）", "node scripts/verify.mjs"],
+        ["浏览器级闭环", "七步全绿，截图落盘 9 张", "node scripts/browser-closed-loop.mjs"],
+        ["提交数", "83 次提交，每条带 [Pxx] / [AI-TEST] 标签", "git rev-list --count HEAD"],
     ],
     widths=[3.0, 6.6, 6.6],
     size=8.5,
 )
-para(
-    doc,
-    "说明：本文同时承担官方 2.3「技术文档（≤30 页）」职责，故第 3、4 章写得更细；若提交页分两个上传栏，同一份文件分别上传即可。",
-    size=9.5,
-    color=MUTED,
-)
-doc.add_page_break()
-
 # ── 1 项目详情及使用方式 ────────────────────────────────────
-heading(doc, "1　项目详情及使用方式（对应要求 1）")
+heading(doc, "1　项目详情及使用方式（对应要求 1）").paragraph_format.page_break_before = True
 
 heading(doc, "1.1　给谁、解决什么", level=2)
 para(
@@ -312,7 +307,7 @@ rich(
     ],
 )
 
-heading(doc, "1.2　一条链的六步", level=2)
+heading(doc, "1.2　一条链的七步", level=2)
 table(
     doc,
     [
@@ -321,16 +316,17 @@ table(
         ["2 生成", "教师", "三栏生成页（图 5-2）", "SSE 事件流：阶段、思考摘要、逐字段落定、错误、修复、用量"],
         ["3 发布", "教师", "发布面板（图 5-3）", "一份不可变的已发布版本 + 学生短链 /f/<slug>"],
         ["4 作答", "学生", "手机视口学生页（图 5-5、5-6）", "只含公开字段的页面，不含答案、解析、难度标签"],
-        ["5 判分", "系统", "提交接口", "客观题即时判分，返回得分与逐题对错，不回传答案"],
-        ["6 看板", "教师", "教师看板（图 5-4）", "新增一行提交记录，可导出 CSV（表头固定，含得分）"],
+        ["5 判分", "系统", "提交接口", "客观题即时判分，返回得分与逐题对错，不回传答案；简答记 N 分待人工批改"],
+        ["6 看板", "教师", "教师看板（图 5-4）", "新增一行提交记录，得分与待批分并列显示，可导出 CSV"],
+        ["7 批改", "教师", "看板内批改面板（图 5-7）", "简答逐题打分，总分与待批分即时重算，覆盖写可改分"],
     ],
     widths=[1.4, 1.8, 4.6, 8.2],
 )
 para(
     doc,
-    "这六步由 `node scripts/browser-closed-loop.mjs` 在真实浏览器里点一遍：脚本自起服务与 headless Chrome，"
-    "每一步落一张截图到 docs/evidence/，跑完在标准输出打 JSON 摘要。最近一次运行（2026-10-27 15:43）六步全绿，"
-    "判分 20/20，看板新增 1 行，八张截图同一次运行内连号。",
+    "这七步由 `node scripts/browser-closed-loop.mjs` 在真实浏览器里点一遍：脚本自起服务与 headless Chrome，"
+    "每一步落一张截图到 docs/evidence/，跑完在标准输出打 JSON 摘要。最近一次运行（2026-10-27 23:38）七步全绿，"
+    "客观题 20 分 + 简答待批 5 分，教师批 4 分后变 24 / 25，九张截图同一次运行内连号。",
     size=9.5,
     color=MUTED,
 )
@@ -376,13 +372,11 @@ rich(
         ),
     ],
 )
-doc.add_page_break()
-
 # ── 2 项目亮点 ──────────────────────────────────────────────
-heading(doc, "2　项目亮点（对应要求 2）")
+heading(doc, "2　项目亮点（对应要求 2）").paragraph_format.page_break_before = True
 para(
     doc,
-    "六条亮点，每条都按「做法 → 用户因此省下什么 → 证据在哪」写。凡是没有证据支撑的，不进这一章（都进了附录 A）。",
+    "七条亮点，每条都按「做法 → 用户因此省下什么 → 证据在哪」写。凡是没有证据支撑的，不进这一章（都进了附录 A）。",
 )
 
 heading(doc, "2.1　逐字段流式上屏，不是等一份大 JSON", level=2)
@@ -467,6 +461,20 @@ rich(
         ("「我这边能跑」不再是口头承诺——评审可以自己验证，而且结果可重复。", False),
     ],
 )
+heading(doc, "2.7　简答不硬塞进自动判分：待批分与终分分开记", level=2)
+para(
+    doc,
+    "简答题没有标准答案，硬算只能算错。我们的做法是：出卷时简答也标分值，提交时客观题当场判分、"
+    "简答记成「待批 + 待批额度」两列（20 / 25，另有 5 分待批改），教师在看板点「批改」逐题给分，"
+    "服务端按（提交, 题目）覆盖写，重算总分并让看板与 CSV 同时变成终分。"
+)
+rich(
+    doc,
+    [
+        ("用户省下什么：", True),
+        ("不会出现「学生答了、系统判 0 分」的假成绩；也不会出现看板一个数、导出的 CSV 另一个数——两个口径同一份重算结果。", False),
+    ],
+)
 table(
     doc,
     [
@@ -477,13 +485,12 @@ table(
         ["2.4 发布快照", "verify.mjs VC1（改草稿不影响已发布收集页）、VC2（旧版提交 409）"],
         ["2.5 零泄漏", "packages/schema/src/public-view.ts、commit 04c0e6f、verify.mjs VC3"],
         ["2.6 可复现", "fixtures/replays/ 三组录像、mock 模式、两个 scripts/*.mjs"],
+        ["2.7 人工批改", "server/src/grade-route.ts、db/schema.ts（manual_grades）、web/src/dashboard/GradeForm.tsx、图 5-8"],
     ],
     widths=[3.6, 12.4],
 )
-doc.add_page_break()
-
 # ── 3 AI 测试技术落地 ────────────────────────────────────────
-heading(doc, "3　AI 测试技术落地使用情况概述（对应要求 3）")
+heading(doc, "3　AI 测试技术落地使用情况概述（对应要求 3）").paragraph_format.page_break_before = True
 para(
     doc,
     "这一章只写已经发生的事：跑了多少、谁写的用例、抓到什么缺陷、哪一条修好了、哪一条还没做到。不写「计划中」当「已完成」，"
@@ -495,7 +502,7 @@ table(
     doc,
     [
         ["检查项", "真实结果", "什么时候跑的"],
-        ["单元 / 集成测试", "53 个测试文件、590 个用例全部通过，2.60 秒", "2026-10-27 21:45（npx vitest run）"],
+        ["单元 / 集成测试", "54 个测试文件、616 个用例全部通过，2.7 秒", "2026-10-27 23:38（npx vitest run）"],
         ["类型检查", "4 个包 tsc --noEmit 全部 0 错", "2026-10-27 21:45（pnpm typecheck）"],
         ["静态检查", "oxlint --deny-warnings：154 文件，0 warning 0 error", "2026-10-27 21:41（pnpm lint）"],
         ["HTTP 语义闭环", "VC1 快照隔离 / VC2 判分与 409 / VC3 零泄漏 / VC4 数据对账，4/4 通过", "2026-10-27 18:36（node scripts/verify.mjs）"],
@@ -510,7 +517,7 @@ rich(
     doc,
     [
         ("口径说明", True),
-        ("：上面每一行都是当轮命令的真实输出，不是累计统计。用例数从 566 涨到 590，多出来的是评测器自己的 24 条"
+        ("：上面每一行都是当轮命令的真实输出，不是累计统计。用例数从 566 涨到 590 再到 616，前一段多出来的是评测器自己的 24 条，后一段是简答分值与人工批改的 26 条"
         "（判分口径一旦错，报告里的百分比全是假的，所以尺子先要有测试）。如果评审在自己机器上跑出不同的数字，"
         "以命令输出为准，本文不追认任何未跑过的数。", False),
     ],
@@ -572,11 +579,11 @@ para(
     color=MUTED,
 )
 
-heading(doc, "3.3　被测试抓出来的 8 个真实缺陷", level=2)
+heading(doc, "3.3　被测试抓出来的 9 个真实缺陷", level=2)
 para(
     doc,
     "下面每一条都真实发生过，都有 commit 可查、都有回归断言。它们同时也是「测试有没有用」的证据："
-    "如果测试只是复述实现，这 8 个缺陷一个都抓不到。",
+    "如果测试只是复述实现，这 9 个缺陷一个都抓不到。",
 )
 table(
     doc,
@@ -590,6 +597,7 @@ table(
         ["6", "闭环脚本偶发失败：Windows 句柄延迟导致临时目录删不掉", "闭环脚本连续运行", "3def01f fix(scripts): 容忍句柄延迟"],
         ["7", "评测器把「一条都没产出」算成「结构完全匹配」：0/28 报成 25/28", "评测器自审（对着空成品看判定树）", "3cebf94 feat(eval): 判定器升 v3 [AI-TEST]"],
         ["8", "评测器比产品更严：问卷里 schema 允许的 bloom / knowledgePoint 被判违规，误伤 3 条合格问卷", "同一轮的逐条明细复核", "3cebf94 feat(eval): 判定器升 v3 [AI-TEST]"],
+        ["9", "学生页显示 20 / 20，服务端按 20 / 25 判：前端把简答分值丢了（toWireItem 没带 score，scoreOf 又对简答返回 0），前后端各自自洽、学生对不上账", "真浏览器闭环脚本（学生页分数与服务端对不上）", "7bf0dbe fix(web): 简答分值进请求体与总分"],
     ],
     widths=[0.7, 6.3, 4.4, 4.6],
 )
@@ -661,7 +669,10 @@ para(
     doc,
     "这个数字带来的第一个判断是：不改 Prompt。可表达子集已经 92.3%，题量与题型几乎全中，"
     "再调 Prompt 是在已经及格的地方刷分；该动的是简答分值这条产品缺口。"
-    "这也是量化的用处——它能拦住「感觉还能更好」带来的无效迭代。",
+    "这也是量化的用处——它能拦住「感觉还能更好」带来的无效迭代。"
+    "这条判断已经落地：简答分值（R-01）与教师人工批改（R-02）在 2026-10-27 晚间实现并通过 5/5 与七步闭环。"
+    "留一个诚实缺口：**修完之后还没有重跑 `pnpm eval`**，所以本文只报修之前的 42.9% / 92.3%，"
+    "不预测修好之后会是多少——那要等重跑，且要连同需求文本一起改（旧需求写「共 20 分」，现在简答带分是「共 25 分」）。",
     size=9.5,
     color=MUTED,
 )
@@ -671,7 +682,8 @@ bullet(doc, "没有统计行覆盖率：仓库没装 c8 / istanbul，本文不�
 bullet(doc, "达标率只测了「结构是否满足」，没测「题目好不好」：看不出难度是否合适、表述是否清楚、有没有歧义。后者要人工评分表，本轮没做。")
 bullet(doc, "30 条需求里 16 条是 debug 集（含 3 条预置需求，调 Prompt 时反复看），真正干净的 holdout 只有 14 条，样本量不足以支撑小数点后的比较。")
 bullet(doc, "澄清层是 0：两条探针（「帮我出一份英语卷子」「做个问卷」）证明产品直接开生成、不追问缺槽位，这一层没有可量的指标。")
-bullet(doc, "三条回放录像仍是最早用本机 OpenAI 兼容 stub 录的（meta.json 的 upstream 如实写着 local-stub）。本轮已经拿到可用 Key 并真跑了 28 条评测，但没重录这三条：重录会替换 fixture 内容，连带要重跑 verify.mjs 的 VC1–VC4 与浏览器闭环证据，赶在冻结前动它们不划算，留到下一轮。")
+bullet(doc, "三条回放录像原本是本机 OpenAI 兼容 stub 录的（meta.json 的 upstream 如实写着 local-stub）。R-01 升 Prompt v2 时已用真 DeepSeek 重录三条，upstream 变成 api.deepseek.com——这一条从缺口变成了已补齐，写在这里是为了留痕。")
+bullet(doc, "人工批改只有「能打分」：没有 graded_by 的教学审计链、没有撤销上一次批改的显式操作、教师看不到评分要点与参考答案，批改路径也不在 pnpm eval 的覆盖里（只有 verify.mjs 的 VC5 与闭环第 7 步两条证据）。")
 bullet(doc, "只在 Windows + Chrome 156 验证：没有跨浏览器矩阵，也没有 Linux / macOS 的实跑证据。")
 bullet(doc, "E2E 只有一个浏览器脚本（一条主链），没有覆盖分支场景，例如生成失败的降级、发布面板的异常路径。")
 
@@ -681,7 +693,7 @@ code_block(
     [
         "pnpm typecheck && npx vitest run && pnpm lint",
         "node scripts/verify.mjs              # 期望：VC1..VC4 全部通过，exit 0",
-        "node scripts/browser-closed-loop.mjs # 期望：六步截图落盘 + stdout 打 JSON 摘要（需本机 Chrome）",
+        "node scripts/browser-closed-loop.mjs # 期望：七步截图落盘 + stdout 打 JSON 摘要（需本机 Chrome）",
         "pnpm eval --mode replay               # 不用 Key：复核 3 条既有录像，其余记 miss，仅验通路与判据",
     ],
 )
@@ -692,10 +704,8 @@ para(
     size=9.5,
     color=MUTED,
 )
-doc.add_page_break()
-
 # ── 4 关键技术 ──────────────────────────────────────────────
-heading(doc, "4　项目中涉及的关键技术（对应要求 4）")
+heading(doc, "4　项目中涉及的关键技术（对应要求 4）").paragraph_format.page_break_before = True
 para(
     doc,
     "三个技术重点，每一个都用「真实反例 → 错误假设 → 决策 → 修复 → 回归」讲，而不是罗列名词。"
@@ -794,35 +804,34 @@ para(
 bullet(doc, "模块边界：schema 不许依赖 Node 与浏览器；llm 只依赖 schema 的类型；server 依赖 schema + llm；web 只依赖 schema 的类型与纯函数，拿不到任何密钥。")
 bullet(doc, "协议不可改：7 类事件与递增 seq、心跳 15 秒是注释行不算事件、NDJSON 逐行、修复 ≤2 轮且单调、回放键与 fixtures 目录约定、字段 id 规则、错误码以附录为源。")
 bullet(doc, "类型纪律：禁 as any 与 @ts-ignore；跨包只走包名导入；契约先行（先提交类型与载荷，再写实现）。")
-bullet(doc, "提交纪律：commit-msg 钩子强制 feat / fix / test 必须带 [Pxx] 或 [AI-TEST] 标签，保证 73 次提交能追到具体迭代与对话链。")
+bullet(doc, "提交纪律：commit-msg 钩子强制 feat / fix / test 必须带 [Pxx] 或 [AI-TEST] 标签，保证 83 次提交能追到具体迭代与对话链。")
 
 heading(doc, "4.6　关键技术落在哪个文件", level=2)
 para(
     doc,
-    "上表讲的是「为什么这么做」，下表是可以直接按图索骥去读代码的索引：每条技术点在仓库里的确切位置，以及它在七项要求里服务于哪一项。",
+    "上表讲「为什么这么做」，下表是代码索引：每条技术点的确切位置，以及它服务于七项要求里的哪一项。",
 )
 table(
     doc,
     [
         ["技术点", "代码位置", "一句话说明", "对应要求"],
-        ["结构事实源", "schema/src/types.ts、rules.ts", "Zod 定义同时产出运行时校验与编译期类型；R1–R8 是行级规则", "1、4"],
+        ["结构事实源", "schema/src/types.ts、rules.ts", "同一份 Zod 定义产出运行时校验与编译期类型", "1、4"],
         ["公开投影", "schema/src/public-view.ts", "白名单式删字段，学生端响应体里没有 answer / explanation", "2"],
         ["SSE 契约", "schema/src/sse-events.ts", "7 类事件与递增 seq 由两端共用一份定义，不靠口头约定", "1、4"],
-        ["上游适配与校验", "llm/src/provider.ts、sources.ts、validate-line.ts", "手写 OpenAI 兼容读取；四种模式共用一份时序语义；行级错误带错误码", "4"],
+        ["上游适配与校验", "llm/src/provider.ts、sources.ts、validate-line.ts", "手写 OpenAI 兼容读取；四种模式同一套时序；错误带码", "4"],
         ["整表门禁与修复环", "llm/src/publish-gate.ts、generate.ts、repair.ts", "发布前 6 条判据；不通过不发 done；修复只动报错行且必须严格变小", "2、3、4"],
-        ["快照与判分", "server/src/forms-route.ts、submissions-route.ts、grading.ts", "发布 = 追加不可变版本；旧版提交 409；得分回填看板", "2"],
+        ["快照与判分", "server/src/forms-route.ts、submissions-route.ts、grading.ts", "发布 = 追加不可变版本；旧版提交 409；得分回填看板；简答记 pendingScore", "2"],
+        ["人工批改", "server/src/grade-route.ts、db/schema.ts（manual_grades）、web/src/dashboard/GradeForm.tsx", "逐题覆盖写；批改后总分与待批分重算；看板与 CSV 同口径", "1、5"],
         ["前端状态机与复现脚本", "web/src/stream/generate-machine.ts、scripts/*.mjs", "乱序缓存、跳号兜底都在状态机里；两条证据脚本评审可自己跑", "1、3、5"],
     ],
     widths=[2.0, 6.3, 6.4, 1.3],
     size=8.0,
 )
-doc.add_page_break()
-
 # ── 5 图片/照片 ─────────────────────────────────────────────
-heading(doc, "5　项目相关的图片/照片（对应要求 5）")
+heading(doc, "5　项目相关的图片/照片（对应要求 5）").paragraph_format.page_break_before = True
 para(
     doc,
-    "全部图片来自同一次真浏览器运行（node scripts/browser-closed-loop.mjs，2026-10-27 18:41），"
+    "全部图片来自同一次真浏览器运行（node scripts/browser-closed-loop.mjs，2026-10-27 23:38），"
     "由脚本在每一步自动落盘到 docs/evidence/，文件名前缀就是步骤序号，没有手工摆拍、没有事后补图。"
     "页面里的数据来自 mock 模式的内置脚本（含一条故意写坏再修复的题），教师账号与提交记录由 pnpm seed 生成，全部虚构。",
     size=9,
@@ -835,17 +844,22 @@ image_row(
 image_row(
     doc,
     [("03a-publish-panel.png", 6.2), ("07-dashboard.png", 6.2)],
-    "图 5-3 / 5-4　左：发布面板（门禁通过才能发布，给出学生短链）；右：教师看板（新增一行，20 / 20）",
+    "图 5-3 / 5-4　左：发布面板（门禁通过才能发布，给出学生短链）；右：教师看板（新增一行 20 / 25，另有 5 分待批改，右侧出现「批改」入口）",
 )
 image_row(
     doc,
     [("04-student.png", 3.6), ("05-student-answered.png", 3.6), ("06-submitted.png", 3.6)],
-    "图 5-5 / 5-6 / 5-7　手机视口三态：未作答 → 作答中 → 提交成功 20 分（无答案、解析、难度标签）",
+    "图 5-5 / 5-6 / 5-7　手机视口三态：未作答 → 作答中 → 提交成功（客观题 20 分，简答 5 分待批，无答案、解析、难度标签）",
+)
+image_row(
+    doc,
+    [("08-graded.png", 13.6)],
+    "图 5-8　第 7 步的教师批改面板：逐题显示学生原文与满分（5 分），输入 4 分后总分行由 20 / 25 重算为 24 / 25，简答列从「待批 5 分」变为「已批完」",
 )
 para(
     doc,
     "另有一张 03b-published-dashboard.png（发布后回到看板的中间态）在仓库里，为避免重复未嵌入。"
-    "七张图连号同源，可对照 docs/evidence/README.md 的「最近一次运行」表核验时间戳。",
+    "八张图连号同源，可对照 docs/evidence/README.md 的「最近一次运行」表核验时间戳。",
     size=8.5,
     color=MUTED,
 )
@@ -860,7 +874,7 @@ table(
         ["项", "实际情况"],
         ["是否发表过", "未发表。没有论文、没有公开文章、没有在任何应用商店或开源平台发布过成品"],
         ["是否获奖", "未获奖。本项目为首次参赛作品"],
-        ["是否首次提交", "是。仓库的 73 次提交全部发生在 2026-10-26 至 10-27，为本次比赛新建，无历史版本对外发布"],
+        ["是否首次提交", "是。仓库的 83 次提交全部发生在 2026-10-26 至 10-27，为本次比赛新建，无历史版本对外发布"],
         ["与其他赛事的关系", "此前未以任何形式（含课程作业、毕业设计、其他赛事）提交过同一作品或其主要模块"],
         ["预指导与省赛的关系", "本版用于预指导；按组委会说明，预指导作品不作为省赛最终作品，省赛提交时以届时版本为准"],
         ["第三方素材", "未使用任何商用字体、图片、音频、视频素材；界面为自制，图标用系统字符与 CSS 绘制"],
@@ -882,7 +896,7 @@ rich(
     ],
 )
 para(doc, "三条可核验的依据：", size=10)
-bullet(doc, "仓库第一次提交是 chore: init pnpm monorepo，此后 73 次提交按迭代 I0–I5 推进，每条都能在 git log 里看到功能与测试成对出现；不存在一次性倒入大量代码的提交。")
+bullet(doc, "仓库第一次提交是 chore: init pnpm monorepo，此后 83 次提交按迭代 I0–I5 与省赛迭代推进，每条都能在 git log 里看到功能与测试成对出现；不存在一次性倒入大量代码的提交。")
 bullet(doc, "表单渲染、校验规则、SSE 协议、发布快照、判分逻辑全部是本仓库自写；被明确排除的框架（LangChain / LlamaIndex / Vercel AI SDK / formily / amis / SurveyJS / react-jsonschema-form）一个都没有进依赖树。")
 bullet(doc, "第三方依赖只有通用基础库，清单与用途如下（全部为 MIT / Apache-2.0 类宽松许可，未修改其源码）。")
 table(
@@ -919,10 +933,8 @@ para(
     size=9.5,
     color=MUTED,
 )
-doc.add_page_break()
-
 # ── 附录 A 已知缺口 ─────────────────────────────────────────
-heading(doc, "附录 A　已知缺口：现在做不到的，写清楚")
+heading(doc, "附录 A　已知缺口：现在做不到的，写清楚").paragraph_format.page_break_before = True
 para(
     doc,
     "这一节的作用是「评审怀疑某功能没做时先看这里」。下列 10 条都不是计划，是当前版本的真实状态；"
@@ -934,7 +946,7 @@ table(
         ["#", "缺口", "影响 / 触发条件"],
         ["1", "不做 Patch：改表单只能整份重发", "教师想改一道题也要重新生成或整份保存；旧答案不与新版本合并"],
         ["2", "版本冲突只有 HTTP 级证据（VC2），没有浏览器级点击证据", "界面侧冲突分支有单测，但缺一次真实点击；需等 Patch 上线才能补"],
-        ["3", "简答字段没有分值：shortFieldSchema 继承 baseFieldSchema", "需求写「含 N 道简答、每题 5 分、共 M 分」时总分凑不出来，30 条评测需求里 15 条因此无解；整份达标率被压到 42.9%，去掉这一组是 92.3%。修法在 schema 侧，要连带改 isScoredItem、判分、publicView、web 渲染并升 schemaVersion"],
+        ["3", "（已修复）简答字段没有分值 → R-01/R-02（c5c9b88 / 2c23c5e / 7bf0dbe）", "修前：需求写「含 N 道简答、每题 5 分、共 M 分」时总分凑不出来，30 条需求里 15 条无解，整份达标率被压到 42.9%（去掉这组 92.3%）。修法：short 可选带 score、新增 pendingScore、prompt 升 v2 重录回放、教师可人工批改；修后尚未重跑 eval"],
         ["4", "澄清层未实现：缺槽位不追问", "「帮我出一份英语卷子」「做个问卷」直接开生成，缺的题型与题量由模型自己猜；两条探针实测 0/2"],
         ["5", "达标率只测结构、不测题目质量", "能算出题量/题型/知识点对不对，算不出难度是否合适、表述是否清楚、有没有歧义；后者要人工评分表"],
         ["6", "三条回放录自本机 OpenAI 兼容 stub", "meta.json 的 upstream 为 local-stub；本轮已具备可用 Key（live 评测 28 条真跑过），但重录会改 fixture 内容并需重跑 VC1–VC4 与浏览器闭环，未在本轮做"],
@@ -954,7 +966,7 @@ code_block(
     [
         "pnpm install",
         "pnpm typecheck                        # 4 个包，0 错",
-        "npx vitest run                        # 53 文件 / 590 用例",
+        "npx vitest run                        # 54 文件 / 616 用例",
         "node scripts/verify.mjs               # VC1–VC4，4/4",
         "node scripts/browser-closed-loop.mjs  # 6 步 8 图（需 Chrome，找不到 exit 2）",
         "pnpm eval --mode replay               # 不用 Key（只复核 3 条既有录像）",
@@ -975,13 +987,13 @@ table(
     doc,
     [
         ["证据", "位置", "能证明什么"],
-        ["闭环截图 8 张", "docs/evidence/*.png（连号，同一次运行）", "界面真的能用：六步点得通，不是只有接口"],
+        ["闭环截图 9 张", "docs/evidence/*.png（连号，同一次运行）", "界面真的能用：七步点得通，含教师批改，不是只有接口"],
         ["截图与版本对应", "docs/evidence/README.md 的「最近一次运行」表", "截图属于哪次运行、哪个 commit、什么浏览器"],
         ["HTTP 语义证据", "scripts/verify.mjs（VC1–VC4）", "快照隔离、409 冲突、零泄漏、数据对账"],
         ["回放录像 3 组", "fixtures/replays/*.ndjson + *.meta.json", "无 Key 可重放真实时序；meta 记录模型与用量"],
         ["Prompt 链 5 条", "docs/prompt-log/P00–P04（核心三条 P01/P02/P04）", "每条链含提问、AI 建议（含被否决项）、修 bug 过程、commit"],
         ["架构约束", "AGENTS.md（模块边界、协议冻结、提交纪律）", "AI 生成的代码为什么没有长歪"],
-        ["测试与类型", "53 个 *.test.ts、4 个 tsconfig、oxlint 配置", "590 用例、0 类型错、0 告警"],
+        ["测试与类型", "54 个 *.test.ts、4 个 tsconfig、oxlint 配置", "616 用例、0 类型错、0 告警"],
     ],
     widths=[3.2, 6.6, 6.2],
 )
@@ -1147,7 +1159,7 @@ table(
         ["换模型或换服务商", "改 LLM_BASE_URL 与 LLM_CHAT_MODEL 两项", "启动日志与 /healthz 的 llmMode 变 live，生成照常"],
         ["留一份自己的录像给评审", "LLM_MODE=record 跑一次后改回 replay", "fixtures/replays/ 多一对 ndjson + meta，之后零 Key 可重放"],
         ["确认现在到底是哪个模式", "curl /healthz 或看页面顶栏", '"llmMode" 与界面显示一致，不会含糊'],
-        ["核对判分与数据", "生成→发布→作答→提交后看 /dashboard", "提交行得分与 CSV 表头一致（本次闭环 20 / 20）"],
+        ["核对判分与数据", "生成→发布→作答→提交后看 /dashboard", "提交行得分与 CSV 表头一致（本次闭环 20 / 25，另有 5 分待批改）"],
     ],
     widths=[3.6, 6.4, 6.2],
     size=8.5,
