@@ -138,7 +138,14 @@ describe("仓库里已录制的 3 条 fixture", () => {
       expect(fixture.meta.promptVersion).toBe(DEFAULT_PROMPT_VERSION);
       expect(fixture.meta.schemaVersion).toBe(SCHEMA_VERSION);
       expect(fixture.meta.requirementPreview).toBe(normalizeRequirement(preset.requirement).slice(0, 80));
-      expect(fixture.meta.upstream).toMatch(/^local-stub:127\.0\.0\.1:\d+$/);
+      // 只要求「如实标注」：本地 stub 录的写 local-stub:…，真上游录的写 openai-compatible:<host>。
+      // 钉死成 stub 会挡住「有 Key 后重录」这条路，而重录是计划里明确要求的一步。
+      expect(fixture.meta.upstream).toMatch(/^(local-stub:127\.0\.0\.1:\d+|openai-compatible:[\w.-]+)$/);
+      if (fixture.meta.upstream.startsWith("openai-compatible:")) {
+        // 真上游的 usage 不该是 0：写 0 说明当时没解析到 usage，`usageSource` 会标 estimated。
+        expect(fixture.meta.usage.promptTokens).toBeGreaterThan(0);
+        expect(fixture.meta.usage.completionTokens).toBeGreaterThan(0);
+      }
       expect(fixture.meta.chunks).toBe(fixture.chunks.length);
       expect(fixture.meta.totalMs).toBe(fixture.chunks.reduce((sum, chunk) => sum + chunk.dt, 0));
       expect(fixture.meta.recordedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
