@@ -36,6 +36,8 @@ export const API_PATHS = {
   logout: "/api/auth/logout",
   me: "/api/auth/me",
   generate: "/api/generate",
+  /** 意图澄清（省赛 R-05）：只回追问，不生成。 */
+  clarify: "/api/clarify",
   forms: "/api/forms",
   form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   publish: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/publish`,

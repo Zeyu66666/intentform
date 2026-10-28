@@ -79,6 +79,14 @@ const TYPES_RE = /单选|多选|填空|简答|判断|问答|论述|量表|连线
 const KNOWLEDGE_RE = /知识点|考点|章节|单元|大纲|课本|课文|(?<![一-龥])unit\s*\d|第\s*[一-龥]{1,3}\s*章/i;
 
 /**
+ * 学科 / 主题词。需求已经点了题（「高二化学」「英语时态」）就不再问「考什么」——
+ * 校准数据（2026-10-28，30 条 eval 需求）显示：只按显式标记判，28 条可判分需求里
+ * 20 条会被追问一次，而它们全都写了学科。多问一次不是错，但会让人以为系统没读懂。
+ */
+const SUBJECT_RE =
+  /数学|语文|英语|物理|化学|生物|历史|地理|政治|道德|法治|美术|音乐|体育|信息技术|科学|编程|python|java/i;
+
+/**
  * 缺哪些槽位（按优先级）。
  *
  * 两处按品类裁剪，不是遗漏：
@@ -94,7 +102,9 @@ export function detectMissingSlots(
   if (!COUNT_RE.test(requirement)) missing.push("count");
   if (kind === "quiz" && !SCORE_RE.test(requirement)) missing.push("score");
   if (!TYPES_RE.test(requirement)) missing.push("types");
-  if (kind === "quiz" && !KNOWLEDGE_RE.test(requirement)) missing.push("knowledge");
+  if (kind === "quiz" && !KNOWLEDGE_RE.test(requirement) && !SUBJECT_RE.test(requirement)) {
+    missing.push("knowledge");
+  }
   return missing;
 }
 

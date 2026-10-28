@@ -239,3 +239,40 @@ describe("上游模式回执（§2.6 第 4 条）", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("createFetchStreamSource · 澄清补充（R-05）", () => {
+  function capture(fetchImplCalls: { body: string | undefined }[]) {
+    return createFetchStreamSource({
+      apiBase: "/api",
+      fetchImpl: async (_input, init) => {
+        fetchImplCalls.push({ body: typeof init?.body === "string" ? init.body : undefined });
+        return new Response(streamOf(['data: {"type":"usage","seq":1,"promptTokens":1,"completionTokens":2,"ms":3}\n\n']));
+      },
+    });
+  }
+
+  it("有补充时一起发出去", async () => {
+    const calls: { body: string | undefined }[] = [];
+    const source = capture(calls);
+    await collect(
+      source({
+        requirement: "帮我出一份英语卷子",
+        clarifications: [{ slot: "count", answer: "10 题" }],
+        signal: new AbortController().signal,
+      }),
+    );
+    expect(calls[0]?.body).toBe(
+      JSON.stringify({
+        requirement: "帮我出一份英语卷子",
+        clarifications: [{ slot: "count", answer: "10 题" }],
+      }),
+    );
+  });
+
+  it("没有补充时请求体与以前逐字节相同（回放键不漂）", async () => {
+    const calls: { body: string | undefined }[] = [];
+    const source = capture(calls);
+    await collect(source({ requirement: "出一道题", clarifications: [], signal: new AbortController().signal }));
+    expect(calls[0]?.body).toBe(JSON.stringify({ requirement: "出一道题" }));
+  });
+});

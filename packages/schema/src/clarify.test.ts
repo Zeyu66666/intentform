@@ -17,13 +17,9 @@ import {
 import { GENERATE_PRESETS } from "./presets.ts";
 
 describe("detectMissingSlots", () => {
-  it("含糊需求：题量、分值、题型、知识点都算缺（场景能认出是卷子）", () => {
-    expect(detectMissingSlots("帮我出一份英语卷子")).toEqual([
-      "count",
-      "score",
-      "types",
-      "knowledge",
-    ]);
+  it("含糊需求：题量、分值、题型都算缺（场景能认出是卷子）", () => {
+    // 「英语」是学科词：已经点了题，就不再问「考什么知识点」。
+    expect(detectMissingSlots("帮我出一份英语卷子")).toEqual(["count", "score", "types"]);
   });
 
   it("连场景都没有的，排在最前面", () => {

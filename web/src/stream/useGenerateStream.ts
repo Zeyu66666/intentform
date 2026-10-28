@@ -19,6 +19,8 @@
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
+import type { Clarification } from "@intentform/schema";
+
 import { createSseFrameParser, type ParsedFrame } from "./frames";
 import {
   GAP_TICK_MS,
@@ -30,7 +32,8 @@ import { GenerateStreamError, isAbortError, type StreamSource } from "./source";
 
 export interface UseGenerateStreamResult {
   readonly state: GenerateState;
-  readonly start: (requirement: string) => void;
+  /** `clarifications` 是澄清补答（R-05）；空数组时请求体与以前逐字节相同。 */
+  readonly start: (requirement: string, clarifications?: readonly Clarification[]) => void;
   readonly cancel: () => void;
   readonly reset: () => void;
 }
@@ -75,7 +78,7 @@ export function useGenerateStream(source: StreamSource): UseGenerateStreamResult
   }, []);
 
   const start = useCallback(
-    (requirement: string): void => {
+    (requirement: string, clarifications: readonly Clarification[] = []): void => {
       const trimmed = requirement.trim();
       if (trimmed === "") return;
 
@@ -92,7 +95,11 @@ export function useGenerateStream(source: StreamSource): UseGenerateStreamResult
       const pump = async (): Promise<void> => {
         const parser = createSseFrameParser();
         try {
-          for await (const chunk of source({ requirement: trimmed, signal: controller.signal })) {
+          for await (const chunk of source({
+            requirement: trimmed,
+            clarifications,
+            signal: controller.signal,
+          })) {
             if (runId !== runIdRef.current) return;
             for (const frame of parser.push(chunk)) applyFrame(frame);
           }

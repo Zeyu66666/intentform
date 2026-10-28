@@ -14,12 +14,17 @@
  * **在退出时释放 reader**（`finally` 里 `reader.cancel()`，否则 abort 时连接会悬挂）。
  */
 
-import type { SseErrorCode } from "@intentform/schema";
+import type { Clarification, SseErrorCode } from "@intentform/schema";
 
 import { createTextStreamDecoder } from "./decode";
 
 export interface GenerateRequest {
   readonly requirement: string;
+  /**
+   * 澄清补答（省赛 R-05）。缺省或空数组时**不进请求体**：
+   * 服务端把「有没有补充」当作两条路径，请求体形状不同，回放键才不会漂。
+   */
+  readonly clarifications?: readonly Clarification[];
   /** 取消信号。取消按钮 → `controller.abort()` → `reader.read()` 抛 AbortError。 */
   readonly signal: AbortSignal;
 }
@@ -78,7 +83,11 @@ export function createFetchStreamSource(options: FetchStreamSourceOptions): Stre
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       },
-      body: JSON.stringify({ requirement: request.requirement }),
+      body: JSON.stringify(
+        request.clarifications === undefined || request.clarifications.length === 0
+          ? { requirement: request.requirement }
+          : { requirement: request.requirement, clarifications: request.clarifications },
+      ),
       signal: request.signal,
       credentials: "same-origin",
     });

@@ -12,12 +12,22 @@
  * 状态全部来自 `useGenerateStream()` 的 `useReducer`，没有第二个状态源。
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
-import type { FormKind } from "@intentform/schema";
+import type { Clarification, ClarifyQuestion, ClarifySlotId, FormKind } from "@intentform/schema";
 
+import { createClarifyApi } from "./api/clarify";
+import { describeFailure } from "./api/failures";
 import { createHttpClient } from "./api/http";
 import { createTeacherApi } from "./api/teacher";
+import { ClarifyForm } from "./panels/ClarifyForm";
+import {
+  EMPTY_DRAFTS,
+  buildClarifications,
+  setCustom,
+  toggleOption,
+  type ClarifyDrafts,
+} from "./panels/clarify-model";
 import { RequirementPanel } from "./panels/RequirementPanel";
 import { PreviewPanel, type PreviewMode } from "./panels/PreviewPanel";
 import { TimelinePanel } from "./panels/TimelinePanel";
@@ -50,6 +60,18 @@ function describeSource(streamMode: "live" | "fixture", upstreamMode: string | n
   if (upstreamMode === null) return "未知（等待响应头回执）";
   return UPSTREAM_MODE_LABELS[upstreamMode] ?? `未知模式 ${upstreamMode}`;
 }
+
+/**
+ * 澄清的四个状态（R-05）。
+ *
+ * 「检查中」和「有问题要问」分开，是因为两者界面完全不同：
+ * 前者不能点、后者要答题。合成一个 `loading: boolean` 会让按钮态与内容态互相打结。
+ */
+type ClarifyState =
+  | { readonly status: "idle" }
+  | { readonly status: "loading" }
+  | { readonly status: "ready"; readonly questions: readonly ClarifyQuestion[] }
+  | { readonly status: "error"; readonly message: string };
 
 export function App(): JSX.Element {
   // 只读 `VITE_API_BASE`（`config.ts` 的白名单），且必须走 `resolveApiBase()`：
@@ -86,10 +108,111 @@ export function App(): JSX.Element {
 
   // 唯一的 HTTP 出口（`credentials: "include"` + CSRF 头都在 `http.ts` 里）。
   const api = useMemo(() => createTeacherApi(createHttpClient()), []);
+  const clarifyApi = useMemo(() => createClarifyApi(createHttpClient()), []);
+
+  // 澄清（R-05）：状态与草稿都留在 App，左栏只负责画。
+  const [clarify, setClarify] = useState<ClarifyState>({ status: "idle" });
+  const [drafts, setDrafts] = useState<ClarifyDrafts>(EMPTY_DRAFTS);
+  /** 澄清请求的序号：需求被改动后，迟到的追问不再覆盖界面。 */
+  const clarifyTokenRef = useRef(0);
+
+  const beginGeneration = useCallback(
+    (requirementText: string, clarifications: readonly Clarification[]): void => {
+      setPublished(null);
+      setClarify({ status: "idle" });
+      setDrafts(EMPTY_DRAFTS);
+      start(requirementText, clarifications);
+    },
+    [start],
+  );
+
+  /**
+   * 点「生成表单」：先问一次「缺不缺槽位」，再决定是直接生成还是弹追问。
+   * 澄清接口不可用时给出两条出路（重试 / 仍然生成），**不静默跳过**——
+   * 悄悄跳过会让「意图控制」在演示里变成一段没有发生的对话。
+   */
+  const requestStart = useCallback((): void => {
+    const requirementText = requirement.trim();
+    if (requirementText === "") return;
+    if (mode === "fixture") {
+      beginGeneration(requirementText, []);
+      return;
+    }
+    const token = clarifyTokenRef.current + 1;
+    clarifyTokenRef.current = token;
+    setClarify({ status: "loading" });
+    void clarifyApi.clarify({ requirement: requirementText, kind }).then((outcome) => {
+      if (clarifyTokenRef.current !== token) return;
+      if (!outcome.ok) {
+        setClarify({
+          status: "error",
+          message: describeFailure(outcome.failure, {
+            notFound: "澄清接口不存在（服务端版本旧或没启动）",
+          }),
+        });
+        return;
+      }
+      if (outcome.data.questions.length === 0) {
+        beginGeneration(requirementText, []);
+        return;
+      }
+      setDrafts(EMPTY_DRAFTS);
+      setClarify({ status: "ready", questions: outcome.data.questions });
+    });
+  }, [requirement, mode, clarifyApi, kind, beginGeneration]);
 
   const fields = selectPreviewFields(state);
   const fieldNodes = useMemo(() => fields.map((entry) => entry.node), [fields]);
   const errors = selectUnresolvedErrors(state);
+  /** 追问块：只在后端真的回了追问时出现；「跳过」永远在旁边。 */
+  const clarifySlot =
+    clarify.status === "ready" ? (
+      <ClarifyForm
+        questions={clarify.questions}
+        drafts={drafts}
+        onToggleOption={(slot: ClarifySlotId, option: string) => {
+          setDrafts((previous) => toggleOption(previous, slot, option));
+        }}
+        onCustomChange={(slot: ClarifySlotId, text: string) => {
+          setDrafts((previous) => setCustom(previous, slot, text));
+        }}
+        onConfirm={() => {
+          beginGeneration(
+            requirement.trim(),
+            buildClarifications(clarify.questions, drafts),
+          );
+        }}
+        onSkip={() => {
+          beginGeneration(requirement.trim(), []);
+        }}
+      />
+    ) : clarify.status === "loading" ? (
+      <p className="m-0 text-sm text-muted" data-testid="clarify-loading" aria-live="polite">
+        正在检查需求是否写全…
+      </p>
+    ) : clarify.status === "error" ? (
+      <section className="flex flex-col gap-1 rounded-sm border border-danger bg-surface p-2" role="alert">
+        <p className="m-0 text-sm text-danger">{clarify.message}</p>
+        <button
+          type="button"
+          onClick={requestStart}
+          className="w-full rounded-sm border border-line px-2 py-1 text-xs text-muted"
+        >
+          重试
+        </button>
+        <button
+          type="button"
+          data-testid="clarify-still-generate"
+          onClick={() => {
+            beginGeneration(requirement.trim(), []);
+          }}
+          className="w-full rounded-sm bg-accent px-2 py-2 text-sm font-semibold text-white"
+        >
+          仍然生成
+        </button>
+      </section>
+    ) : null;
+
   const terminalText = TERMINAL_TEXT[state.status];
   const terminalTone =
     state.status === "error" ? "text-danger" : state.status === "done" ? "text-success" : "text-muted";
@@ -123,18 +246,22 @@ export function App(): JSX.Element {
               status={state.status}
               kind={kind}
               onKindChange={setKind}
-              onRequirementChange={setRequirement}
-              onStart={() => {
-                setPublished(null);
-                start(requirement);
+              onRequirementChange={(value) => {
+                setRequirement(value);
+                // 需求改了，上一轮的追问就不再对应当前文本：收起，下次重新检查。
+                if (clarify.status !== "idle") setClarify({ status: "idle" });
               }}
+              onStart={requestStart}
               onCancel={cancel}
               onReset={() => {
                 reset();
                 setRequirement("");
                 setPublished(null);
+                setClarify({ status: "idle" });
+                setDrafts(EMPTY_DRAFTS);
               }}
               demoNotice={mode === "fixture" ? DEMO_NOTICE : null}
+              clarifySlot={clarifySlot}
             />
           </div>
           {state.status === "done" ? (
