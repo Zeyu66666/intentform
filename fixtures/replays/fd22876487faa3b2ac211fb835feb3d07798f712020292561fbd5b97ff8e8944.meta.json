@@ -1,0 +1,16 @@
+{
+  "recordedAt": "2026-10-28T11:47:18.639Z",
+  "model": "deepseek-chat",
+  "promptVersion": "generate.v3",
+  "schemaVersion": 1,
+  "requirementHash": "fd22876487faa3b2ac211fb835feb3d07798f712020292561fbd5b97ff8e8944",
+  "requirementPreview": "生成一份高一英语词汇周测，10 道题：6 道单选考词义辨析、2 道填空考词形变化、2 道简答考用词造句，知识点是 Unit 3 的动词短语，满分 50 分。",
+  "chunks": 1063,
+  "totalMs": 4744,
+  "usage": {
+    "promptTokens": 965,
+    "completionTokens": 1063
+  },
+  "upstream": "openai-compatible:api.deepseek.com",
+  "mode": "record"
+}

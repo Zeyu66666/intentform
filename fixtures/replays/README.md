@@ -76,7 +76,8 @@ key     = normalize(requirement) + "\u0000" + model + "\u0000" + promptVersion +
 
 ## 5. 命名与预算
 
-- 仓库里的 fixture 上限 3 条（I2 收口标准），对应生成页的 3 个「预置需求」按钮。加第 4 条要先改计划。
+- 仓库里的 fixture 上限 **6 条** = 3 个「预置需求」× 两段（`plan.v1` 蓝图 + `generate.v3` 生成）。
+  两段各有独立回放键，缺一段两阶段就跑不起来。加第 4 条需求要先改计划（上限同步改 8）。
 - 每条 fixture 的 `.ndjson` 不得大于 256 KB；超了说明录了一段超长输出，应当拆需求而不是放宽上限。
 - fixture 与需求文本必须一一对应：`requirementPreview` 改不了 hash，改动需求文本必然要重录。
 

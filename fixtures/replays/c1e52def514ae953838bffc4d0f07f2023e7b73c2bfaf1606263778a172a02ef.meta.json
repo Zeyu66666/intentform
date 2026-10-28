@@ -1,0 +1,16 @@
+{
+  "recordedAt": "2026-10-28T11:47:12.722Z",
+  "model": "deepseek-chat",
+  "promptVersion": "generate.v3",
+  "schemaVersion": 1,
+  "requirementHash": "c1e52def514ae953838bffc4d0f07f2023e7b73c2bfaf1606263778a172a02ef",
+  "requirementPreview": "出一份初二数学《二次函数》的入门测验，8 道题：4 道单选、2 道填空、2 道简答，覆盖开口方向、顶点坐标、对称轴三个知识点，难度偏基础，每题 5 分。",
+  "chunks": 884,
+  "totalMs": 3425,
+  "usage": {
+    "promptTokens": 963,
+    "completionTokens": 884
+  },
+  "upstream": "openai-compatible:api.deepseek.com",
+  "mode": "record"
+}

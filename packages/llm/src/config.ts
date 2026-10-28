@@ -38,7 +38,7 @@ export const DEFAULT_TEMPERATURE = 0;
  * 明确禁止（「section/short/scale 不带 score」），模型只能漏分值或改题型。
  * 升版是强制的：同一份需求在 v1 下生成的输出与 v2 不同，两者不能共用一个回放键。
  */
-export const DEFAULT_PROMPT_VERSION = "generate.v2";
+export const DEFAULT_PROMPT_VERSION = "generate.v3";
 
 export const REPLAY_SPEEDS = ["1x", "2x", "instant"] as const;
 

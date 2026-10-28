@@ -1,0 +1,16 @@
+{
+  "recordedAt": "2026-10-28T11:47:23.268Z",
+  "model": "deepseek-chat",
+  "promptVersion": "generate.v3",
+  "schemaVersion": 1,
+  "requirementHash": "f0fdcaefdfc3dfd49cc4d7544b437fc30216a32a6b9496a9f7e98afd80dd14e0",
+  "requirementPreview": "做一个高二生物的课前学情调查问卷，8 道题：3 道单选了解预习情况、2 道量表题了解学习信心、2 道填空题收集具体困惑、1 道简答题让学生写出最想搞懂的实验。这",
+  "chunks": 528,
+  "totalMs": 3319,
+  "usage": {
+    "promptTokens": 970,
+    "completionTokens": 528
+  },
+  "upstream": "openai-compatible:api.deepseek.com",
+  "mode": "record"
+}

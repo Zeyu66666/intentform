@@ -29,6 +29,7 @@ import {
   resolveLlmRuntimeConfig,
 } from "../config.ts";
 import { generateForm } from "../generate.ts";
+import { planForm } from "../plan.ts";
 import { silentLogger } from "../logger.ts";
 import { createRecordSource } from "../sources.ts";
 import type { WriteFixtureResult } from "../fixtures.ts";
@@ -70,6 +71,41 @@ export interface RecordFixturesOptions {
   readonly upstream?: "stub" | "real";
 }
 
+/**
+ * 顺手把**蓝图**的三条也录下来（省赛 R-06）。
+ *
+ * 蓝图走 `plan.v1`、生成走 `generate.v3`，回放键因此是两个；两段都必须有录像，
+ * `replay` 模式下两阶段才能离线跑完整。
+ */
+async function recordPlan(
+  config: ReturnType<typeof resolveLlmRuntimeConfig>,
+  presetId: string,
+  requirement: string,
+): Promise<RecordedFixture> {
+  const held: { result: WriteFixtureResult | null } = { result: null };
+  const source = createRecordSource(config, {
+    onRecorded: (result) => {
+      held.result = result;
+    },
+  });
+  await planForm({ config, source, logger: silentLogger }, { requirement });
+  const finished: WriteFixtureResult | null = held.result;
+  if (finished === null) throw new Error(`蓝图录制未落盘：${presetId}`);
+  const meta = await readMeta(finished.metaPath);
+  return {
+    presetId: `${presetId}-plan`,
+    hash: finished.hash,
+    chunks: meta.chunks,
+    totalMs: meta.totalMs,
+    upstream: meta.upstream,
+    recordedAt: meta.recordedAt,
+    fields: 0,
+    errors: 0,
+    repairs: 0,
+    bytes: finished.bytes,
+  };
+}
+
 export async function recordFixtures(options: RecordFixturesOptions = {}): Promise<readonly RecordedFixture[]> {
   const fixtureDir = options.fixtureDir ?? DEFAULT_FIXTURE_DIR;
   if (options.upstream === "real") return await recordFixturesFromRealUpstream(fixtureDir);
@@ -95,6 +131,7 @@ export async function recordFixtures(options: RecordFixturesOptions = {}): Promi
         },
         { fixtureDir, promptVersion: DEFAULT_PROMPT_VERSION },
       );
+      results.push(await recordPlan(config, preset.id, preset.requirement));
       results.push(await recordOne(config, preset.id, preset.requirement));
     }
   } finally {
@@ -126,6 +163,7 @@ async function recordFixturesFromRealUpstream(fixtureDir: string): Promise<reado
 
   const results: RecordedFixture[] = [];
   for (const preset of GENERATE_PRESETS) {
+    results.push(await recordPlan(config, preset.id, preset.requirement));
     results.push(await recordOne(config, preset.id, preset.requirement));
   }
   return results;
