@@ -11,6 +11,8 @@
  *      看板与 CSV 三处一致（省赛 R-02）。
  *   VC6 受限修改与撤销：`PATCH /api/forms/:id` 追加草稿版本、旧 `baseVersionId` 409、
  *      `POST /api/forms/:id/undo` 退回父版本（省赛 R-03）。
+ *   VC7 每题正确率：三份提交（全对 / 只对一半 / 未作答）下逐题统计的 total / answered /
+ *      correct / rate 逐个对；零提交时 rate 是 null（省赛 R-04）。
  *   VC4 生成→发布→提交→看板：`LLM_MODE=mock` 走完整的 SSE 生成，把 `field` 事件里
  *                 的节点组装成 quiz 表单，发布后提交一份**故意只对一半**的答卷，
  *                 得分必须等于脚本自己算出的期望值（不是"大于 0"），再看板与 CSV 对账。
@@ -720,6 +722,100 @@ function answerPartly(scoredIds, items, _ctx) {
   return { answers, expectedScore };
 }
 
+/**
+ * VC7：每题正确率（省赛 R-04）。
+ *
+ * 自带一份两张单选的卷子，不从 VC1 的卷子借数据——三个数必须一眼可算：
+ * 第 1 份两题全对、第 2 份只对第一题、第 3 份整份没作答。
+ * 于是第一题 `2/3`、第二题 `1/3`，而**分母都是 3**（未作答也算没答对）。
+ *
+ * 第二个断言在提交之前做：还没有人提交时 `rate` 必须是 `null`。
+ * 如果这里出现 `0`，看板会把「还没人做」显示成「全班全错」——那是本轮最想防的误读。
+ */
+async function vc7ItemStats(request, ctx) {
+  const schema = {
+    meta: { version: 1, kind: "quiz", title: "verify · 逐题正确率", objectives: [], totalScore: 10 },
+    items: [
+      {
+        id: "s-one",
+        type: "single",
+        title: "一加一等于",
+        options: [
+          { id: "op1", text: "1" },
+          { id: "op2", text: "2" },
+        ],
+        answer: "op2",
+        score: 5,
+        required: true,
+      },
+      {
+        id: "s-two",
+        type: "single",
+        title: "二加二等于",
+        options: [
+          { id: "op3", text: "3" },
+          { id: "op4", text: "4" },
+        ],
+        answer: "op4",
+        score: 5,
+        required: true,
+      },
+    ],
+  };
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: schema.meta.title, kind: "quiz", schema },
+  });
+  must(created.status === 201, `VC7 建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const formId = created.json.form.id;
+  const versionId = created.json.version.id;
+  const published = await request("POST", `/api/forms/${formId}/publish`, {
+    cookie: ctx.cookie,
+    json: { versionId },
+  });
+  must(published.status === 200, `VC7 发布失败（${String(published.status)}）：${firstLine(published.text)}`);
+  const slug = published.json.slug;
+
+  const empty = await request("GET", `/api/forms/${formId}/submissions`, { cookie: ctx.cookie });
+  must(empty.status === 200, `VC7 看板失败（${String(empty.status)}）`);
+  must(
+    Array.isArray(empty.json.itemStats) && empty.json.itemStats.length === 2,
+    `VC7 零提交时应有 2 条逐题统计，实际 ${JSON.stringify(empty.json.itemStats)}`,
+  );
+  for (const stat of empty.json.itemStats) {
+    must(stat.total === 0, `VC7 零提交时 total 应为 0，实际 ${String(stat.total)}`);
+    must(stat.rate === null, `VC7 零提交时 rate 应为 null（不是 0），实际 ${String(stat.rate)}`);
+  }
+
+  const submit = async (answers) => {
+    const response = await request("POST", "/api/submissions", {
+      json: { slug, formVersionId: versionId, answers },
+    });
+    must(response.status === 201, `VC7 提交失败（${String(response.status)}）：${firstLine(response.text)}`);
+  };
+  await submit({ "s-one": "op2", "s-two": "op4" }); // 两题全对
+  await submit({ "s-one": "op2", "s-two": "op3" }); // 只对第一题
+  await submit({}); // 整份没作答
+
+  const after = await request("GET", `/api/forms/${formId}/submissions`, { cookie: ctx.cookie });
+  must(after.status === 200, `VC7 看板失败（${String(after.status)}）`);
+  const [first, second] = after.json.itemStats;
+  must(
+    first.itemId === "s-one" && first.total === 3 && first.answered === 2 && first.correct === 2,
+    `VC7 第一题统计不对：${JSON.stringify(first)}`,
+  );
+  must(first.rate === 0.6667, `VC7 第一题 rate 应为 0.6667，实际 ${String(first.rate)}`);
+  must(
+    second.itemId === "s-two" && second.total === 3 && second.answered === 2 && second.correct === 1,
+    `VC7 第二题统计不对：${JSON.stringify(second)}`,
+  );
+  must(second.rate === 0.3333, `VC7 第二题 rate 应为 0.3333，实际 ${String(second.rate)}`);
+  must(
+    after.json.summary.count === 3,
+    `VC7 提交份数应为 3，实际 ${String(after.json.summary.count)}`,
+  );
+}
+
 /** 把 SSE 文本切成事件对象。注释帧（心跳 `: ping`）没有 data，自然被丢掉。 */
 function parseSse(text) {
   const events = [];
@@ -745,6 +841,7 @@ const CHECKS = [
   ["VC4 生成→发布→提交→看板：SSE 组装、得分对账、CSV 表头", vc4GeneratedLoop],
   ["VC5 人工批改：简答录分、待批归零、看板与 CSV 同口径", vc5ManualGrade],
   ["VC6 受限修改与撤销：PATCH 追加版本、旧 baseVersionId 409、undo 回退", vc6PatchAndUndo],
+  ["VC7 每题正确率：分母是提交份数、未作答按未答对计、零提交 rate 为 null", vc7ItemStats],
 ];
 
 async function main() {

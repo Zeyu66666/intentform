@@ -520,6 +520,18 @@ function buildGeneratedQuiz(nodes) {
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
 
+/**
+ * 看板「每题正确率」表的逐行文本（R-04）。
+ *
+ * 取每个单元格的 `textContent`：正确率那格包含数字文本与一根纯视觉的 CSS 条，
+ * 条没有文本，所以第四格恰好是 `100%` / `—` 这样的字符串，可以直接断死。
+ */
+async function itemStatRows(page) {
+  return page.evaluate(
+    "return Array.prototype.map.call(document.querySelectorAll('[data-testid=dash-item-stat]'), function (tr) { return Array.prototype.map.call(tr.querySelectorAll('td'), function (td) { return td.textContent.trim(); }); });",
+  );
+}
+
 const steps = [];
 const artifacts = [];
 
@@ -713,8 +725,24 @@ async function main() {
       if (mode === "ui") artifacts.push(await page.screenshot("03a-publish-panel.png"));
       await page.goto(`${webBase}/dashboard/${formId}`);
       await waitFor(async () => (await page.text()).includes(`/f/${slug}`), "看板显示学生链接", 20_000);
+      // 零提交时的每题正确率（R-04）：区块在，但每行的正确率必须是 `—`。
+      // 显示 `0%` 会把「还没有人提交」读成「全班全错」——这正是本轮要防的误读，
+      // 所以它必须在**还没有数据**的这一刻被断死，而不是只看有数据的样子。
+      const emptyStats = await itemStatRows(page);
+      must(emptyStats.length > 0, "看板上没有「每题正确率」区块");
+      must(
+        emptyStats.every((cells) => cells[3] === "—"),
+        `零提交时正确率应显示 —（不是 0%），实际 ${JSON.stringify(emptyStats)}`,
+      );
       artifacts.push(await page.screenshot("03b-published-dashboard.png"));
-      return { mode, formId, versionId, slug, buttonLabels: await page.evaluate("return buttonLabels()") };
+      return {
+        mode,
+        formId,
+        versionId,
+        slug,
+        emptyStatRows: emptyStats,
+        buttonLabels: await page.evaluate("return buttonLabels()"),
+      };
     });
 
     // 4) 学生端（手机视口）
@@ -842,8 +870,22 @@ async function main() {
         cells.includes(expectedScoreText),
         `看板第一行的得分应是「${expectedScoreText}」，实际 ${JSON.stringify(cells)}`,
       );
+      // 每题正确率（R-04）：学生这份答卷是"全部答对"，所以每道可判分题的 rate 都是
+      // 100%。这说明数字不是摆上去的，是看板真的从接口取、真的按题渲染出来的。
+      const statCells = await itemStatRows(page);
+      must(statCells.length > 0, "看板上没有「每题正确率」区块");
+      must(
+        statCells.every((cells) => cells[3] === "100%"),
+        `全部答对时每题正确率应为 100%，实际 ${JSON.stringify(statCells)}`,
+      );
       const stats = await page.text();
-      return { rowCount, firstRowCells: cells, expectedScoreText, sawStats: stats.includes("提交数") };
+      return {
+        rowCount,
+        firstRowCells: cells,
+        expectedScoreText,
+        itemStatRows: statCells,
+        sawStats: stats.includes("提交数"),
+      };
     });
 
     // 7) 教师批改：看板上把简答案批掉，确认分数真的从「待批改」变成确定值
