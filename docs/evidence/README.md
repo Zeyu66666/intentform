@@ -8,7 +8,7 @@
 
 | 证据 | 在哪 | 能证明什么 | 不能证明什么 |
 |---|---|---|---|
-| `node scripts/verify.mjs`（VC1–VC5） | 本仓库，随时可跑 | 在没有浏览器的情况下，HTTP 语义层面的闭环成立：快照隔离、版本冲突拒绝、学生端零泄漏、生成→发布→提交→看板的数据一致、简答待批与教师批改后的终分 | 不能证明界面能用、按钮点了有反应 |
+| `node scripts/verify.mjs`（VC1–VC7） | 本仓库，随时可跑 | 在没有浏览器的情况下，HTTP 语义层面的闭环成立：快照隔离、版本冲突拒绝、学生端零泄漏、生成→发布→提交→看板的数据一致、简答待批与教师批改后的终分、逐题正确率的分母与零提交口径 | 不能证明界面能用、按钮点了有反应 |
 | `node scripts/browser-closed-loop.mjs` | 本仓库，需要本机 Chrome | 真浏览器里点完这条链，每一步的截图落盘 | 不能证明别的机器环境一致；它依赖 `LLM_MODE=mock` 的确定性 |
 
 `verify.mjs` 里跑的是**服务端真逻辑**（真 SQLite、真 HTTP、真判分），不是打桩。
@@ -20,7 +20,7 @@
 
 ```bash
 pnpm install                      # 一次性
-node scripts/verify.mjs           # 期望：VC1..VC4 全部通过，exit 0
+node scripts/verify.mjs           # 期望：VC1..VC7 全部通过，exit 0
 node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + stdout 打 JSON 摘要
 ```
 
@@ -37,12 +37,17 @@ node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + std
 
 | 项 | 值 |
 |---|---|
-| commit | `df67e25`（九步脚本与十二张截图的入库提交；`git log -1 -- "docs/evidence/*.png"` 可核，README 本身的改动不算） |
-| 时间 | 2026-10-28 08:28（Asia/Shanghai） |
+| commit | `5a23c7e`（本轮脚本与十二张截图的入库提交；`git log -1 -- "docs/evidence/*.png"` 可核，README 本身的改动不算） |
+| 时间 | 2026-10-28 18:04（Asia/Shanghai） |
 | 浏览器 | Chrome 156.0.8078.47（headless=new，CDP 驱动） |
 | 服务 | `LLM_MODE=mock`；自起 server + vite，端口临时分配 |
-| 结果 | 9 步全绿：登录 → 生成 → 发布（`publishMode: "ui"`）→ 学生页作答 → 提交 `20 / 25`（其中 5 分待人工批改）→ 看板新增 1 行（slug `xaep2yhfmc`）→ 教师批改 4 分后看板变 `24 / 25` → 编辑器里一句话改（v1 → v2 → 撤销回 v1） |
-| 截图 | `01-login.png` … `11-editor-undone.png` 共 12 张，全部同一次运行，08:28 落盘 |
+| 结果 | 8 步全绿：登录 → 生成 → 发布（`publishMode: "ui"`）→ 学生页作答 → 提交 `20 / 25`（其中 5 分待人工批改）→ 看板新增 1 行且每题正确率 4 行全是 `100%` → 教师批改 4 分后看板变 `24 / 25` → 编辑器里一句话改（v1 → v2 → 撤销回 v1） |
+| 截图 | `01-login.png` … `11-editor-undone.png` 共 12 张，全部同一次运行，18:04 落盘 |
+
+第 3 步（发布后、还没人提交）与第 6 步（学生全答对）是 R-04 的界面级证据：
+`verify.mjs` 的 VC7 验的是接口数字，这两步验的是**看板真的把那组数字画出来了**——
+零提交时每行显示 `—` 而不是 `0%`，有一份全对答卷时每行是 `100%`。
+两处都在同一次运行里断死，截图即证据。
 
 第 7 步（教师批改）是 R-02 的界面级证据：`verify.mjs` 的 VC5 验的是 HTTP 语义，
 这里验的是「教师点得到按钮、看得到学生原文、批完看板自己变了」。少这一步，
@@ -67,9 +72,10 @@ node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + std
 
 ## 这份证据还差什么（诚实口径）
 
-1. **版本冲突只有 HTTP 级证据（VC2），没有浏览器级证据。** 制造"已换版"需要第二版 draft，而修改表单的
-   路由（Patch）排在 I7；现在只能用 `node:sqlite` 直插一行 `form_versions`，那就不是"全链路只经 HTTP"了。
-   界面侧的冲突分支（`fill-conflict`）已有单测，缺的是真点击——等 I7 的 Patch 上线后补这一段。
+1. **版本冲突只有 HTTP 级证据（VC2/VC6），没有浏览器级证据。** `PATCH /api/forms/:id` 与
+   `baseVersionId` 乐观锁已由 R-03 落地，VC6 也证明了旧基线会 409；但**编辑器里的 409 分支**
+   仍只有实现与静态检查——要真点击，得先制造一份过期的基线再在界面上点「采用」。
+   学生页的冲突分支（`fill-conflict`）有单测。这一段缺的是真点击，不是接口。
 2. **生成步骤强制 `LLM_MODE=mock`。** 它证明链路通电，不证明模型产出质量；后者属于 §7 的 live 说明与
    I6 的 `pnpm eval`（整份需求达标率）。
 3. **只在 Windows + Chrome 156 验证过。** 换浏览器/系统需要重跑一遍再改这一栏，否则视为证据过期。
