@@ -29,6 +29,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { compareWithBlueprint } from "@intentform/schema";
+import { DEFAULT_PROMPT_VERSION } from "@intentform/llm";
+
 import { JUDGE_VERSION, judgeForm, summarize } from "./judge.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -228,11 +231,32 @@ async function runOne(baseUrl, row, args, appOrigin) {
   let text = "";
   let httpStatus = 0;
   let failure = null;
+
+  // R-06 两阶段：先规划，再把蓝图带进生成。判分需求才走这一步——澄清探针不生成。
+  let blueprint = null;
+  let planFailure = null;
+  if (row.judgeable === true) {
+    try {
+      const planned = await fetch(`${baseUrl}/api/plan`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: appOrigin, "x-intentform-csrf": "1" },
+        body: JSON.stringify({ requirement: row.requirement }),
+        signal: AbortSignal.timeout(args.timeoutMs),
+      });
+      if (!planned.ok) planFailure = `HTTP ${String(planned.status)}`;
+      else blueprint = (await planned.json()).blueprint ?? null;
+    } catch (error) {
+      planFailure = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+  }
+
   try {
     const response = await fetch(`${baseUrl}/api/generate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ requirement: row.requirement }),
+      body: JSON.stringify(
+        blueprint === null ? { requirement: row.requirement } : { requirement: row.requirement, blueprint },
+      ),
       signal: controller.signal,
     });
     httpStatus = response.status;
@@ -253,8 +277,24 @@ async function runOne(baseUrl, row, args, appOrigin) {
     ? null
     : await runClarify(baseUrl, row.requirement, appOrigin, args.timeoutMs);
   const clarifyOk = clarifyQuestions !== null && clarifyQuestions.length >= 1 && clarifyQuestions.length <= 3;
+  const deviation = blueprint === null
+    ? null
+    : compareWithBlueprint(blueprint, {
+        items: form.items,
+        totalScore: form.items.reduce(
+          (sum, item) => sum + (typeof item.score === "number" ? item.score : 0),
+          0,
+        ),
+        objectives: [],
+      });
   const judged = row.judgeable === true
-    ? judgeForm(form, row.expect)
+    ? {
+        ...judgeForm(form, row.expect),
+        ...(planFailure === null ? {} : {
+          passed: false,
+          checks: [{ layer: "blueprint", name: "plan-available", ok: false, detail: `规划失败：${planFailure}` }],
+        }),
+      }
     : {
         passed: clarifyOk,
         checks: [
@@ -292,6 +332,9 @@ async function runOne(baseUrl, row, args, appOrigin) {
     checks: judged.checks,
     deviation: judged.deviation,
     clarifyQuestions,
+    blueprint,
+    planFailure,
+    deviation,
     raw: text,
   };
 }
@@ -325,9 +368,10 @@ function buildMarkdown(report) {
   lines.push("## 1b. 第二口径：只看产品能表达的需求");
   lines.push("");
   lines.push(
-    `分母里有 **${String(summary.capability.gap)} 条**需求在当前 schema 下无解：简答题没有分值字段（\`packages/schema/src/types.ts:99\`），` +
-      "而需求写了「含 N 道简答、每题 5 分、共 M 分」，总分在结构上凑不出来。这一组不剔除出主指标（上表照算未达标），" +
-      "但单列一份「能表达的需求上模型做到多少」，避免把产品缺口记成模型能力。",
+    summary.capability.gap === 0
+      ? "当前 schema 下没有结构不可表达的需求（R-01 之后简答可以带分值），所以两个口径相同。"
+      : `分母里有 **${String(summary.capability.gap)} 条**需求在当前 schema 下无解；这一组不剔除出主指标（上表照算未达标），` +
+          "但单列一份「能表达的需求上模型做到多少」，避免把产品缺口记成模型能力。",
   );
   lines.push("");
   lines.push("| 口径 | 数值 |");
@@ -346,6 +390,7 @@ function buildMarkdown(report) {
   lines.push(`| 澄清 | 缺槽位需求被追问（1–3 条为通过） | ${String(summary.clarify.passed)} / ${String(summary.clarify.probes)}（${pct(summary.clarify.rate)}） |`);
   lines.push(`| 蓝图 | 结构完全匹配（题量/题型/分值/知识点） | ${String(summary.blueprint.exact)} / ${String(summary.judged)}（${pct(summary.blueprint.rate)}） |`);
   lines.push(`| 蓝图 | 题量平均绝对偏差（只在有产出的条目上算） | ${summary.blueprint.meanAbsCountDelta.toFixed(2)} 题 |`);
+  lines.push(`| 蓝图 | 计划 vs 成品：结构完全一致 | ${String(summary.blueprint.planExact)} / ${String(summary.blueprint.planned)}（计划成功 ${String(summary.blueprint.planned)} 条，平均题量偏差 ${summary.blueprint.meanAbsPlanCountDelta.toFixed(2)} 题） |`);
   lines.push(`| 蓝图 | 题型不符 / 分值不符 / 知识点缺失 | ${String(summary.blueprint.typeMismatch)} / ${String(summary.blueprint.scoreMismatch)} / ${String(summary.blueprint.objectiveGaps)} |`);
   lines.push(`| 校验 | 错行总数 / 错误码分布 | ${String(summary.validation.fieldErrors)}（${Object.entries(summary.validation.byCode).map(([code, n]) => `${code}×${String(n)}`).join(" ") || "无"}） |`);
   lines.push(`| 校验 | 整表门禁拦下的需求数 | ${String(summary.validation.gateBlocked)} |`);
@@ -479,7 +524,8 @@ async function main() {
       setSha256,
       judgeVersion: JUDGE_VERSION,
       model: process.env.LLM_CHAT_MODEL ?? "deepseek-chat",
-      promptVersion: process.env.LLM_PROMPT_VERSION ?? "generate.v1",
+      // 两阶段：本组数字包含"先规划后生成"两次调用（R-06）。
+      promptVersion: process.env.LLM_PROMPT_VERSION ?? DEFAULT_PROMPT_VERSION,
       schemaVersion: "1",
       startedAt: startedAt.toISOString(),
       durationMs: Date.now() - startedAt.getTime(),

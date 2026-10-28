@@ -261,7 +261,12 @@ export function summarize(records) {
       rounds[repair.round] = (rounds[repair.round] ?? 0) + 1;
     }
     if (record.gateBlocked === true) gateBlocked += 1;
-    if (record.passed === true && Object.keys(record.errorCodes ?? {}).length === 0 && (record.repairs ?? []).length === 0) {
+    if (
+      record.judgeable === true &&
+      record.passed === true &&
+      Object.keys(record.errorCodes ?? {}).length === 0 &&
+      (record.repairs ?? []).length === 0
+    ) {
       // 首轮达标：判定通过，且整条链路一次错行都没有（修复环没介入过）
       firstPass += 1;
     }
@@ -301,6 +306,17 @@ export function summarize(records) {
       gapIds: capabilityGap.map((record) => record.id),
     },
     blueprint: {
+      /** 规划成功的需求数（成功拿到蓝图并带进生成的）。 */
+      planned: judged.filter((record) => record.blueprint !== null && record.blueprint !== undefined).length,
+      /** 计划与成品结构完全一致（题量/总分/题型/知识点四项全对）。 */
+      planExact: judged.filter((record) => record.deviation?.isExact === true).length,
+      meanAbsPlanCountDelta: (() => {
+        const deltas = judged
+          .map((record) => record.deviation?.countDelta)
+          .filter((value) => typeof value === "number")
+          .map((value) => Math.abs(value));
+        return deltas.length === 0 ? 0 : deltas.reduce((sum, value) => sum + value, 0) / deltas.length;
+      })(),
       exact: blueprintExact.length,
       rate: judged.length === 0 ? 0 : blueprintExact.length / judged.length,
       meanAbsCountDelta:

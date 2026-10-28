@@ -26,6 +26,8 @@
     "eval": "node eval/run.mjs"
   },
   "devDependencies": {
+    "@intentform/llm": "workspace:*",
+    "@intentform/schema": "workspace:*",
     "@types/node": "22.10.2",
     "oxlint": "0.15.15",
     "typescript": "5.7.2",
