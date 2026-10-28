@@ -32,12 +32,13 @@ pnpm dev:web                  # http://127.0.0.1:5173
 teacher@example.com / intentform-demo
 ```
 
-## 三条体验路径
+## 四条体验路径
 
 | 想干什么 | 怎么走 |
 |---|---|
 | 只看生成效果 | 打开首页 → 点一个预置需求（初二数学 / 高一英语 / 高二生物）→ 开始生成。中栏逐字段出现，右栏时间线同步推进 |
 | 走完整的发布闭环 | 生成完成后点「保存并发布」→ 拿到 `/f/xxxxxxxx` 学生短链 → 手机视口打开作答 → 提交 → 回 `/dashboard` 看这条提交与 CSV |
+| 改一份已发布的表单 | `/dashboard` → 选中表单 →「编辑这份表单的题目与分值」→ 在顶部写一句话（例：把第一题题干改短一点）→「生成改动建议」→ 看人话差异 →「采用并保存」→ 需要时点「撤销上一步」 |
 | 只玩数据（不看生成） | `pnpm seed` 后登录 → `/dashboard`，已有 2 份表单与 30 条提交（全部虚构） |
 
 生成有四种模式，由服务端 `LLM_MODE` 决定，前端顶栏会显示实际生效的那一种：
@@ -51,16 +52,16 @@ teacher@example.com / intentform-demo
 
 ```bash
 pnpm typecheck                  # 4 个包
-npx vitest run                  # 54 文件 / 616 用例
+npx vitest run                  # 59 文件 / 685 用例
 pnpm lint                       # oxlint --deny-warnings
-node scripts/verify.mjs         # VC1–VC5，HTTP 语义闭环，自起服务 + 临时库
-node scripts/browser-closed-loop.mjs   # 真浏览器七步，落九张图到 docs/evidence/
+node scripts/verify.mjs         # VC1–VC6，HTTP 语义闭环，自起服务 + 临时库
+node scripts/browser-closed-loop.mjs   # 真浏览器九步，落十二张图到 docs/evidence/
 pnpm eval                       # 整份需求达标率（默认 replay，不用 Key；出报告到 eval/runs/）
 ```
 
 `verify.mjs` 不用浏览器、不碰你的 `data/intentform.db`，会自己起一个临时服务再关掉。
 `browser-closed-loop.mjs` 需要本机 Chrome（`CHROME_PATH` 可指定；找不到会 `exit 2` 而不是静默跳过），
-它启动服务 + vite + headless Chrome，点完七步（含教师批改）并把截图写进 `docs/evidence/`。
+它启动服务 + vite + headless Chrome，点完九步（含教师批改、编辑器里一句话改）并把截图写进 `docs/evidence/`。
 
 期望输出：
 
@@ -70,7 +71,8 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 [verify] VC3 学生端零泄漏：响应体不含答案类键 … 通过
 [verify] VC4 生成→发布→提交→看板：SSE 组装、得分对账、CSV 表头 … 通过
 [verify] VC5 人工批改：简答录分、待批归零、看板与 CSV 同口径 … 通过
-[verify] 全部通过（5/5）
+[verify] VC6 受限修改与撤销：PATCH 追加版本、旧 baseVersionId 409、undo 回退 … 通过
+[verify] 全部通过（6/6）
 ```
 
 ## 目录
@@ -102,7 +104,7 @@ docs              证据、留痕、交付文档（见下）
 
 ## 已知限制
 
-不做 Patch（改表单只能整份重发）、版本冲突只在 HTTP 层有自动化证据、演示走 replay/mock 不证明模型输出质量、
+改表单只支持受限的七种操作（改题干/选项/分值，加、删、移题），不做通用 Patch；版本冲突只在 HTTP 层有自动化证据、演示走 replay/mock 不证明模型输出质量、
 只在 Windows + Chrome 156 验证过。完整清单见 `docs/deliverables/参赛说明-意卷IntentForm.pdf` 第 10 页。
 
 ## 文档
