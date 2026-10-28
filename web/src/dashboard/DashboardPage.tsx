@@ -355,16 +355,19 @@ function SubmissionsSection({
                       >
                         {correctRateText(stat)}
                       </span>
-                      {/* 条只是辅助读数的视觉，数字才是事实：条对屏幕阅读器隐藏。 */}
-                      <span
-                        aria-hidden="true"
-                        className="h-2 w-16 overflow-hidden rounded-sm bg-line"
-                      >
+                      {/* 条只是辅助读数的视觉，数字才是事实：条对屏幕阅读器隐藏。
+                          无数据（`—`）时整根条不画：一条空轨道看起来仍像「0%」。 */}
+                      {stat.rate === null ? null : (
                         <span
-                          className="block h-full bg-accent"
-                          style={{ width: `${String(rateBarWidth(stat))}%` }}
-                        />
-                      </span>
+                          aria-hidden="true"
+                          className="h-2 w-16 overflow-hidden rounded-sm bg-line"
+                        >
+                          <span
+                            className="block h-full bg-accent"
+                            style={{ width: `${String(rateBarWidth(stat))}%` }}
+                          />
+                        </span>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -373,6 +376,10 @@ function SubmissionsSection({
           </table>
         </section>
       )}
+
+      {/* R-04 之后上面多了一张「每题正确率」表，两张表挨着时第二张的表头会被
+          读成第一张的续行；给提交表一个标题，边界不靠间距猜。 */}
+      <h2 className="m-0 mt-3 text-base font-semibold text-ink">提交记录</h2>
 
       {stats.isEmpty ? (
         <p className="m-0 mt-2 text-base text-ink" data-testid="dash-empty">
