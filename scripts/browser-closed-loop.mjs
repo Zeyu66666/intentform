@@ -893,6 +893,66 @@ async function main() {
       return { gradedScore: 4, firstRowCells: cells, answerSeen: answerText.length };
     });
 
+    // 8) 编辑器 + 一句话改：省赛 R-03 的界面级证据
+    //
+    // VC6/VC7 验的是 PATCH/撤销的 HTTP 语义；这里验「教师点得到、看得见 diff」。
+    // mock 模式的建议是内置脚本（改写第一题题干），所以断言的是"建议被采用并落成 v2"，
+    // 不是"模型读懂了这句话"——两者不能混为一谈。
+    const edited = await step("编辑器里用一句话改一版再撤销", async () => {
+      await page.goto(`${webBase}/forms/${publish.formId}/edit`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-save') !== null")),
+        "编辑器渲染出保存按钮",
+        20_000,
+      );
+      const before = await page.evaluate(
+        "var el = byTestId('edit-form-meta'); return el === null ? '' : el.textContent.trim();",
+      );
+      must(before.includes("v1"), `刚打开应停在 v1，实际「${before}」`);
+      artifacts.push(await page.screenshot("09-editor.png"));
+
+      const typed = await page.evaluate(
+        "return setValue('[data-testid=\"edit-suggest-input\"]', '把第一题题干改短一点');",
+      );
+      must(typed.ok === true, `一句话输入框没写进去：${JSON.stringify(typed)}`);
+
+      const asked = await page.tap('[data-testid="edit-suggest-run"]');
+      must(asked.ok === true, `点不到「生成改动建议」：${JSON.stringify(asked)}`);
+
+      const proposal = await waitFor(
+        async () => {
+          const value = await page.evaluate(
+            "var p = byTestId('edit-suggest-proposal'); return p === null ? null : (byTestId('edit-suggest-changes') || {}).textContent;",
+          );
+          return typeof value === "string" && value.length > 0 ? value : null;
+        },
+        "建议面板列出改动",
+        20_000,
+      );
+      artifacts.push(await page.screenshot("10-suggest.png"));
+
+      const adopted = await page.tap('[data-testid="edit-suggest-adopt"]');
+      must(adopted.ok === true, `点不到「采用」：${JSON.stringify(adopted)}`);
+      await waitFor(
+        async () => (await page.evaluate("var el = byTestId('edit-form-meta'); return el !== null && el.textContent.indexOf('v2') >= 0;")),
+        "采用后版本号变成 v2",
+        20_000,
+      );
+
+      const undone = await page.tap('[data-testid="edit-undo"]');
+      must(undone.ok === true, `点不到「撤销上一步」：${JSON.stringify(undone)}`);
+      await waitFor(
+        async () => (await page.evaluate("var el = byTestId('edit-form-meta'); return el !== null && el.textContent.indexOf('v1') >= 0;")),
+        "撤销后回到 v1",
+        20_000,
+      );
+      const notice = await page.evaluate(
+        "var el = byTestId('edit-notice'); return el === null ? '' : el.textContent.trim();",
+      );
+      artifacts.push(await page.screenshot("11-editor-undone.png"));
+      return { before, proposal: proposal.slice(0, 80), notice };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -902,6 +962,7 @@ async function main() {
       generate: { source: generate.source },
       student,
       submitted,
+      edited,
       dashboard,
       graded,
       steps,
