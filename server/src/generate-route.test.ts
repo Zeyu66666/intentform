@@ -7,6 +7,7 @@ import { parseSseEvent, LIMITS } from "@intentform/schema";
 import type { SseEvent } from "@intentform/schema";
 
 import { GENERATE_PATH, MAX_REQUEST_BYTES, createGenerateHandler, parseGenerateBody } from "./generate-route.ts";
+import { CLARIFY_ANSWER_MAX_CHARS } from "@intentform/schema";
 import { resolveLlmRuntimeConfig } from "@intentform/llm";
 
 const servers: Server[] = [];
@@ -63,7 +64,11 @@ describe("parseGenerateBody", () => {
   it("接受合法需求（两侧空白去掉）", () => {
     expect(parseGenerateBody(JSON.stringify({ requirement: "  出一份测验  " }))).toEqual({
       ok: true,
-      requirement: "出一份测验",
+      request: {
+        requirement: "出一份测验",
+        composedRequirement: "出一份测验",
+        clarifyNote: "",
+      },
     });
   });
 
@@ -83,6 +88,74 @@ describe("parseGenerateBody", () => {
     if (!tooLong.ok) {
       expect(tooLong.status).toBe(422);
       expect(tooLong.error).toBe("requirement_too_long");
+    }
+  });
+});
+
+/**
+ * 澄清补充（省赛 R-05）：回答拼进需求、再交给生成器。
+ *
+ * 最重要的一条是「没有补充时字节不变」——回放键是需求原文的哈希，
+ * 多一个空格就换一次键，三条预置 fixture 当场失效。
+ */
+describe("parseGenerateBody · 澄清补充", () => {
+  it("带补充：追加约束块，并给时间线备好一句话", () => {
+    const result = parseGenerateBody(
+      JSON.stringify({
+        requirement: "帮我出一份英语卷子",
+        clarifications: [
+          { slot: "count", answer: "10 题" },
+          { slot: "score", answer: "100 分" },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.request.requirement).toBe("帮我出一份英语卷子");
+    expect(result.request.composedRequirement).toContain("【教师补充的约束】");
+    expect(result.request.composedRequirement).toContain("- 题量：10 题");
+    expect(result.request.composedRequirement).toContain("- 总分：100 分");
+    expect(result.request.clarifyNote).toBe("澄清 2 项：题量=10 题、总分=100 分");
+  });
+
+  it("没有补充（缺省或空数组）：composedRequirement 逐字节等于原需求", () => {
+    for (const body of [
+      { requirement: "出十道判断题" },
+      { requirement: "出十道判断题", clarifications: [] },
+    ]) {
+      const result = parseGenerateBody(JSON.stringify(body));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.request.composedRequirement).toBe("出十道判断题");
+      expect(result.request.clarifyNote).toBe("");
+    }
+  });
+
+  it("拼完超过需求字数上限 → 422（而不是把超长串塞给模型）", () => {
+    const almost = "题".repeat(LIMITS.requirementMaxChars - 10);
+    const result = parseGenerateBody(
+      JSON.stringify({
+        requirement: almost,
+        clarifications: [{ slot: "knowledge", answer: "知".repeat(50) }],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(422);
+  });
+
+  it("非法槽位 / 空回答 / 回答超长 / 不是数组 → 400", () => {
+    const bad: readonly unknown[] = [
+      [{ slot: "subject", answer: "数学" }],
+      [{ slot: "count", answer: "   " }],
+      [{ slot: "count", answer: 42 }],
+      [{ slot: "knowledge", answer: "知".repeat(CLARIFY_ANSWER_MAX_CHARS + 1) }],
+      "count=10",
+    ];
+    for (const clarifications of bad) {
+      const result = parseGenerateBody(
+        JSON.stringify({ requirement: "帮我出一份英语卷子", clarifications }),
+      );
+      expect(result.ok, JSON.stringify(clarifications)).toBe(false);
     }
   });
 });

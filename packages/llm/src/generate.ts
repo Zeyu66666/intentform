@@ -54,6 +54,12 @@ export interface GenerateOptions {
   readonly requirement: string;
   readonly signal?: AbortSignal;
   readonly kind?: FormKind;
+  /**
+   * 澄清说明（省赛 R-05）：教师补答了几项之后，路由把它压成一句人话传进来。
+   * 有值才发那条 `thinking`——没澄清就不许在时间线上演出澄清（只发真实事件）。
+   * 它**不影响回放键**：键只认 `requirement` 原文（补答已拼进那一串里）。
+   */
+  readonly clarifyNote?: string;
 }
 
 export interface GeneratorDeps {
@@ -131,6 +137,10 @@ export async function* generateForm(
     kind: "summary",
     delta: `读取需求：${String(requirement.length)} 字，判定为 ${kind === "quiz" ? "考卷" : "问卷"}`,
   };
+  if (options.clarifyNote !== undefined && options.clarifyNote !== "") {
+    // 真实发生过：教师在生成前补答了这些槽位。事件类型不新增，仍走 thinking。
+    yield { type: "thinking", kind: "summary", delta: options.clarifyNote };
+  }
   yield { type: "phase", phase: "plan", ts: clock() };
   yield { type: "thinking", kind: "summary", delta: `按 ${source.label} 模式开始生成` };
   yield { type: "phase", phase: "generate", ts: clock() };

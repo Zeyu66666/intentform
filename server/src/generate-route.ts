@@ -24,7 +24,16 @@ import {
   writeGeneration,
 } from "@intentform/llm";
 import type { LlmLogger, LlmMode, LlmRuntimeConfig } from "@intentform/llm";
-import { LIMITS } from "@intentform/schema";
+import {
+  CLARIFICATIONS_MAX,
+  CLARIFY_ANSWER_MAX_CHARS,
+  CLARIFY_SLOTS,
+  LIMITS,
+  clarificationSchema,
+  composeRequirement,
+  describeClarifications,
+  type Clarification,
+} from "@intentform/schema";
 
 /** 请求体上限：4000 字需求 + JSON 包装，64KiB 足够，也挡住无脑大包。 */
 export const MAX_REQUEST_BYTES = 64 * 1024;
@@ -82,9 +91,31 @@ export async function readRequestBody(
   return { ok: true, text: Buffer.concat(chunks).toString("utf8") };
 }
 
+/** 校验通过的生成请求：原文、真正发给模型的串、时间线上那句澄清说明（R-05）。 */
+export interface GenerateRequest {
+  /** 教师输入的原文（去首尾空白后）。回放键认的是它拼上补充后的那一串。 */
+  readonly requirement: string;
+  /** 拼过「教师补充的约束」的串；没有补充时与 `requirement` **逐字节相同**。 */
+  readonly composedRequirement: string;
+  /** `澄清 N 项：…`；没有补充时是空串，生成器据此不发那条 `thinking`。 */
+  readonly clarifyNote: string;
+}
+
 export type RequirementParseResult =
-  | { readonly ok: true; readonly requirement: string }
+  | { readonly ok: true; readonly request: GenerateRequest }
   | { readonly ok: false; readonly status: number; readonly error: string; readonly message: string };
+
+/**
+ * 校验 `clarifications`（R-05）。缺省 = 空数组；形状不对一律 400。
+ *
+ * 这里不信前端：回答最终会拼进模型输入，长度与槽位都必须按契约卡死，
+ * 否则「一个 200 字上限」会在这一层被绕过。
+ */
+function parseClarifications(value: unknown): readonly Clarification[] | null {
+  if (value === undefined) return [];
+  const result = clarificationSchema.array().max(CLARIFICATIONS_MAX).safeParse(value);
+  return result.success ? result.data : null;
+}
 
 /** 解析 `{ requirement: string }`。空串、纯空白、超长都在这里挡住。 */
 export function parseGenerateBody(text: string): RequirementParseResult {
@@ -118,7 +149,33 @@ export function parseGenerateBody(text: string): RequirementParseResult {
       message: `需求最多 ${String(LIMITS.requirementMaxChars)} 字，当前 ${String(requirement.length)} 字`,
     };
   }
-  return { ok: true, requirement };
+  const clarifications = parseClarifications((parsed as Record<string, unknown>)["clarifications"]);
+  if (clarifications === null) {
+    return {
+      ok: false,
+      status: 400,
+      error: "invalid_clarifications",
+      message: `clarifications 形状不对：槽位必须是 ${CLARIFY_SLOTS.join("/")}，每条回答 1–${String(CLARIFY_ANSWER_MAX_CHARS)} 字`,
+    };
+  }
+  const composedRequirement = composeRequirement(requirement, clarifications);
+  // 补充也算需求：拼完超长就拒，而不是让模型收到一段超出约定的输入。
+  if (composedRequirement.length > LIMITS.requirementMaxChars) {
+    return {
+      ok: false,
+      status: 422,
+      error: "requirement_too_long",
+      message: `需求（含补充约束）最多 ${String(LIMITS.requirementMaxChars)} 字，当前 ${String(composedRequirement.length)} 字`,
+    };
+  }
+  return {
+    ok: true,
+    request: {
+      requirement,
+      composedRequirement,
+      clarifyNote: describeClarifications(clarifications),
+    },
+  };
 }
 
 function sendJson(
@@ -226,7 +283,14 @@ export function createGenerateHandler(options: GenerateRouteOptions = {}): Gener
     try {
       await writeGeneration(
         writer,
-        generateForm({ config, logger }, { requirement: parsed.requirement, signal: controller.signal }),
+        generateForm(
+          { config, logger },
+          {
+            requirement: parsed.request.composedRequirement,
+            clarifyNote: parsed.request.clarifyNote,
+            signal: controller.signal,
+          },
+        ),
       );
     } finally {
       res.off("close", onClose);

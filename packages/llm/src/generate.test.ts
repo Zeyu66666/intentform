@@ -318,3 +318,36 @@ describe("generateForm · 整表门禁（§2.5）", () => {
     expect(bodies.some((body) => body.type === "done")).toBe(false);
   });
 });
+
+describe("generateForm · 澄清说明（R-05）", () => {
+  async function collectWithClarify(clarifyNote: string | undefined): Promise<SseEventBody[]> {
+    const bodies: SseEventBody[] = [];
+    const options =
+      clarifyNote === undefined
+        ? { requirement: "出一份初二数学测验，8 道题" }
+        : { requirement: "出一份初二数学测验，8 道题", clarifyNote };
+    for await (const body of generateForm({ config: MOCK_CONFIG }, options)) bodies.push(body);
+    return bodies;
+  }
+
+  it("有澄清就多发一条 thinking，且排在 understand 之后、plan 之前", async () => {
+    const bodies = await collectWithClarify("澄清 2 项：题量=8 题、总分=40 分");
+    const clarifyIndex = bodies.findIndex(
+      (body) => body.type === "thinking" && body.delta.includes("澄清 2 项"),
+    );
+    expect(clarifyIndex).toBeGreaterThan(-1);
+    const understandIndex = bodies.findIndex(
+      (body) => body.type === "phase" && body.phase === "understand",
+    );
+    const planIndex = bodies.findIndex((body) => body.type === "phase" && body.phase === "plan");
+    expect(clarifyIndex).toBeGreaterThan(understandIndex);
+    expect(clarifyIndex).toBeLessThan(planIndex);
+  });
+
+  it("没有澄清就不许在时间线上演出澄清（只发真实事件）", async () => {
+    const bodies = await collectWithClarify(undefined);
+    expect(
+      bodies.some((body) => body.type === "thinking" && body.delta.includes("澄清")),
+    ).toBe(false);
+  });
+});
