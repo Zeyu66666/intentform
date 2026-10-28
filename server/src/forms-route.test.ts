@@ -288,6 +288,33 @@ describe("PATCH /api/forms/:id", () => {
     expect(detail.json.form.draftVersionId).toBe(created.version.id);
   });
 
+  it("把答案指的选项删掉：草稿照存，但 issues 当场说明「还不能发布」", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    const response = await call<PatchFormResponse>(app, "PATCH", `/api/forms/${created.form.id}`, {
+      // 只留 a、b 两个选项，把正确项 c 删掉——单选题的 answer 立刻悬空。
+      body: {
+        baseVersionId: created.version.id,
+        ops: [
+          {
+            op: "setOptions",
+            itemId: "q-single",
+            options: [
+              { id: "a", text: "选项 A" },
+              { id: "b", text: "选项 B" },
+            ],
+          },
+        ],
+      },
+      cookie,
+    });
+    expect(response.status).toBe(200);
+    expect(response.json.changes.length).toBe(1);
+    expect(response.json.issues.length).toBeGreaterThan(0);
+    expect(response.json.issues[0]?.code).toBe("E_ANSWER_NOT_IN_OPTIONS");
+    expect(response.json.issues[0]?.path).toContain("items[");
+  });
+
   it("别人的表单 403，未登录 401", async () => {
     const { app, cookie } = await boot();
     const created = await createForm(app, cookie);

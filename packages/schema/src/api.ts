@@ -21,6 +21,7 @@ import {
   type FormVersionSource,
 } from "./constants.ts";
 import type { PublicForm } from "./public-view.ts";
+import type { ErrorCode } from "./errors.ts";
 import { formSchema, type FormSchema } from "./types.ts";
 import { patchOpsSchema, type PatchChange, type PatchError, type PatchOp } from "./patch.ts";
 
@@ -237,6 +238,20 @@ export interface PatchFormResponse {
   readonly schema: FormSchema;
   /** 人话级差异，界面直接渲染成「第 3 题 5 分 → 8 分」。 */
   readonly changes: readonly PatchChange[];
+  /**
+   * 这份新草稿**离可发布还差什么**（`validateForm` 的错误码，只做提示不拦保存）。
+   * 草稿态允许半成品——改选项把答案 id 删掉、把总分改得对不上，都该存得下去，
+   * 但界面上必须当场看见「现在还不能发布」，否则使用者要到点发布那一刻才发现，
+   * 而且错误会归因到"保存坏了"而不是"我这次改坏了"。
+   */
+  readonly issues: readonly PatchIssue[];
+}
+
+/** 门禁提示：只带 `code/path/message`，不带 `repair`（那是给模型看的修复指令）。 */
+export interface PatchIssue {
+  readonly code: ErrorCode;
+  readonly path: string;
+  readonly message: string;
 }
 
 /**

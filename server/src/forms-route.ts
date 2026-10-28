@@ -32,6 +32,7 @@ import {
   type FormVersionSummary,
   type ListFormsResponse,
   type PatchFormResponse,
+  type PatchIssue,
   type PublishResponse,
   type SchemaError,
   type UndoDraftResponse,
@@ -390,6 +391,7 @@ export async function handlePatchForm(ctx: RouteContext): Promise<void> {
       version: toVersionSummary(base.version),
       schema: base.schema,
       changes: [],
+      issues: patchIssues(base.schema),
     };
     sendJson(ctx.res, 200, response);
     return;
@@ -427,8 +429,23 @@ export async function handlePatchForm(ctx: RouteContext): Promise<void> {
     version: toVersionSummary(appended),
     schema: applied.schema,
     changes: applied.changes,
+    issues: patchIssues(applied.schema),
   };
   sendJson(ctx.res, 200, response);
+}
+
+/**
+ * 新草稿的门禁提示：草稿允许半成品，但不能让使用者对「现在能不能发布」毫无所知。
+ * 与发布用的是同一个 `validateForm`，所以提示和真正发布时的拒绝原因不会两套说法。
+ */
+function patchIssues(schema: FormSchema): readonly PatchIssue[] {
+  const checked = validateForm(schema);
+  if (checked.ok) return [];
+  return checked.errors.map((error) => ({
+    code: error.code,
+    path: error.path,
+    message: error.message,
+  }));
 }
 
 /**
