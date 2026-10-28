@@ -28,6 +28,7 @@ import {
   type ClarifyQuestion,
 } from "./clarify.ts";
 import { formSchema, type FormSchema } from "./types.ts";
+import type { FormBlueprint } from "./blueprint.ts";
 import { patchOpsSchema, type PatchChange, type PatchError, type PatchOp } from "./patch.ts";
 
 /** 路由表：前后端都从这里取路径，避免 "/api/forms/:id/publish" 手写成两种拼法。 */
@@ -529,3 +530,26 @@ export type Clarification = z.infer<typeof clarificationSchema>;
 
 /** 一次生成最多带几条补充：与追问上限同量级，防止有人拿它当配置文件灌内容。 */
 export const CLARIFICATIONS_MAX = 8;
+
+/* ------------------------------- 蓝图（R-06） ------------------------------- */
+
+/**
+ * 规划请求：与澄清请求同形（需求 + 可选品类 + 可选补答）。
+ * 补答先进需求，再拿去规划——两步看到的是同一段需求，否则蓝图和成品的口径会岔开。
+ */
+export const planRequestSchema = clarifyRequestSchema.extend({
+  clarifications: z.array(clarificationSchema).max(CLARIFICATIONS_MAX).optional(),
+});
+
+export type PlanRequest = z.infer<typeof planRequestSchema>;
+
+export interface PlanResponse {
+  readonly ok: true;
+  readonly kind: FormKind;
+  /** 结构化蓝图（教师确认的对象）。 */
+  readonly blueprint: FormBlueprint;
+  /** 一句话摘要，界面直接显示。 */
+  readonly summary: string;
+  /** 实际送给模型的需求（拼过补答）；与生成时用的那一串**逐字节相同**。 */
+  readonly requirement: string;
+}

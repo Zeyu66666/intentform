@@ -10,7 +10,14 @@
  *    如实发 `status: "failed"`——「越修越错」比不修更危险，因为它让人以为在收敛。
  */
 
-import { LIMITS, SCHEMA_VERSION, inferFormKind } from "@intentform/schema";
+import {
+  LIMITS,
+  SCHEMA_VERSION,
+  compareWithBlueprint,
+  inferFormKind,
+  summarizeBlueprint,
+  type FormBlueprint,
+} from "@intentform/schema";
 import type { ErrorCode, FormKind, SseEventBody } from "@intentform/schema";
 
 import type { LlmRuntimeConfig } from "./config.ts";
@@ -54,6 +61,11 @@ export interface GenerateOptions {
   readonly requirement: string;
   readonly signal?: AbortSignal;
   readonly kind?: FormKind;
+  /**
+   * 已确认的蓝图（省赛 R-06）。有它才发 `plan` 阶段——蓝图是教师确认后才开始生成，
+   * 这个阶段因此是**真实发生**的；没有蓝图时不许在时间线上演出（只发真实事件）。
+   */
+  readonly blueprint?: FormBlueprint;
   /**
    * 澄清说明（省赛 R-05）：教师补答了几项之后，路由把它压成一句人话传进来。
    * 有值才发那条 `thinking`——没澄清就不许在时间线上演出澄清（只发真实事件）。
@@ -125,10 +137,12 @@ export async function* generateForm(
     readonly requirement: string;
     readonly startedAt: number;
     readonly signal?: AbortSignal;
+    readonly blueprint?: FormBlueprint;
   } = {
     requirement,
     startedAt,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.blueprint === undefined ? {} : { blueprint: options.blueprint }),
   };
 
   yield { type: "phase", phase: "understand", ts: clock() };
@@ -141,7 +155,14 @@ export async function* generateForm(
     // 真实发生过：教师在生成前补答了这些槽位。事件类型不新增，仍走 thinking。
     yield { type: "thinking", kind: "summary", delta: options.clarifyNote };
   }
-  yield { type: "phase", phase: "plan", ts: clock() };
+  if (options.blueprint !== undefined) {
+    yield { type: "phase", phase: "plan", ts: clock() };
+    yield {
+      type: "thinking",
+      kind: "summary",
+      delta: `蓝图已确认：${summarizeBlueprint(options.blueprint)}`,
+    };
+  }
   yield { type: "thinking", kind: "summary", delta: `按 ${source.label} 模式开始生成` };
   yield { type: "phase", phase: "generate", ts: clock() };
 
@@ -296,6 +317,24 @@ export async function* generateForm(
       throw new LlmError("llm_invalid_output", "整表校验未通过，已停止发布；请按提示修正后重试", {
         detail: `rejected ${String(failures.length)} lines; gate: ${problems.join(" | ")}`,
       });
+    }
+
+    if (options.blueprint !== undefined) {
+      // 蓝图 vs 成品：真实发生的偏差，写进时间线。数与判定都在 schema 的纯函数里，
+      // eval 报告用的是同一份口径。
+      const deviation = compareWithBlueprint(options.blueprint, {
+        items: fields.map((field) => field.node),
+        totalScore: fields.reduce(
+          (sum, field) => sum + ("score" in field.node ? (field.node.score ?? 0) : 0),
+          0,
+        ),
+        objectives: options.blueprint.knowledgePoints.map((point) => ({ id: point.id, name: point.name })),
+      });
+      yield {
+        type: "thinking",
+        kind: "summary",
+        delta: `蓝图对照：题量 ${String(options.blueprint.totalCount)} → ${String(fields.length)}（差 ${String(deviation.countDelta)}）；总分差 ${String(deviation.scoreDelta)}；${deviation.isExact ? "题型与知识点完全对上" : "结构与蓝图有偏差"}`,
+      };
     }
 
     const totalMs = clock() - startedAt;

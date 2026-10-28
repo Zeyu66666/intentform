@@ -15,8 +15,9 @@ import type { LlmRuntimeConfig, ReplaySpeed } from "./config.ts";
 import type { FetchLike, ProviderConfig, TokenUsage } from "./provider.ts";
 import { streamChatCompletion } from "./provider.ts";
 import { buildMessages } from "./prompt.ts";
+import type { ChatMessage } from "./provider.ts";
 import { replayKey } from "./replay-key.ts";
-import { SCHEMA_VERSION } from "@intentform/schema";
+import { SCHEMA_VERSION, type FormBlueprint } from "@intentform/schema";
 
 export type SourceLabel = "live" | "record" | "replay" | "mock";
 
@@ -40,6 +41,15 @@ export interface StreamInput {
   readonly signal?: AbortSignal;
   /** 本次生成开始的时间戳（`clock()`），用于算 `tMs`。 */
   readonly startedAt: number;
+  /**
+   * 覆写 prompt 版本（省赛 R-06 的蓝图链路用 `plan.v1`）。
+   * 它进回放键，所以蓝图与生成是**两个独立的键**，互不覆盖。
+   */
+  readonly promptVersion?: string;
+  /** 已确认的蓝图：只对生成提示有效，会作为硬约束块进用户消息。 */
+  readonly blueprint?: FormBlueprint;
+  /** 完全覆写消息（蓝图链路用自己的提示词）；缺省按需求 + 版本 + 蓝图组装。 */
+  readonly messages?: readonly ChatMessage[];
 }
 
 export interface DeltaSource {
@@ -110,7 +120,13 @@ export function createLiveSource(
   return {
     label: "live",
     async *stream(input: StreamInput): AsyncGenerator<SourceDelta, void, undefined> {
-      const messages = buildMessages(input.requirement, config.promptVersion);
+      const messages =
+        input.messages ??
+        buildMessages(
+          input.requirement,
+          input.promptVersion ?? config.promptVersion,
+          input.blueprint,
+        );
       const streamOptions = input.signal === undefined ? {} : { signal: input.signal };
       for await (const event of streamChatCompletion(providerConfig, messages, streamOptions)) {
         const tMs = Math.max(0, Math.round(clock() - input.startedAt));
@@ -144,6 +160,7 @@ export function createRecordSource(
   return {
     label: "record",
     async *stream(input: StreamInput): AsyncGenerator<SourceDelta, void, undefined> {
+      const promptVersion = input.promptVersion ?? config.promptVersion;
       const chunks: FixtureChunk[] = [];
       let usage: TokenUsage | null = null;
       let lastTMs = 0;
@@ -168,13 +185,13 @@ export function createRecordSource(
       const hash = replayKey({
         requirement: input.requirement,
         model: config.model,
-        promptVersion: config.promptVersion,
+        promptVersion,
         schemaVersion: SCHEMA_VERSION,
       });
       const meta = createFixtureMeta(chunks, {
         requirement: input.requirement,
         model: config.model,
-        promptVersion: config.promptVersion,
+        promptVersion,
         schemaVersion: SCHEMA_VERSION,
         upstream: config.upstreamLabel,
         recordedAt: new Date(clock()),
@@ -209,10 +226,11 @@ export function createReplaySource(
   return {
     label: "replay",
     async *stream(input: StreamInput): AsyncGenerator<SourceDelta, void, undefined> {
+      const promptVersion = input.promptVersion ?? config.promptVersion;
       const hash = replayKey({
         requirement: input.requirement,
         model: config.model,
-        promptVersion: config.promptVersion,
+        promptVersion,
         schemaVersion: SCHEMA_VERSION,
       });
       const fixture = await readFixture(config.fixtureDir, hash);

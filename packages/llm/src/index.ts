@@ -65,6 +65,7 @@ export * from "./json.ts";
 export * from "./line-splitter.ts";
 export * from "./logger.ts";
 export * from "./patch-suggest.ts";
+export * from "./plan.ts";
 export * from "./prompt.ts";
 export * from "./provider.ts";
 export * from "./repair.ts";

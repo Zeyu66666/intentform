@@ -30,6 +30,7 @@ export * from "./public-view.ts";
 export * from "./sse-events.ts";
 export * from "./presets.ts";
 export * from "./clarify.ts";
+export * from "./blueprint.ts";
 export * from "./api.ts";
 export * from "./patch.ts";
 

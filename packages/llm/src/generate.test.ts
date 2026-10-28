@@ -49,7 +49,8 @@ describe("generateForm · mock 模式", () => {
     const phases = bodies
       .filter((body): body is Extract<SseEventBody, { type: "phase" }> => body.type === "phase")
       .map((body) => body.phase);
-    expect(phases).toEqual(["understand", "plan", "generate", "validate", "repair", "done"]);
+    // 没有蓝图就没有 plan 阶段：R-06 起这个阶段只在真的确认过蓝图时出现。
+    expect(phases).toEqual(["understand", "generate", "validate", "repair", "done"]);
     expect(phases.at(-1)).toBe("done");
 
     const fields = bodies.filter((body): body is Extract<SseEventBody, { type: "field" }> => body.type === "field");
@@ -339,15 +340,75 @@ describe("generateForm · 澄清说明（R-05）", () => {
     const understandIndex = bodies.findIndex(
       (body) => body.type === "phase" && body.phase === "understand",
     );
-    const planIndex = bodies.findIndex((body) => body.type === "phase" && body.phase === "plan");
+    const generateIndex = bodies.findIndex(
+      (body) => body.type === "phase" && body.phase === "generate",
+    );
     expect(clarifyIndex).toBeGreaterThan(understandIndex);
-    expect(clarifyIndex).toBeLessThan(planIndex);
+    expect(clarifyIndex).toBeLessThan(generateIndex);
   });
 
   it("没有澄清就不许在时间线上演出澄清（只发真实事件）", async () => {
     const bodies = await collectWithClarify(undefined);
     expect(
       bodies.some((body) => body.type === "thinking" && body.delta.includes("澄清")),
+    ).toBe(false);
+  });
+});
+
+describe("generateForm · 蓝图阶段（R-06）", () => {
+  const BLUEPRINT = {
+    title: "二次函数入门测验",
+    kind: "quiz",
+    sections: [{ title: "全部", count: 6 }],
+    totalCount: 6,
+    typeMix: { single: 6 },
+    totalScore: 30,
+    knowledgePoints: [{ id: "kp-basic", name: "基础运算" }],
+  } as const;
+
+  async function collectWithBlueprint(): Promise<SseEventBody[]> {
+    const bodies: SseEventBody[] = [];
+    for await (const body of generateForm(
+      { config: MOCK_CONFIG },
+      { requirement: "出一份初二数学测验，6 道题", blueprint: BLUEPRINT },
+    )) {
+      bodies.push(body);
+    }
+    return bodies;
+  }
+
+  it("有蓝图时 plan 阶段真实出现，且紧跟一条蓝图摘要", async () => {
+    const bodies = await collectWithBlueprint();
+    const phases = bodies
+      .filter((body): body is Extract<SseEventBody, { type: "phase" }> => body.type === "phase")
+      .map((body) => body.phase);
+    expect(phases[0]).toBe("understand");
+    expect(phases[1]).toBe("plan");
+    expect(phases[2]).toBe("generate");
+
+    const summary = bodies.find(
+      (body) => body.type === "thinking" && body.delta.startsWith("蓝图已确认："),
+    );
+    expect(summary).toBeDefined();
+  });
+
+  it("流结束给出蓝图对照（mock 只出 6 个节点，与蓝图 6 题的题量能对上）", async () => {
+    const bodies = await collectWithBlueprint();
+    const comparison = bodies.find(
+      (body) => body.type === "thinking" && body.delta.startsWith("蓝图对照："),
+    );
+    expect(comparison).toBeDefined();
+    expect(comparison?.type === "thinking" ? comparison.delta : "").toContain("题量 6 →");
+  });
+
+  it("没有蓝图时既不出现 plan，也不出现蓝图对照", async () => {
+    const bodies: SseEventBody[] = [];
+    for await (const body of generateForm({ config: MOCK_CONFIG }, { requirement: "出一份测验" })) {
+      bodies.push(body);
+    }
+    expect(bodies.some((body) => body.type === "phase" && body.phase === "plan")).toBe(false);
+    expect(
+      bodies.some((body) => body.type === "thinking" && body.delta.includes("蓝图")),
     ).toBe(false);
   });
 });

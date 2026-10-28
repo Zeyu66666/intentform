@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { FIELD_TYPES, LIMITS, SCHEMA_VERSION } from "@intentform/schema";
 
-import { buildMessages, buildSystemPrompt, buildUserPrompt, REQUIREMENT_CLOSE, REQUIREMENT_OPEN } from "./prompt.ts";
+import {
+  BLUEPRINT_CLOSE,
+  BLUEPRINT_OPEN,
+  buildMessages,
+  buildSystemPrompt,
+  buildUserPrompt,
+  REQUIREMENT_CLOSE,
+  REQUIREMENT_OPEN,
+} from "./prompt.ts";
 import { validateLine } from "./validate-line.ts";
 
 describe("buildSystemPrompt", () => {
@@ -70,5 +78,43 @@ describe("buildMessages", () => {
     expect(messages.map((message) => message.role)).toEqual(["system", "user"]);
     expect(messages[0]?.content).toBe(buildSystemPrompt("generate.v1"));
     expect(messages[1]?.content).toBe(buildUserPrompt("出一份测验"));
+  });
+});
+
+describe("buildUserPrompt · 蓝图块（R-06）", () => {
+  const BLUEPRINT = {
+    title: "二次函数入门测验",
+    kind: "quiz" as const,
+    sections: [{ title: "基础", count: 8 }],
+    totalCount: 8,
+    typeMix: { single: 4, fill: 2, short: 2 },
+    totalScore: 40,
+    knowledgePoints: [
+      { id: "kp-open", name: "开口方向" },
+      { id: "kp-vertex", name: "顶点坐标" },
+    ],
+  };
+
+  it("没有蓝图时与以前逐字节相同（老回放键不漂）", () => {
+    const requirement = "出一份测验";
+    expect(buildUserPrompt(requirement)).toBe(
+      [REQUIREMENT_OPEN, requirement, REQUIREMENT_CLOSE].join("\n"),
+    );
+  });
+
+  it("有蓝图时追加独立的定界块，且写明它是硬约束", () => {
+    const prompt = buildUserPrompt("出一份测验", BLUEPRINT);
+    expect(prompt).toContain(BLUEPRINT_OPEN);
+    expect(prompt).toContain(BLUEPRINT_CLOSE);
+    expect(prompt).toContain('"totalCount":8');
+    expect(prompt).toContain("硬约束");
+    // 蓝图块在需求块之后，且不把需求块拆散
+    expect(prompt.indexOf(REQUIREMENT_CLOSE)).toBeLessThan(prompt.indexOf(BLUEPRINT_OPEN));
+  });
+
+  it("系统提示里声明蓝图块也是数据不是指令", () => {
+    const system = buildSystemPrompt("generate.v3");
+    expect(system).toContain(BLUEPRINT_OPEN);
+    expect(system).toContain("数据");
   });
 });
