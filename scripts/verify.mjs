@@ -9,6 +9,8 @@
  *                 answer / explanation / bloom / knowledgePoint / objectives。
  *   VC5 人工批改：`POST /api/forms/:id/submissions/:sid/grades` 录分后总分、待批额度、
  *      看板与 CSV 三处一致（省赛 R-02）。
+ *   VC6 受限修改与撤销：`PATCH /api/forms/:id` 追加草稿版本、旧 `baseVersionId` 409、
+ *      `POST /api/forms/:id/undo` 退回父版本（省赛 R-03）。
  *   VC4 生成→发布→提交→看板：`LLM_MODE=mock` 走完整的 SSE 生成，把 `field` 事件里
  *                 的节点组装成 quiz 表单，发布后提交一份**故意只对一半**的答卷，
  *                 得分必须等于脚本自己算出的期望值（不是"大于 0"），再看板与 CSV 对账。
@@ -17,10 +19,10 @@
  * 零影响；而 VC4 需要一条**确定性**的生成流（mock 是内置脚本 + 一条故意写坏再修复的题，
  * 不调模型、每次事件序列相同），否则「期望得分」本身就不成立。
  *
- * 为什么用 `node:sqlite` 写 v2：本轮还没有 PATCH 路由（补丁编辑器属于前端 I3），
- * 而 VC1 的命题恰恰是「版本追加 + 指针移动」这两件事彼此独立。所以这里用 Node
- * 内置的 SQLite 直接做「补丁路由本该做的两行写入」，走的仍然是同一套表约束
- * （`form_versions` 的追加式触发器照样生效）。除 Node 内置外不引入任何依赖。
+ * 曾经用 `node:sqlite` 直连数据库伪造「改草稿」：那时没有 PATCH 路由，而 VC1 的命题
+ * 是「版本追加 + 指针移动彼此独立」。R-03 落地后 `PATCH /api/forms/:id` 就是那条真路，
+ * 于是 VC1 改成打真接口——近路连同 `node:sqlite` 依赖一起删掉，证据链上不再有
+ * 「脚本替应用做了它做不到的事」这一段。
  *
  * 退出码：四条全过 0；任何一条失败非 0，并打印失败原因。
  */
@@ -33,7 +35,6 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { DatabaseSync } from "node:sqlite";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SERVER_ENTRY = join(ROOT, "server", "src", "main.ts");
@@ -109,16 +110,6 @@ const QUIZ_SCHEMA = {
 };
 
 /** v2：多一道简答、换个标题 —— 足够让「快照被改动」在字节比较里现形。 */
-const QUIZ_SCHEMA_V2 = {
-  ...QUIZ_SCHEMA,
-  meta: { ...QUIZ_SCHEMA.meta, title: "verify · 二次函数快照卷（改）", totalScore: 25 },
-  items: [
-    ...QUIZ_SCHEMA.items,
-    // 省赛 R-01：简答带分值，VC5 才有东西可批。
-    { id: "v-short", type: "short", title: "一句话总结今天学了什么", required: false, score: 5 },
-  ],
-};
-
 const CORRECT_ANSWERS = {
   "v-single": "op1",
   "v-multi": ["op1", "op3"],
@@ -254,8 +245,31 @@ async function vc1Snapshot(request, state) {
   must(before.json.versionId === v1Id, `收集页不是发布版：${String(before.json.versionId)}`);
   must(before.json.versionN === 1, `收集页版本号应为 1，实际 ${String(before.json.versionN)}`);
 
-  // 「老师改了草稿」= 追加 v2 + 把草稿指针挪过去（补丁路由本该做的两行）。
-  const v2 = appendDraftVersion(state.dbPath, formId, v1Id);
+  // 「老师改了草稿」= 真 PATCH：追加 v2 + 把草稿指针挪过去（R-03）。
+  const patched = await request("PATCH", `/api/forms/${formId}`, {
+    cookie,
+    json: {
+      baseVersionId: v1Id,
+      // 两步改动正好覆盖「改题干」与「加题」：v2 因此比 v1 多一道简答（R-01 的
+      // 简答带分值要在这里进来，否则 VC5 没有东西可批）。
+      ops: [
+        { op: "setStem", itemId: "v-single", title: "顶点横坐标是（改过草稿）" },
+        {
+          op: "addItem",
+          index: QUIZ_SCHEMA.items.length,
+          item: { id: "v-short", type: "short", title: "一句话总结今天学了什么", required: false, score: 5, maxLength: 100 },
+        },
+      ],
+    },
+  });
+  must(patched.status === 200, `改草稿失败（${String(patched.status)}）：${firstLine(patched.text)}`);
+  const v2 = patched.json.version.id;
+  must(patched.json.version.n === 2, `改草稿应产生 v2，实际 n=${String(patched.json.version.n)}`);
+  must(patched.json.version.source === "patch", `版本来源应为 patch，实际 ${String(patched.json.version.source)}`);
+  must(
+    patched.json.version.parentId === v1Id,
+    `v2 的 parentId 应指向 v1，实际 ${String(patched.json.version.parentId)}`,
+  );
   const afterDraft = await request("GET", `/f/${slug}`);
   must(afterDraft.status === 200, `改草稿后收集页挂了（${String(afterDraft.status)}）`);
   must(
@@ -288,42 +302,6 @@ async function vc1Snapshot(request, state) {
   state.v1Id = v1Id;
   state.v2 = v2;
   state.beforeForm = beforeForm;
-}
-
-/**
- * 追加一版（v2），并像编辑器那样把草稿指针挪过去。
- *
- * **为什么绕过应用层直连 SQLite**：能追加版本的正式入口是 Patch UI（I7），本轮
- * 服务端只有 `POST /api/forms`（落 v1）与 `POST /api/forms/:id/publish`（写指针），
- * 没有任何「再写一版」的 HTTP 接口。而 VC1 要证明的恰恰是**存储层的不可变性**：
- * 「老师改了草稿，已发布的快照不受影响」。所以这里用 `node:sqlite` 直接往
- * `form_versions` 插一行——这正是产品里 Patch 路由将来要做的那一次 INSERT，
- * 只不过这里省掉了 LLM 与补丁计算。用它当证据是安全的：
- *
- * - 它是**测试脚手架**，不进 server 代码路径，也不给应用新增任何写版本的能力；
- * - 它用的连接与 server 进程的 better-sqlite3 连接指向同一个文件（同一套 WAL/
- *   journal 语义），写完即 close，server 下一次读就会看到；
- * - 它插的行必须满足与真实路径相同的约束（n 递增、parent_id 指向上游版本），
- *   否则 VC1 会失败——也就是说这条近路没有绕过任何被验证的规则。
- */
-function appendDraftVersion(dbPath, formId, parentId) {
-  const db = new DatabaseSync(dbPath);
-  try {
-    const id = `v_verify_${Date.now().toString(36)}`;
-    const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO form_versions (id, form_id, n, schema_json, source, parent_id, prompt_version, created_at)
-       VALUES (?, ?, (SELECT COALESCE(MAX(n), 0) + 1 FROM form_versions WHERE form_id = ?), ?, 'patch', ?, 'verify', ?)`,
-    ).run(id, formId, formId, JSON.stringify(QUIZ_SCHEMA_V2), parentId, now);
-    db.prepare("UPDATE forms SET draft_version_id = ?, updated_at = ? WHERE id = ?").run(
-      id,
-      now,
-      formId,
-    );
-    return id;
-  } finally {
-    db.close();
-  }
 }
 
 function checkNoLeak(label, text) {
@@ -438,6 +416,93 @@ async function vc5ManualGrade(request, ctx) {
   const dataLine = csv.text.split(String.fromCharCode(13, 10))[1] ?? "";
   const scoreCell = dataLine.split(",")[2];
   must(scoreCell === "22", `CSV 的 score 列应与看板同口径（22），实际 ${String(scoreCell)}`);
+}
+
+/**
+ * VC6：受限修改与撤销（省赛 R-03）。
+ *
+ * 四条命题，缺一条这个功能就不成立：
+ * 1. PATCH 真的追加一版草稿，**不改已发布版本**（快照隔离在写路径上也成立）；
+ * 2. 拿旧的 `baseVersionId` 再改 → 409，而不是静默覆盖别人刚做的改动；
+ * 3. `undo` 把草稿指针退回父版本，**不多造版本**（版本行只增不改）；
+ * 4. 撤销后仍能继续改，且新版本仍然挂在原来的父版本上。
+ *
+ * 第 2 条是这一轮最容易写错的地方：乐观锁一旦退化成"总是覆盖"，两个老师同时编辑
+ * 就会互相吞改动，而这种 bug 在单用户演示里永远看不见。
+ */
+async function vc6PatchAndUndo(request, ctx) {
+  const before = await request("GET", `/f/${ctx.slug}`);
+  must(before.status === 200, `收集页失败（${String(before.status)}）`);
+  const beforeForm = JSON.stringify(before.json.form);
+  const draftVersionId = before.json.versionId === ctx.v2 ? ctx.v2 : undefined;
+  must(draftVersionId !== undefined, `VC6 期望当前发布版是 v2，实际 ${String(before.json.versionId)}`);
+
+  const patched = await request("PATCH", `/api/forms/${ctx.formId}`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: ctx.v2, ops: [{ op: "setScore", itemId: "v-single", score: 8 }] },
+  });
+  must(patched.status === 200, `PATCH 失败（${String(patched.status)}）：${firstLine(patched.text)}`);
+  must(patched.json.version.n === 3, `PATCH 应产生 v3，实际 n=${String(patched.json.version.n)}`);
+  // 总分由服务端重算：25 → 28（v-single 5→8）。前端传不进来，也不该传。
+  must(
+    patched.json.schema.meta.totalScore === 28,
+    `改分值后总分应为 28，实际 ${String(patched.json.schema.meta.totalScore)}`,
+  );
+  const changed = patched.json.schema.items.find((item) => item.id === "v-single");
+  must(changed?.score === 8, `v-single 的分值应为 8，实际 ${String(changed?.score)}`);
+
+  // 命题 1：改草稿不影响已发布的收集页。
+  const afterDraft = await request("GET", `/f/${ctx.slug}`);
+  must(
+    JSON.stringify(afterDraft.json.form) === beforeForm,
+    "PATCH 改草稿后已发布收集页内容变了（快照没隔离住）",
+  );
+  must(afterDraft.json.versionId === ctx.v2, `收集页版本漂了：${String(afterDraft.json.versionId)}`);
+
+  // 命题 2：旧 baseVersionId → 409，不静默覆盖。
+  const stale = await request("PATCH", `/api/forms/${ctx.formId}`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: ctx.v2, ops: [{ op: "setStem", itemId: "v-single", title: "并发改动" }] },
+  });
+  must(stale.status === 409, `过期 baseVersionId 应 409，实际 ${String(stale.status)}：${firstLine(stale.text)}`);
+  must(stale.json.error === "version_conflict", `错误码应为 version_conflict，实际 ${String(stale.json.error)}`);
+
+  // 命题 3：撤销退回父版本，且不多造一行版本。
+  const undo = await request("POST", `/api/forms/${ctx.formId}/undo`, {
+    cookie: ctx.cookie,
+    json: { fromVersionId: patched.json.version.id },
+  });
+  must(undo.status === 200, `撤销失败（${String(undo.status)}）：${firstLine(undo.text)}`);
+  must(undo.json.undone === true, "撤销应返回 undone=true");
+  must(undo.json.version.id === ctx.v2, `撤销后草稿应回到 v2，实际 ${String(undo.json.version.id)}`);
+  must(
+    undo.json.schema.meta.totalScore === 25,
+    `撤销后总分应回到 25，实际 ${String(undo.json.schema.meta.totalScore)}`,
+  );
+  const detail = await request("GET", `/api/forms/${ctx.formId}`, { cookie: ctx.cookie });
+  must(
+    detail.json.form.draftVersionId === ctx.v2,
+    `撤销后草稿指针应回到 v2，实际 ${String(detail.json.form.draftVersionId)}`,
+  );
+
+  // 命题 4：撤销后仍能改，且版本号只增（v3 不复用）。
+  const again = await request("PATCH", `/api/forms/${ctx.formId}`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: ctx.v2, ops: [{ op: "setStem", itemId: "v-single", title: "顶点横坐标（再改）" }] },
+  });
+  must(again.status === 200, `撤销后再改失败（${String(again.status)}）：${firstLine(again.text)}`);
+  must(again.json.version.n === 4, `撤销后再改应得 v4，实际 n=${String(again.json.version.n)}`);
+  must(
+    again.json.version.parentId === ctx.v2,
+    `新版本的父版本应是 v2，实际 ${String(again.json.version.parentId)}`,
+  );
+
+  // 收尾：把草稿指针退回 v2，别把「未发布的改动」留给后面的用例。
+  const restore = await request("POST", `/api/forms/${ctx.formId}/undo`, {
+    cookie: ctx.cookie,
+    json: { fromVersionId: again.json.version.id },
+  });
+  must(restore.status === 200, `收尾撤销失败（${String(restore.status)}）`);
 }
 
 async function vc3NoLeak(request, ctx) {
@@ -679,6 +744,7 @@ const CHECKS = [
   ["VC3 学生端零泄漏：响应体不含答案类键", vc3NoLeak],
   ["VC4 生成→发布→提交→看板：SSE 组装、得分对账、CSV 表头", vc4GeneratedLoop],
   ["VC5 人工批改：简答录分、待批归零、看板与 CSV 同口径", vc5ManualGrade],
+  ["VC6 受限修改与撤销：PATCH 追加版本、旧 baseVersionId 409、undo 回退", vc6PatchAndUndo],
 ];
 
 async function main() {

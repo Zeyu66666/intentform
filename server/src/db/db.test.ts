@@ -103,9 +103,34 @@ describe("form_versions 追加式", () => {
     db.close();
   });
 
-  it("仓库层不导出任何「改/删版本」的函数", () => {
+  it("仓库层不导出任何「改/删版本行」的函数", () => {
+    // 不变量管的是**版本行**（form_versions），不是 forms 行：改标题、挪草稿指针
+    // 都是 forms 上的正当写入。所以这里按"名字里同时出现 改/删 与 version"来判，
+    // 而不是一律禁 update/delete——后者会把 setDraftVersion 也误判，逼着人去改名躲
+    // 校验，那才是真的把约束废掉。
     const exported = Object.keys(formsRepo);
-    expect(exported.filter((name) => /update|delete|remove/i.test(name))).toEqual([]);
+    const versionWriters = exported.filter(
+      (name) => /(update|delete|remove)/i.test(name) && /version/i.test(name),
+    );
+    expect(versionWriters).toEqual([]);
+    // 反过来钉住：追加版本的唯一入口必须叫 appendVersion（名字变了就等于换了机制）。
+    expect(exported).toContain("appendVersion");
+  });
+
+  it("updateFormTitle 只写 forms 行，版本行一条不动", () => {
+    const db = openDatabase(":memory:");
+    const { formId } = seed(db);
+    const before = db.prepare("SELECT * FROM form_versions ORDER BY n").all();
+    const changed = formsRepo.updateFormTitle(db, {
+      teacherId: "t_seed",
+      formId,
+      title: "改过的标题",
+      updatedAt: new Date().toISOString(),
+    });
+    expect(changed).toBe(true);
+    expect(db.prepare("SELECT * FROM form_versions ORDER BY n").all()).toEqual(before);
+    expect(db.prepare("SELECT title FROM forms WHERE id = ?").get(formId)).toEqual({ title: "改过的标题" });
+    db.close();
   });
 
   it("appendVersion 自动递增 n，且不修改已有行", () => {

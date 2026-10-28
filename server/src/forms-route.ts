@@ -13,25 +13,32 @@
  */
 
 import {
+  applyPatch,
   createFormRequestSchema,
   formSchema,
   isFormKind,
+  patchFormRequestSchema,
   publishRequestSchema,
+  undoDraftRequestSchema,
   validateForm,
   VERSION_CONFLICT_MESSAGE,
   type CreateFormResponse,
   type FormDetailResponse,
   type FormKind,
+  type FormSchema,
   type FormStatus,
   type FormSummary,
   type FormVersionSource,
   type FormVersionSummary,
   type ListFormsResponse,
+  type PatchFormResponse,
   type PublishResponse,
   type SchemaError,
+  type UndoDraftResponse,
 } from "@intentform/schema";
 import { requireTeacher } from "./auth.ts";
 import {
+  appendVersion,
   findForm,
   findFormOwnerId,
   findVersion,
@@ -40,6 +47,7 @@ import {
   listForms,
   publishVersion,
   setDraftVersion,
+  updateFormTitle,
   type FormRow,
   type FormVersionRow,
 } from "./db/forms.ts";
@@ -302,4 +310,186 @@ function resolveSlug(ctx: RouteContext, form: FormRow): string | undefined {
     if (!isSlugTaken(ctx.db, candidate)) return candidate;
   }
   return undefined;
+}
+
+/* ------------------------- 受限修改（省赛 R-03 / I7） ----------------------- */
+
+/**
+ * 读某个版本行的 Schema。损坏时已写响应并返回 undefined——与详情接口同口径，
+ * 表被手改过时这里是 500，而不是把脏数据当"当前草稿"继续算差异。
+ */
+function readVersionSchema(
+  ctx: RouteContext,
+  formId: string,
+  versionId: string,
+): { version: FormVersionRow; schema: FormSchema } | undefined {
+  const version = findVersion(ctx.db, formId, versionId);
+  if (version === undefined) {
+    sendApiError(ctx.res, "not_found", "版本不存在");
+    return undefined;
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(version.schema_json);
+  } catch {
+    sendApiError(ctx.res, "internal", "版本快照损坏");
+    return undefined;
+  }
+  const schema = formSchema.safeParse(raw);
+  if (!schema.success) {
+    sendApiError(ctx.res, "internal", "版本快照损坏");
+    return undefined;
+  }
+  return { version, schema: schema.data as FormSchema };
+}
+
+/**
+ * `PATCH /api/forms/:id` —— 受限修改。
+ *
+ * 三处要点：
+ * 1. **乐观锁在草稿指针上**：`baseVersionId` 必须等于 `forms.draft_version_id`。
+ *    不等就 409，既不"以最后写入为准"，也不静默合并——后者会让两个人的改动互相吞掉。
+ * 2. **追加版本，不原地改**：版本行只增不改（§3.5），撤销因此天然可行：把指针退回去即可。
+ * 3. **追加前不跑整表门禁**：草稿允许不完整（发布才跑门禁）。但结构必须过 zod，
+ *    否则下一次读详情就会 500。
+ */
+export async function handlePatchForm(ctx: RouteContext): Promise<void> {
+  const formId = ctx.params["id"];
+  if (formId === undefined) {
+    sendApiError(ctx.res, "not_found", "表单不存在");
+    return;
+  }
+  const form = requireOwnedForm(ctx, formId);
+  if (form === undefined) return;
+  const body = await readJsonBody(ctx, FORM_BODY_MAX_BYTES, "修改请求体过大");
+  if (!body.ok) return;
+  const parsed = patchFormRequestSchema.safeParse(body.value);
+  if (!parsed.success) {
+    sendApiError(ctx.res, "bad_request", describeZodError(parsed.error));
+    return;
+  }
+  if (parsed.data.baseVersionId !== form.draft_version_id) {
+    // 与旧版提交 409 同一条文案：两处都是"你手上那版不是当前的"，刷新能解决。
+    sendApiError(ctx.res, "version_conflict", VERSION_CONFLICT_MESSAGE);
+    return;
+  }
+  const base = readVersionSchema(ctx, form.id, parsed.data.baseVersionId);
+  if (base === undefined) return;
+
+  const applied = applyPatch(base.schema, parsed.data.ops);
+  if (!applied.ok) {
+    const detail = applied.errors.map((error) => `#${String(error.opIndex)} ${error.code}`).join("、");
+    sendApiError(ctx.res, "bad_request", `修改未通过校验：${applied.errors[0]?.message ?? detail}`);
+    return;
+  }
+  if (applied.changes.length === 0) {
+    // 空改动不产生版本：否则点一次"保存"就多一版，撤销栈里全是空步。
+    const response: PatchFormResponse = {
+      ok: true,
+      form: toFormSummary(form),
+      version: toVersionSummary(base.version),
+      schema: base.schema,
+      changes: [],
+    };
+    sendJson(ctx.res, 200, response);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const versionId = newId("v");
+  const appended = appendVersion(ctx.db, {
+    id: versionId,
+    formId: form.id,
+    schemaJson: JSON.stringify(applied.schema),
+    source: "patch",
+    parentId: base.version.id,
+    // 人工改的版本没有 prompt 参与；写 "manual" 与手工导入同口径，便于日后解释来源。
+    promptVersion: "manual",
+    createdAt: now,
+  });
+  setDraftVersion(ctx.db, form.id, appended.id, now);
+  if (parsed.data.title !== undefined && parsed.data.title !== form.title) {
+    updateFormTitle(ctx.db, {
+      teacherId: form.teacher_id,
+      formId: form.id,
+      title: parsed.data.title,
+      updatedAt: now,
+    });
+  }
+  const refreshed = findForm(ctx.db, form.teacher_id, form.id);
+  if (refreshed === undefined) {
+    sendApiError(ctx.res, "internal", "表单写入后读回失败");
+    return;
+  }
+  const response: PatchFormResponse = {
+    ok: true,
+    form: toFormSummary(refreshed),
+    version: toVersionSummary(appended),
+    schema: applied.schema,
+    changes: applied.changes,
+  };
+  sendJson(ctx.res, 200, response);
+}
+
+/**
+ * `POST /api/forms/:id/undo` —— 撤销一步。
+ *
+ * 撤销 = 把草稿指针退回 `fromVersionId` 的父版本。**不删版本行**：
+ * 撤销之后仍能从这里"回去"，也不需要重做栈——重做就是把那次 Patch 再提交一遍，
+ * 而那次 Patch 的 ops 在留痕里（`changes` 回给了界面）。
+ *
+ * 优先只认"没有父版本"（v1）：此时没有更早的草稿可退，回 200 且 `undone: false`。
+ */
+export async function handleUndoDraft(ctx: RouteContext): Promise<void> {
+  const formId = ctx.params["id"];
+  if (formId === undefined) {
+    sendApiError(ctx.res, "not_found", "表单不存在");
+    return;
+  }
+  const form = requireOwnedForm(ctx, formId);
+  if (form === undefined) return;
+  const body = await readJsonBody(ctx, FORM_BODY_MAX_BYTES, "撤销请求体过大");
+  if (!body.ok) return;
+  const parsed = undoDraftRequestSchema.safeParse(body.value);
+  if (!parsed.success) {
+    sendApiError(ctx.res, "bad_request", describeZodError(parsed.error));
+    return;
+  }
+  if (parsed.data.fromVersionId !== form.draft_version_id) {
+    sendApiError(ctx.res, "version_conflict", VERSION_CONFLICT_MESSAGE);
+    return;
+  }
+  const current = readVersionSchema(ctx, form.id, parsed.data.fromVersionId);
+  if (current === undefined) return;
+
+  const parentId = current.version.parent_id;
+  if (parentId === null || parentId === "") {
+    const response: UndoDraftResponse = {
+      ok: true,
+      form: toFormSummary(form),
+      version: toVersionSummary(current.version),
+      schema: current.schema,
+      undone: false,
+    };
+    sendJson(ctx.res, 200, response);
+    return;
+  }
+  const parent = readVersionSchema(ctx, form.id, parentId);
+  if (parent === undefined) return;
+
+  const now = new Date().toISOString();
+  setDraftVersion(ctx.db, form.id, parent.version.id, now);
+  const refreshed = findForm(ctx.db, form.teacher_id, form.id);
+  if (refreshed === undefined) {
+    sendApiError(ctx.res, "internal", "表单写入后读回失败");
+    return;
+  }
+  const response: UndoDraftResponse = {
+    ok: true,
+    form: toFormSummary(refreshed),
+    version: toVersionSummary(parent.version),
+    schema: parent.schema,
+    undone: true,
+  };
+  sendJson(ctx.res, 200, response);
 }

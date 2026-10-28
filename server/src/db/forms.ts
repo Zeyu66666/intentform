@@ -209,6 +209,17 @@ export function publishVersion(db: Db, input: PublishInput): boolean {
 }
 
 /** 草稿指针推进（改草稿后详情页要能看到最新版本）。只动指针，不动版本行。 */
+/** 改标题：仍然带 `teacher_id`，越权在 SQL 层查不到。 */
+export function updateFormTitle(
+  db: Db,
+  input: { readonly teacherId: string; readonly formId: string; readonly title: string; readonly updatedAt: string },
+): boolean {
+  const result = db
+    .prepare("UPDATE forms SET title = ?, updated_at = ? WHERE id = ? AND teacher_id = ?")
+    .run(input.title, input.updatedAt, input.formId, input.teacherId);
+  return result.changes > 0;
+}
+
 export function setDraftVersion(db: Db, formId: string, versionId: string, updatedAt: string): void {
   db.prepare("UPDATE forms SET draft_version_id = ?, updated_at = ? WHERE id = ?").run(
     versionId,

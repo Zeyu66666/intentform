@@ -22,7 +22,9 @@ import {
   handleCreateForm,
   handleGetForm,
   handleListForms,
+  handlePatchForm,
   handlePublishForm,
+  handleUndoDraft,
 } from "./forms-route.ts";
 import {
   clientIp,
@@ -43,6 +45,10 @@ export const ROUTES: readonly RouteDef[] = [
   { method: "GET", pattern: "/api/forms", handler: handleListForms },
   { method: "GET", pattern: "/api/forms/:id", handler: handleGetForm },
   { method: "POST", pattern: "/api/forms/:id/publish", handler: handlePublishForm },
+  // 省赛 R-03：受限修改与撤销。`PATCH` 是"部分改动"的语义，正好对上六种 op；
+  // 撤销用 `POST .../undo` 而不是 `DELETE /versions/:id`：版本行本来就不删。
+  { method: "PATCH", pattern: "/api/forms/:id", handler: handlePatchForm },
+  { method: "POST", pattern: "/api/forms/:id/undo", handler: handleUndoDraft },
   { method: "GET", pattern: "/api/forms/:id/submissions", handler: handleSubmissions },
   { method: "GET", pattern: "/api/forms/:id/submissions.csv", handler: handleSubmissionsCsv },
   // 省赛 R-02：人工批改。`POST` 而不是 `PUT`：路径里没有"哪个分"，分值在体里，

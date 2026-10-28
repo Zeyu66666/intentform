@@ -22,6 +22,7 @@ import {
 } from "./constants.ts";
 import type { PublicForm } from "./public-view.ts";
 import { formSchema, type FormSchema } from "./types.ts";
+import { patchOpsSchema, type PatchChange, type PatchError, type PatchOp } from "./patch.ts";
 
 /** 路由表：前后端都从这里取路径，避免 "/api/forms/:id/publish" 手写成两种拼法。 */
 export const API_PATHS = {
@@ -32,6 +33,10 @@ export const API_PATHS = {
   forms: "/api/forms",
   form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   publish: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/publish`,
+  /** 受限修改（省赛 R-03）：只接受六种操作，追加一个新草稿版本。 */
+  patchForm: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
+  /** 撤销一步：把草稿指针退回当前草稿的父版本。 */
+  undoDraft: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/undo`,
   submissions: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions`,
   submissionsCsv: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions.csv`,
   /** 教师给某条提交里的某道简答打分（省赛 R-02）。 */
@@ -196,6 +201,60 @@ export interface PublishResponse {
   readonly slug: string;
   readonly versionId: string;
   readonly publishedAt: string;
+}
+
+/* ------------------------------ 受限修改（R-03） ---------------------------- */
+
+/**
+ * `PATCH /api/forms/:id` 的请求。
+ *
+ * `baseVersionId` 是乐观锁：教师界面上看到的草稿是哪一版，就带哪一版。
+ * 中间别人改过（草稿指针已前进）时服务端回 409，而不是"以最后写入为准"——
+ * 后者会让两个人的改动互相吞掉，且没有任何一方看到发生了这件事。
+ *
+ * 标题与 Schema 分开传：改标题不动题目，也不该让题目的版本号蹭一个不必要的增量。
+ */
+export const patchFormRequestSchema = z.object({
+  baseVersionId: z.string().min(1).max(64),
+  ops: patchOpsSchema,
+  /** 可选：一并改表单标题。不传表示只改题目。 */
+  title: z.string().trim().min(1).max(LIMITS.formTitleMax).optional(),
+});
+
+export type PatchFormRequest = z.infer<typeof patchFormRequestSchema>;
+
+/** 撤销：把草稿指针退回 `fromVersionId` 的父版本。 */
+export const undoDraftRequestSchema = z.object({
+  fromVersionId: z.string().min(1).max(64),
+});
+
+export type UndoDraftRequest = z.infer<typeof undoDraftRequestSchema>;
+
+export interface PatchFormResponse {
+  readonly ok: true;
+  readonly form: FormSummary;
+  readonly version: FormVersionSummary;
+  readonly schema: FormSchema;
+  /** 人话级差异，界面直接渲染成「第 3 题 5 分 → 8 分」。 */
+  readonly changes: readonly PatchChange[];
+}
+
+/**
+ * 撤销的响应。`changes` 为空表示「已经退到 v1，没有更早的草稿可退」——
+ * 这种请求仍回 200：对使用者来说它已经是"回到最初"的状态，不是错误。
+ */
+export interface UndoDraftResponse {
+  readonly ok: true;
+  readonly form: FormSummary;
+  readonly version: FormVersionSummary;
+  readonly schema: FormSchema;
+  readonly undone: boolean;
+}
+
+/** Patch 被拒时的明细（400 响应的 `error.detail` 里带 `errors`）。 */
+export interface PatchRejection {
+  readonly errors: readonly PatchError[];
+  readonly ops: readonly PatchOp[];
 }
 
 /* ------------------------------- 学生端收集页 ------------------------------ */
