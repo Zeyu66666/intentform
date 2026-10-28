@@ -654,6 +654,19 @@ async function main() {
         await page.evaluate("return clickButtonByText('^生成表单$')"),
         "没找到「生成表单」按钮",
       );
+      // R-06：生成前多了一步"确认蓝图"。需求写全时不会先追问，直接到蓝图卡。
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('plan-card') !== null")),
+        "蓝图卡片出现",
+        20_000,
+      );
+      const planSummary = await page.evaluate(
+        "var el = byTestId('plan-summary'); return el === null ? '' : el.textContent.trim();",
+      );
+      must(planSummary.length > 0, "蓝图卡片没有摘要");
+      artifacts.push(await page.screenshot("02b-plan.png"));
+      const confirmPlan = await page.tap('[data-testid=plan-confirm]');
+      must(confirmPlan.ok === true, `点不到「按蓝图生成」：${JSON.stringify(confirmPlan)}`);
       // mock 是内置脚本 + 一条故意写坏再修复的题：等前端把 done 状态渲染出来。
       await waitFor(async () => (await page.text()).includes("生成完成"), "生成流走完（出现「生成完成」）", 30_000);
       artifacts.push(await page.screenshot("02-generate.png"));
@@ -662,7 +675,9 @@ async function main() {
       );
       const timeline = await page.text();
       must(timeline.includes("修复") || timeline.includes("repair"), "时间线里没有修复记录（mock 必然有一次）");
-      return { requirement: REQUIREMENT, source, sawRepairEntry: true };
+      // R-06 的界面级证据：时间线里必须真的出现 plan 阶段与蓝图摘要。
+      must(timeline.includes("蓝图已确认"), "时间线里没有蓝图摘要（plan 阶段没发生）");
+      return { requirement: REQUIREMENT, source, planSummary, sawRepairEntry: true };
     });
 
     // 3) 保存并发布
@@ -1046,6 +1061,14 @@ async function main() {
 
       const skipped = await page.tap('[data-testid=clarify-skip]');
       must(skipped.ok === true, `点不到「跳过，直接生成」：${JSON.stringify(skipped)}`);
+      // 跳过追问之后是蓝图卡（R-06）：这一步证明"跳过澄清"不会连带跳过蓝图。
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('plan-card') !== null")),
+        "跳过追问后出现蓝图卡片",
+        20_000,
+      );
+      const confirmPlan = await page.tap('[data-testid=plan-confirm]');
+      must(confirmPlan.ok === true, `点不到「按蓝图生成」：${JSON.stringify(confirmPlan)}`);
       await waitFor(
         async () => (await page.text()).includes("生成完成"),
         "跳过追问后生成走完（出现「生成完成」）",

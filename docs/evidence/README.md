@@ -8,7 +8,7 @@
 
 | 证据 | 在哪 | 能证明什么 | 不能证明什么 |
 |---|---|---|---|
-| `node scripts/verify.mjs`（VC1–VC8） | 本仓库，随时可跑 | 在没有浏览器的情况下，HTTP 语义层面的闭环成立：快照隔离、版本冲突拒绝、学生端零泄漏、生成→发布→提交→看板的数据一致、简答待批与教师批改后的终分、逐题正确率的分母与零提交口径、缺槽位追问与补答在事件流里的落点 | 不能证明界面能用、按钮点了有反应 |
+| `node scripts/verify.mjs`（VC1–VC9） | 本仓库，随时可跑 | 在没有浏览器的情况下，HTTP 语义层面的闭环成立：快照隔离、版本冲突拒绝、学生端零泄漏、生成→发布→提交→看板的数据一致、简答待批与教师批改后的终分、逐题正确率的分母与零提交口径、缺槽位追问与补答在事件流里的落点、蓝图自洽与 plan 阶段只在有蓝图时出现 | 不能证明界面能用、按钮点了有反应 |
 | `node scripts/browser-closed-loop.mjs` | 本仓库，需要本机 Chrome | 真浏览器里点完这条链，每一步的截图落盘 | 不能证明别的机器环境一致；它依赖 `LLM_MODE=mock` 的确定性 |
 
 `verify.mjs` 里跑的是**服务端真逻辑**（真 SQLite、真 HTTP、真判分），不是打桩。
@@ -20,7 +20,7 @@
 
 ```bash
 pnpm install                      # 一次性
-node scripts/verify.mjs           # 期望：VC1..VC8 全部通过，exit 0
+node scripts/verify.mjs           # 期望：VC1..VC9 全部通过，exit 0
 node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + stdout 打 JSON 摘要
 ```
 

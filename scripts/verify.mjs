@@ -13,6 +13,8 @@
  *      `POST /api/forms/:id/undo` 退回父版本（省赛 R-03）。
  *   VC7 每题正确率：三份提交（全对 / 只对一半 / 未作答）下逐题统计的 total / answered /
  *      correct / rate 逐个对；零提交时 rate 是 null（省赛 R-04）。
+ *   VC9 两阶段蓝图：`/api/plan` 产出自洽蓝图、补答拼进需求；带蓝图生成时 plan 阶段与
+ *      蓝图对照真实出现，不带时两者都不出现（省赛 R-06）。
  *   VC4 生成→发布→提交→看板：`LLM_MODE=mock` 走完整的 SSE 生成，把 `field` 事件里
  *                 的节点组装成 quiz 表单，发布后提交一份**故意只对一半**的答卷，
  *                 得分必须等于脚本自己算出的期望值（不是"大于 0"），再看板与 CSV 对账。
@@ -879,6 +881,66 @@ async function vc8Clarify(request) {
   );
 }
 
+/**
+ * VC9：两阶段蓝图（省赛 R-06）。
+ *
+ * 四条命题：
+ * 1. `/api/plan` 在 mock 下给出**自洽**蓝图（章节题量之和 = 总题量 = 题型分布之和）；
+ * 2. 补答先拼进需求再规划，与生成用的是同一串；
+ * 3. 带蓝图生成：时间线出现 plan 阶段与「蓝图已确认」，流尾有「蓝图对照」；
+ * 4. 不带蓝图生成：既不出现 plan，也不出现蓝图对照（未发生不许演出）。
+ */
+async function vc9Blueprint(request) {
+  const requirement = "出 6 道题：4 道单选、2 道填空，共 30 分，覆盖《顶点坐标》";
+  const planned = await request("POST", "/api/plan", { json: { requirement } });
+  must(planned.status === 200, `规划接口失败（${String(planned.status)}）：${firstLine(planned.text)}`);
+  const blueprint = planned.json.blueprint;
+  must(blueprint !== undefined, "规划接口没有返回蓝图");
+  must(blueprint.totalCount === 6, `蓝图总题量应为 6，实际 ${String(blueprint.totalCount)}`);
+  const sectionSum = (blueprint.sections ?? []).reduce((sum, section) => sum + section.count, 0);
+  must(sectionSum === blueprint.totalCount, "蓝图不自洽：章节题量之和不等于总题量");
+  const typeSum = Object.values(blueprint.typeMix ?? {}).reduce((sum, count) => sum + count, 0);
+  must(typeSum === blueprint.totalCount, "蓝图不自洽：题型分布之和不等于总题量");
+  must(typeof planned.json.summary === "string" && planned.json.summary.length > 0, "蓝图缺少摘要");
+
+  const withClarify = await request("POST", "/api/plan", {
+    json: { requirement: "帮我出一份英语卷子", clarifications: [{ slot: "count", answer: "10 题" }] },
+  });
+  must(withClarify.status === 200, `带补答规划失败（${String(withClarify.status)}）`);
+  must(
+    typeof withClarify.json.requirement === "string" && withClarify.json.requirement.includes("教师补充的约束"),
+    "规划没有把补答拼进需求",
+  );
+  must(withClarify.json.blueprint.totalCount === 10, `补答说 10 题，蓝图应规划 10 题，实际 ${String(withClarify.json.blueprint.totalCount)}`);
+
+  const generated = await request("POST", "/api/generate", { json: { requirement, blueprint } });
+  must(generated.status === 200, `带蓝图生成失败（${String(generated.status)}）：${firstLine(generated.text)}`);
+  const events = parseSse(generated.text);
+  must(
+    events.some((event) => event.type === "phase" && event.phase === "plan"),
+    "带蓝图生成却没有 plan 阶段",
+  );
+  must(
+    events.some((event) => event.type === "thinking" && String(event.delta).includes("蓝图已确认")),
+    "时间线没有蓝图摘要",
+  );
+  must(
+    events.some((event) => event.type === "thinking" && String(event.delta).includes("蓝图对照")),
+    "流尾没有蓝图对照（偏差不可度量）",
+  );
+
+  const plain = await request("POST", "/api/generate", { json: { requirement } });
+  const plainEvents = parseSse(plain.text);
+  must(
+    !plainEvents.some((event) => event.type === "phase" && event.phase === "plan"),
+    "没有蓝图却出现了 plan 阶段（时间线在演没发生的事）",
+  );
+  must(
+    !plainEvents.some((event) => event.type === "thinking" && String(event.delta).includes("蓝图")),
+    "没有蓝图却出现了蓝图事件",
+  );
+}
+
 /** 把 SSE 文本切成事件对象。注释帧（心跳 `: ping`）没有 data，自然被丢掉。 */
 function parseSse(text) {
   const events = [];
@@ -906,6 +968,7 @@ const CHECKS = [
   ["VC6 受限修改与撤销：PATCH 追加版本、旧 baseVersionId 409、undo 回退", vc6PatchAndUndo],
   ["VC7 每题正确率：分母是提交份数、未作答按未答对计、零提交 rate 为 null", vc7ItemStats],
   ["VC8 意图澄清：缺槽位追问 1–3 条、完整需求不问、补答在事件流里可定位", vc8Clarify],
+  ["VC9 两阶段蓝图：规划自洽、补答同源、plan 阶段只在有蓝图时出现", vc9Blueprint],
 ];
 
 async function main() {
