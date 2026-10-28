@@ -7,7 +7,14 @@
 
 import { describe, expect, it } from "vitest";
 import { formSchema } from "@intentform/schema";
-import { gradeSubmission, maxScoreOf } from "./grading.ts";
+import {
+  correctnessItemsOf,
+  gradeSubmission,
+  isAnswered,
+  isJudgeableItem,
+  judgeItem,
+  maxScoreOf,
+} from "./grading.ts";
 import { quizSchema, surveySchema } from "./testing/fixtures.ts";
 
 const schema = quizSchema();
@@ -120,5 +127,114 @@ describe("gradeSubmission", () => {
 
   it("survey 没有自动判分题，满分是 0", () => {
     expect(maxScoreOf(surveySchema())).toBe(0);
+  });
+});
+
+/**
+ * 省赛 R-04：每题正确率的判定必须与判分**同一个函数**。
+ * 这两组用例是那条约束的执行器——谁把 `judgeItem` 改坏，判分与看板会同时红。
+ */
+describe("judgeItem", () => {
+  const byId = new Map(schema.items.map((item) => [item.id, item]));
+
+  function judge(itemId: string, value: string | string[]): boolean {
+    const item = byId.get(itemId);
+    if (item === undefined || !isJudgeableItem(item)) {
+      throw new Error(`fixture 里 ${itemId} 不是可判分题`);
+    }
+    return judgeItem(item, value);
+  }
+
+  it("四种自动判分题型各按自己的口径判对", () => {
+    expect(judge("q-single", "op1")).toBe(true);
+    expect(judge("q-multi", ["op3", "op1"])).toBe(true);
+    expect(judge("q-fill", [" 2 ", " X "])).toBe(true);
+    expect(judge("q-number", "3.145")).toBe(true);
+  });
+
+  it("答错与空值都判错，且不抛异常", () => {
+    expect(judge("q-single", "op2")).toBe(false);
+    expect(judge("q-single", "")).toBe(false);
+    expect(judge("q-multi", ["op1"])).toBe(false);
+    expect(judge("q-fill", ["2"])).toBe(false);
+    expect(judge("q-number", "三点一四")).toBe(false);
+  });
+
+  it("multi 重复选项判错（判分侧会整份拒收，这里是统计侧的兜底）", () => {
+    expect(judge("q-multi", ["op1", "op1", "op3"])).toBe(false);
+  });
+});
+
+describe("isAnswered", () => {
+  it("空串、全空白、空数组都算未作答", () => {
+    expect(isAnswered("")).toBe(false);
+    expect(isAnswered("   ")).toBe(false);
+    expect(isAnswered([])).toBe(false);
+    expect(isAnswered(["", "  "])).toBe(false);
+  });
+
+  it("有内容就算作答——答错也是作答", () => {
+    expect(isAnswered("op1")).toBe(true);
+    expect(isAnswered("错答案")).toBe(true);
+    expect(isAnswered(["", "x"])).toBe(true);
+  });
+});
+
+describe("correctnessItemsOf", () => {
+  it("quiz 只返回四种自动判分题：分节与简答不在内", () => {
+    expect(correctnessItemsOf(schema).map((item) => item.id)).toEqual([
+      "q-single",
+      "q-multi",
+      "q-fill",
+      "q-number",
+    ]);
+  });
+
+  it("survey 里没有带标准答案的字段，返回空数组（不该四处 0%）", () => {
+    expect(correctnessItemsOf(surveySchema())).toEqual([]);
+  });
+
+  it("缺标准答案的题被跳过，而不是按全错统计", () => {
+    // 结构上合法但没答案的 quiz 是校验器该拦的输入；统计层不能因为上游漏拦就
+    // 输出一个「正确率 0%」的假数字——那看起来像「学生全错」，实际是「这题没法判」。
+    const noAnswer = formSchema.parse({
+      meta: { version: 1, kind: "quiz", title: "缺答案", objectives: [], totalScore: 5 },
+      items: [
+        {
+          id: "q-noans",
+          type: "single",
+          title: "没有答案的题",
+          score: 5,
+          required: true,
+          options: [
+            { id: "op1", text: "一" },
+            { id: "op2", text: "二" },
+          ],
+        },
+      ],
+    });
+    expect(correctnessItemsOf(noAnswer)).toEqual([]);
+  });
+});
+
+describe("统计与判分同源", () => {
+  it("gradeSubmission 的得分 = judgeItem 判对的题的分值之和", () => {
+    // 一条会同时踩到「对 / 错 / 未作答 / 顺序无关」的答卷：手写的期望值与函数算出的
+    // 值必须一致，否则看板的每题正确率会和学生的得分对不上账。
+    const answers: Record<string, string | string[]> = {
+      "q-single": "op1", // 对，5 分
+      "q-multi": ["op1"], // 错
+      "q-number": "3.2", // 错
+      // q-fill 未作答
+    };
+    const result = gradeSubmission(schema, answers);
+    expect(result).toMatchObject({ ok: true, score: 5 });
+
+    const expected = correctnessItemsOf(schema).reduce((sum, item) => {
+      const value = answers[item.id];
+      if (value === undefined) return sum;
+      return judgeItem(item, value) ? sum + (item.score ?? 0) : sum;
+    }, 0);
+    expect(expected).toBe(5);
   });
 });

@@ -20,10 +20,13 @@
  * - `score` 只累加四种自动判分题型。简答恒不计分——它没有标准答案可比。
  */
 
-import type { FormItem, FormSchema, ShortField } from "@intentform/schema";
+import { assertNever, type FormItem, type FormSchema, type ShortField } from "@intentform/schema";
 
-/** 契约里 `answers` 的值类型：`string | string[]`。 */
-export type AnswerValue = string | string[];
+/**
+ * 契约里 `answers` 的值类型。判分与统计都只读，所以数组是 `readonly`：
+ * 请求体能给可变数组，看板侧的 `parseAnswers` 给只读数组，两边都能传进来。
+ */
+export type AnswerValue = string | readonly string[];
 
 export type GradeResult =
   | {
@@ -40,10 +43,13 @@ export type GradeResult =
  * 的原因：`short` / `scale` / `section` 靠布尔守卫拿不到窄化。
  *
  * 注意 `short` **不在这里**：省赛 R-01 之后它有分值，但不自动判分。两个集合刻意分开。
+ *
+ * 省赛 R-04 起这个类型同时是「能判对错」的题：`judgeItem` 与逐题统计都只接受它，
+ * 判分与看板因此不可能各用一套判定。
  */
-type ScoredItem = Extract<FormItem, { type: "single" | "multi" | "fill" | "number" }>;
+export type JudgeableItem = Extract<FormItem, { type: "single" | "multi" | "fill" | "number" }>;
 
-function isScoredItem(item: FormItem): item is ScoredItem {
+export function isJudgeableItem(item: FormItem): item is JudgeableItem {
   return (
     item.type === "single" ||
     item.type === "multi" ||
@@ -53,8 +59,8 @@ function isScoredItem(item: FormItem): item is ScoredItem {
 }
 
 /** 结构上带 `score` 的题型：自动判分四种 + 简答（要人工批改）。核算满分用它。 */
-function hasScore(item: FormItem): item is ScoredItem | ShortField {
-  return isScoredItem(item) || item.type === "short";
+function hasScore(item: FormItem): item is JudgeableItem | ShortField {
+  return isJudgeableItem(item) || item.type === "short";
 }
 
 /** 学生能作答的字段（CSV 的列、公开视图的键都取自这里）。 */
@@ -146,6 +152,18 @@ function toSegments(value: AnswerValue): readonly string[] {
   return Array.isArray(value) ? value : [value];
 }
 
+/**
+ * 学生到底答没答这道题（省赛 R-04 的 `answered` 口径）。
+ *
+ * 有内容就算作答，**答错也算**——`answered` 回答的是「有没有做」，不是「对不对」。
+ * 空串与全空白不算：前端清空输入框后仍会带着这个键提交，那不是一份作答。
+ * 这条口径只用于统计；判分侧对空串照常判错（学生可能故意留空），所以两件事分开写。
+ */
+export function isAnswered(value: string | readonly string[]): boolean {
+  if (typeof value === "string") return value.trim() !== "";
+  return value.some((entry) => entry.trim() !== "");
+}
+
 function hasDuplicate(segments: readonly string[]): boolean {
   return new Set(segments).size !== segments.length;
 }
@@ -211,6 +229,49 @@ function gradeNumber(item: Extract<FormItem, { type: "number" }>, value: AnswerV
 }
 
 /**
+ * 判**一道题**对错。这是判分与逐题统计共用的**唯一**判定入口（省赛 R-04）。
+ *
+ * 分出这个函数之前，判定散在 `gradeSubmission` 的 switch 里，看板若想算每题正确率
+ * 就得再抄一份口径——两份口径迟早会漂移，届时「学生得 5 分但看板说这题全错」
+ * 这种账没人能对。现在两边都调它，改动只会同时影响两处。
+ *
+ * 注意：`multi` 的重复选项在这里判错；`gradeSubmission` 另有「整份拒收」的分支，
+ * 那是提交校验的语义，不是判定口径。
+ */
+export function judgeItem(item: JudgeableItem, value: AnswerValue): boolean {
+  switch (item.type) {
+    case "single":
+      return gradeSingle(item, value);
+    case "multi":
+      return gradeMulti(item, value);
+    case "fill":
+      return gradeFill(item, value);
+    case "number":
+      return gradeNumber(item, value);
+    default:
+      return assertNever(item);
+  }
+}
+
+/**
+ * 能算「对错」的题目清单：四种自动判分题型，**且该题带标准答案**。
+ *
+ * 两个排除各有理由：
+ * - 分节 / 简答 / 量表没有「对错」。简答由教师给分，给 3 分不等于「错」。
+ * - survey 的字段没有 `answer`。硬统计会得到一片 0%，看起来像「学生全错」，
+ *   实际是「这题本来就没有正确答案」——未知值不伪填，与看板 `avgScore: null` 同一条口径。
+ */
+export function correctnessItemsOf(schema: FormSchema): readonly JudgeableItem[] {
+  const result: JudgeableItem[] = [];
+  for (const item of schema.items) {
+    if (!isJudgeableItem(item)) continue;
+    if (item.answer === undefined) continue;
+    result.push(item);
+  }
+  return result;
+}
+
+/**
  * 判一份答卷。
  *
  * 返回值只有 `ok: false` 表示**整份拒收**（未知字段、重复选项、类型不对）。
@@ -235,35 +296,15 @@ export function gradeSubmission(
   let score = 0;
   const maxScore = maxScoreOf(schema);
   for (const item of schema.items) {
-    if (!isScoredItem(item)) continue;
+    if (!isJudgeableItem(item)) continue;
     const raw = answers[item.id];
     if (raw === undefined) continue; // 未作答 → 0 分，不拒收
-    const weight = item.score ?? 0;
-    let correct = false;
-    switch (item.type) {
-      case "single":
-        correct = gradeSingle(item, raw);
-        break;
-      case "multi": {
-        const segments = toSegments(raw);
-        if (hasDuplicate(segments)) {
-          return { ok: false, message: `多选题答案有重复选项：${item.id}` };
-        }
-        correct = gradeMulti(item, raw);
-        break;
-      }
-      case "fill":
-        correct = gradeFill(item, raw);
-        break;
-      case "number":
-        correct = gradeNumber(item, raw);
-        break;
-      default:
-        // short / scale 不在 AUTO_GRADED_TYPES 里，走不到这里；写出来是为了
-        // 让「新增字段类型忘了判分」变成编译期错误而不是静默 0 分。
-        correct = false;
+    // 整份拒收的语义留在这里，判定本身交给 `judgeItem`：
+    // 重复选项是"前端 bug"信号，而"这题答得对不对"是判定口径。
+    if (item.type === "multi" && hasDuplicate(toSegments(raw))) {
+      return { ok: false, message: `多选题答案有重复选项：${item.id}` };
     }
-    if (correct) score += weight;
+    if (judgeItem(item, raw)) score += item.score ?? 0;
   }
   return { ok: true, score, maxScore, pendingScore: pendingScoreOf(schema) };
 }
