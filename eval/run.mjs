@@ -277,7 +277,7 @@ async function runOne(baseUrl, row, args, appOrigin) {
     ? null
     : await runClarify(baseUrl, row.requirement, appOrigin, args.timeoutMs);
   const clarifyOk = clarifyQuestions !== null && clarifyQuestions.length >= 1 && clarifyQuestions.length <= 3;
-  const deviation = blueprint === null
+  const planDeviation = blueprint === null
     ? null
     : compareWithBlueprint(blueprint, {
         items: form.items,
@@ -334,7 +334,7 @@ async function runOne(baseUrl, row, args, appOrigin) {
     clarifyQuestions,
     blueprint,
     planFailure,
-    deviation,
+    planDeviation,
     raw: text,
   };
 }

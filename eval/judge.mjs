@@ -309,10 +309,10 @@ export function summarize(records) {
       /** 规划成功的需求数（成功拿到蓝图并带进生成的）。 */
       planned: judged.filter((record) => record.blueprint !== null && record.blueprint !== undefined).length,
       /** 计划与成品结构完全一致（题量/总分/题型/知识点四项全对）。 */
-      planExact: judged.filter((record) => record.deviation?.isExact === true).length,
+      planExact: judged.filter((record) => record.planDeviation?.isExact === true).length,
       meanAbsPlanCountDelta: (() => {
         const deltas = judged
-          .map((record) => record.deviation?.countDelta)
+          .map((record) => record.planDeviation?.countDelta)
           .filter((value) => typeof value === "number")
           .map((value) => Math.abs(value));
         return deltas.length === 0 ? 0 : deltas.reduce((sum, value) => sum + value, 0) / deltas.length;
