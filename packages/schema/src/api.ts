@@ -404,12 +404,39 @@ export interface SubmissionSummary {
   readonly pendingCount: number;
 }
 
+/**
+ * 一道题的统计（省赛 R-04）。
+ *
+ * 只统计**能判对错**的题：四种自动判分题型且该题带标准答案。简答由教师给分，
+ * 没有「对错」；survey 的字段没有答案，硬算会得到一片 0%，看起来像「学生全错」。
+ * 所以 survey 的 `itemStats` 是空数组，看板整块不渲染——未知值不伪填。
+ */
+export interface ItemStat {
+  readonly itemId: string;
+  /** 题干标题：看板直接渲染，不必为了一个标题再拉一次表单详情。 */
+  readonly title: string;
+  readonly score: number;
+  /** 分母：**该版本的提交份数**。未作答的提交也算在分母里。 */
+  readonly total: number;
+  /** 有过作答的提交数（答错也算）。`answered < total` 说明有学生跳过了这题。 */
+  readonly answered: number;
+  /** 答对的提交数。 */
+  readonly correct: number;
+  /**
+   * `correct / total`，保留 4 位小数；`total === 0` 时是 `null`，不是 `0`。
+   * 0 会被读成「全班全错」，而 `null` 是「还没有人提交」——与 `avgScore` 同一条口径。
+   */
+  readonly rate: number | null;
+}
+
 export interface SubmissionsResponse {
   readonly ok: true;
   readonly summary: SubmissionSummary;
   readonly rows: readonly SubmissionRow[];
   /** 这个版本里需要人工批改的题目（按 schema 顺序）；空数组表示全自动判分。 */
   readonly shortItems: readonly GradableShortItem[];
+  /** 逐题正确率（按 schema 顺序）；survey 或没有可判分题时是空数组。 */
+  readonly itemStats: readonly ItemStat[];
 }
 
 /* ------------------------------- 人工批改 -------------------------------- */

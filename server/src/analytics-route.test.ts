@@ -128,6 +128,8 @@ describe("GET /api/forms/:id/submissions", () => {
     expect(current.json.summary.versionId).toBe(v2.id);
     expect(current.json.summary.count).toBe(0);
     expect(current.json.summary.avgScore).toBeNull();
+    // 逐题统计也按版本走（R-04）：v2 没有提交，rate 必须是 null 而不是 0。
+    expect(current.json.itemStats.map((stat) => stat.rate)).toEqual([null, null, null, null]);
 
     const historical = await call<SubmissionsResponse>(
       app,
@@ -138,6 +140,7 @@ describe("GET /api/forms/:id/submissions", () => {
     expect(historical.json.summary.versionId).toBe(quiz.versionId);
     expect(historical.json.summary.count).toBe(1);
     expect(historical.json.summary.avgScore).toBe(20);
+    expect(historical.json.itemStats.map((stat) => stat.rate)).toEqual([1, 1, 1, 1]);
   });
 
   it("未登录 401，别人的表单 403", async () => {
@@ -219,4 +222,78 @@ describe("GET /api/forms/:id/submissions.csv", () => {
     const response = await call(app, "GET", `/api/forms/${quiz.formId}/submissions.csv`);
     expect(response.status).toBe(401);
   });
+});
+
+/**
+ * 省赛 R-04：每题正确率。
+ *
+ * 三个数各有各的坑，所以每个都要点名断言：
+ * - **分母是提交份数**，未作答算没答对（不是"从分母里剔掉"）；
+ * - `answered` 单列，教师才能分清"这题没人做"与"都做错了"；
+ * - 零提交时 `rate` 是 `null`——`0` 会被读成"全班全错"，与 `avgScore: null` 同一条口径。
+ */
+describe("GET /api/forms/:id/submissions · 逐题正确率（R-04）", () => {
+  async function statsOf(
+    app: TestServer,
+    cookie: string,
+    formId: string,
+  ): Promise<SubmissionsResponse["itemStats"]> {
+    const response = await call<SubmissionsResponse>(
+      app,
+      "GET",
+      `/api/forms/${formId}/submissions`,
+      { cookie },
+    );
+    expect(response.status).toBe(200);
+    return response.json.itemStats;
+  }
+
+  it("分母是提交份数，未作答按未答对计，answered 单列", async () => {
+    const { app, cookie, quiz } = await boot();
+    await submit(app, quiz, ANSWERS); // 四题全对
+    await submit(app, quiz, { "q-single": "op1", "q-multi": ["op1"] }); // 单选对、多选错、后两题没做
+    await submit(app, quiz, {}); // 整份没作答，仍然进分母
+
+    expect(await statsOf(app, cookie, quiz.formId)).toEqual([
+      { itemId: "q-single", title: "单选", score: 5, total: 3, answered: 2, correct: 2, rate: 0.6667 },
+      { itemId: "q-multi", title: "多选", score: 5, total: 3, answered: 2, correct: 1, rate: 0.3333 },
+      { itemId: "q-fill", title: "填空（两个空）", score: 5, total: 3, answered: 1, correct: 1, rate: 0.3333 },
+      { itemId: "q-number", title: "数值题", score: 5, total: 3, answered: 1, correct: 1, rate: 0.3333 },
+    ]);
+  });
+
+  it("还没有提交时 rate 是 null，不是 0", async () => {
+    const { app, cookie, quiz } = await boot();
+    const stats = await statsOf(app, cookie, quiz.formId);
+    expect(stats).toHaveLength(4);
+    for (const stat of stats) {
+      expect(stat.total).toBe(0);
+      expect(stat.answered).toBe(0);
+      expect(stat.correct).toBe(0);
+      expect(stat.rate).toBeNull();
+    }
+  });
+
+  it("简答与分节不进统计：它们没有对错", async () => {
+    const { app, cookie, quiz } = await boot();
+    await submit(app, quiz, { ...ANSWERS, "q-short": "我的论述" });
+    const ids = (await statsOf(app, cookie, quiz.formId)).map((stat) => stat.itemId);
+    expect(ids).toEqual(["q-single", "q-multi", "q-fill", "q-number"]);
+    expect(ids).not.toContain("q-short");
+    expect(ids).not.toContain("sec-main");
+  });
+
+  it("survey 没有标准答案，itemStats 是空数组（不能显示 0%）", async () => {
+    const { app, cookie } = await boot();
+    const survey = await createPublishedQuiz(app, cookie, "survey");
+    await call(app, "POST", "/api/submissions", {
+      body: {
+        slug: survey.slug,
+        formVersionId: survey.versionId,
+        answers: { "s-short": "还行", "s-scale": "3" },
+      },
+    });
+    expect(await statsOf(app, cookie, survey.formId)).toEqual([]);
+  });
+
 });

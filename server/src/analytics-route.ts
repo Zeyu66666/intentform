@@ -15,6 +15,7 @@ import {
   CSV_CONTENT_TYPE,
   formSchema,
   type FormSchema,
+  type ItemStat,
   type SubmissionRow as SubmissionRowDto,
   type SubmissionSummary,
   type SubmissionsResponse,
@@ -26,6 +27,9 @@ import { parseAnswers } from "./grade-route.ts";
 import {
   answerableFieldIds,
   applyManualGrades,
+  correctnessItemsOf,
+  isAnswered,
+  judgeItem,
   maxScoreOf,
   shortItemsOf,
   type AnswerValue,
@@ -112,6 +116,44 @@ function toDto(
  * 应当随批改进度上升，否则"批了 20 份还是一条平线"会让人以为批改没生效。
  * 未批完的卷子按"人工分已录部分"计入，`pendingCount` 同时给出还有几条没批完。
  */
+/**
+ * 逐题正确率（省赛 R-04）。
+ *
+ * 三个口径钉在这里，看板不再自己算：
+ * 1. **分母是提交份数**，未作答按未答对计——把没做的题从分母里剔掉，会让
+ *    「一半人跳过这题」看起来像「所有人都会」；
+ * 2. **判定调 `judgeItem`**，与 `gradeSubmission` 同一个函数，不存在第二套口径；
+ * 3. `total === 0` 时 `rate` 是 `null`。`0` 会被读成「全班全错」。
+ *
+ * 只遍历 `correctnessItemsOf`：分节、简答、量表与 survey 字段都不进来。
+ */
+function itemStatsOf(
+  schema: FormSchema,
+  rows: readonly SubmissionRow[],
+): readonly ItemStat[] {
+  const answersByRow = rows.map((row) => parseAnswers(row.answers_json));
+  return correctnessItemsOf(schema).map((item) => {
+    let answered = 0;
+    let correct = 0;
+    for (const answers of answersByRow) {
+      const value = answers[item.id];
+      if (value === undefined || !isAnswered(value)) continue;
+      answered += 1;
+      if (judgeItem(item, value)) correct += 1;
+    }
+    return {
+      itemId: item.id,
+      title: item.title,
+      score: item.score ?? 0,
+      total: rows.length,
+      answered,
+      correct,
+      rate:
+        rows.length === 0 ? null : Math.round((correct / rows.length) * 10000) / 10000,
+    };
+  });
+}
+
 function averageScore(rows: readonly SubmissionRowDto[]): number | null {
   if (rows.length === 0) return null;
   const sum = rows.reduce((acc, row) => acc + row.score, 0);
@@ -153,6 +195,7 @@ export async function handleSubmissions(ctx: RouteContext): Promise<void> {
     summary,
     rows: dtos,
     shortItems: shortItemsOf(resolved.schema),
+    itemStats: itemStatsOf(resolved.schema, rows),
   };
   sendJson(ctx.res, 200, response);
 }
