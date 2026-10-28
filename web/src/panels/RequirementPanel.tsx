@@ -24,10 +24,10 @@ export interface RequirementPanelProps {
   /** 假数据模式的提示语；生产（live）为 null。 */
   readonly demoNotice: string | null;
   /**
-   * 追问块（省赛 R-05）。非空时它**顶替**「生成表单」按钮的位置：
-   * 此刻下一步动作是回答或跳过，再摆一个同名主按钮只会让人多点一次。
+   * 生成前的步骤块（省赛 R-05 追问 / R-06 蓝图）。非空时它**顶替**「生成表单」
+   * 按钮的位置：此刻下一步动作在块里，再摆一个同名主按钮只会让人多点一次。
    */
-  readonly clarifySlot?: JSX.Element | null;
+  readonly preStepSlot?: JSX.Element | null;
 }
 
 const STATUS_TEXT: Record<RunStatus, string> = {
@@ -56,7 +56,7 @@ export function RequirementPanel({
   onCancel,
   onReset,
   demoNotice,
-  clarifySlot = null,
+  preStepSlot = null,
 }: RequirementPanelProps): JSX.Element {
   const length = requirement.length;
   const overLimit = length > LIMITS.requirementMaxChars;
@@ -146,7 +146,7 @@ export function RequirementPanel({
       </section>
 
       <div className="mt-auto flex flex-col gap-1">
-        {clarifySlot ?? (
+        {preStepSlot ?? (
           <button
             type="button"
             onClick={onStart}

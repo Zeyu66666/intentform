@@ -14,12 +14,20 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import type { Clarification, ClarifyQuestion, ClarifySlotId, FormKind } from "@intentform/schema";
+import type {
+  Clarification,
+  ClarifyQuestion,
+  ClarifySlotId,
+  FormBlueprint,
+  FormKind,
+} from "@intentform/schema";
 
 import { createClarifyApi } from "./api/clarify";
+import { createPlanApi } from "./api/plan";
 import { describeFailure } from "./api/failures";
 import { createHttpClient } from "./api/http";
 import { createTeacherApi } from "./api/teacher";
+import { BlueprintCard } from "./panels/BlueprintCard";
 import { ClarifyForm } from "./panels/ClarifyForm";
 import {
   EMPTY_DRAFTS,
@@ -73,6 +81,21 @@ type ClarifyState =
   | { readonly status: "ready"; readonly questions: readonly ClarifyQuestion[] }
   | { readonly status: "error"; readonly message: string };
 
+/**
+ * 蓝图（R-06）的状态。`ready` 里带着**当次所用的补答**——确认生成时要把它们
+ * 原样再发一遍，否则"规划看到的需求"与"生成看到的需求"会不是同一段。
+ */
+type PlanState =
+  | { readonly status: "idle" }
+  | { readonly status: "loading" }
+  | {
+      readonly status: "ready";
+      readonly blueprint: FormBlueprint;
+      readonly summary: string;
+      readonly clarifications: readonly Clarification[];
+    }
+  | { readonly status: "error"; readonly message: string };
+
 export function App(): JSX.Element {
   // 只读 `VITE_API_BASE`（`config.ts` 的白名单），且必须走 `resolveApiBase()`：
   // 前端零 Key，任何密钥类变量都不许出现在这里。
@@ -109,6 +132,11 @@ export function App(): JSX.Element {
   // 唯一的 HTTP 出口（`credentials: "include"` + CSRF 头都在 `http.ts` 里）。
   const api = useMemo(() => createTeacherApi(createHttpClient()), []);
   const clarifyApi = useMemo(() => createClarifyApi(createHttpClient()), []);
+  const planApi = useMemo(() => createPlanApi(createHttpClient()), []);
+  const [plan, setPlan] = useState<PlanState>({ status: "idle" });
+  const planTokenRef = useRef(0);
+  /** 最近一次规划用的补答：规划失败重试时不能把教师刚答的东西弄丢。 */
+  const lastClarificationsRef = useRef<readonly Clarification[]>([]);
 
   // 澄清（R-05）：状态与草稿都留在 App，左栏只负责画。
   const [clarify, setClarify] = useState<ClarifyState>({ status: "idle" });
@@ -117,13 +145,55 @@ export function App(): JSX.Element {
   const clarifyTokenRef = useRef(0);
 
   const beginGeneration = useCallback(
-    (requirementText: string, clarifications: readonly Clarification[]): void => {
+    (
+      requirementText: string,
+      clarifications: readonly Clarification[],
+      blueprint?: FormBlueprint,
+    ): void => {
       setPublished(null);
       setClarify({ status: "idle" });
+      setPlan({ status: "idle" });
       setDrafts(EMPTY_DRAFTS);
-      start(requirementText, clarifications);
+      start(requirementText, clarifications, blueprint);
     },
     [start],
+  );
+
+  /**
+   * 澄清走完之后的第二站：请模型规划结构。
+   *
+   * 规划接口不可用时不静默跳过（那会让"两阶段"在演示里凭空消失），
+   * 而是给两条出路：重试，或明确降级为"跳过蓝图"。
+   */
+  const requestPlan = useCallback(
+    (requirementText: string, clarifications: readonly Clarification[]): void => {
+      const token = planTokenRef.current + 1;
+      planTokenRef.current = token;
+      lastClarificationsRef.current = clarifications;
+      setClarify({ status: "idle" });
+      setPlan({ status: "loading" });
+      void planApi
+        .plan({ requirement: requirementText, kind, clarifications: [...clarifications] })
+        .then((outcome) => {
+          if (planTokenRef.current !== token) return;
+          if (!outcome.ok) {
+            setPlan({
+              status: "error",
+              message: describeFailure(outcome.failure, {
+                notFound: "蓝图接口不存在（服务端版本旧或没启动）",
+              }),
+            });
+            return;
+          }
+          setPlan({
+            status: "ready",
+            blueprint: outcome.data.blueprint,
+            summary: outcome.data.summary,
+            clarifications,
+          });
+        });
+    },
+    [planApi, kind],
   );
 
   /**
@@ -153,13 +223,13 @@ export function App(): JSX.Element {
         return;
       }
       if (outcome.data.questions.length === 0) {
-        beginGeneration(requirementText, []);
+        requestPlan(requirementText, []);
         return;
       }
       setDrafts(EMPTY_DRAFTS);
       setClarify({ status: "ready", questions: outcome.data.questions });
     });
-  }, [requirement, mode, clarifyApi, kind, beginGeneration]);
+  }, [requirement, mode, clarifyApi, kind, requestPlan, beginGeneration]);
 
   const fields = selectPreviewFields(state);
   const fieldNodes = useMemo(() => fields.map((entry) => entry.node), [fields]);
@@ -177,13 +247,10 @@ export function App(): JSX.Element {
           setDrafts((previous) => setCustom(previous, slot, text));
         }}
         onConfirm={() => {
-          beginGeneration(
-            requirement.trim(),
-            buildClarifications(clarify.questions, drafts),
-          );
+          requestPlan(requirement.trim(), buildClarifications(clarify.questions, drafts));
         }}
         onSkip={() => {
-          beginGeneration(requirement.trim(), []);
+          requestPlan(requirement.trim(), []);
         }}
       />
     ) : clarify.status === "loading" ? (
@@ -212,6 +279,50 @@ export function App(): JSX.Element {
         </button>
       </section>
     ) : null;
+
+  // 生成前的两步共用左栏同一块位置：先追问（若缺槽位），再蓝图确认。
+  const preStepSlot =
+    plan.status === "ready" ? (
+      <BlueprintCard
+        blueprint={plan.blueprint}
+        summary={plan.summary}
+        onConfirm={() => {
+          beginGeneration(requirement.trim(), plan.clarifications, plan.blueprint);
+        }}
+        onSkip={() => {
+          beginGeneration(requirement.trim(), plan.clarifications);
+        }}
+      />
+    ) : plan.status === "loading" ? (
+      <p className="m-0 text-sm text-muted" data-testid="plan-loading" aria-live="polite">
+        正在规划结构…
+      </p>
+    ) : plan.status === "error" ? (
+      <section className="flex flex-col gap-1 rounded-sm border border-danger bg-surface p-2" role="alert">
+        <p className="m-0 text-sm text-danger">{plan.message}</p>
+        <button
+          type="button"
+          onClick={() => {
+            requestPlan(requirement.trim(), lastClarificationsRef.current);
+          }}
+          className="w-full rounded-sm border border-line px-2 py-1 text-xs text-muted"
+        >
+          重试
+        </button>
+        <button
+          type="button"
+          data-testid="plan-still-generate"
+          onClick={() => {
+            beginGeneration(requirement.trim(), lastClarificationsRef.current);
+          }}
+          className="w-full rounded-sm bg-accent px-2 py-2 text-sm font-semibold text-white"
+        >
+          跳过蓝图，直接生成
+        </button>
+      </section>
+    ) : (
+      clarifySlot
+    );
 
   const terminalText = TERMINAL_TEXT[state.status];
   const terminalTone =
@@ -258,10 +369,11 @@ export function App(): JSX.Element {
                 setRequirement("");
                 setPublished(null);
                 setClarify({ status: "idle" });
+                setPlan({ status: "idle" });
                 setDrafts(EMPTY_DRAFTS);
               }}
               demoNotice={mode === "fixture" ? DEMO_NOTICE : null}
-              clarifySlot={clarifySlot}
+              preStepSlot={preStepSlot}
             />
           </div>
           {state.status === "done" ? (

@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
-import type { Clarification } from "@intentform/schema";
+import type { Clarification, FormBlueprint } from "@intentform/schema";
 
 import { createSseFrameParser, type ParsedFrame } from "./frames";
 import {
@@ -33,7 +33,11 @@ import { GenerateStreamError, isAbortError, type StreamSource } from "./source";
 export interface UseGenerateStreamResult {
   readonly state: GenerateState;
   /** `clarifications` 是澄清补答（R-05）；空数组时请求体与以前逐字节相同。 */
-  readonly start: (requirement: string, clarifications?: readonly Clarification[]) => void;
+  readonly start: (
+    requirement: string,
+    clarifications?: readonly Clarification[],
+    blueprint?: FormBlueprint,
+  ) => void;
   readonly cancel: () => void;
   readonly reset: () => void;
 }
@@ -78,7 +82,11 @@ export function useGenerateStream(source: StreamSource): UseGenerateStreamResult
   }, []);
 
   const start = useCallback(
-    (requirement: string, clarifications: readonly Clarification[] = []): void => {
+    (
+      requirement: string,
+      clarifications: readonly Clarification[] = [],
+      blueprint?: FormBlueprint,
+    ): void => {
       const trimmed = requirement.trim();
       if (trimmed === "") return;
 
@@ -98,6 +106,7 @@ export function useGenerateStream(source: StreamSource): UseGenerateStreamResult
           for await (const chunk of source({
             requirement: trimmed,
             clarifications,
+            ...(blueprint === undefined ? {} : { blueprint }),
             signal: controller.signal,
           })) {
             if (runId !== runIdRef.current) return;

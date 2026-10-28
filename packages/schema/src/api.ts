@@ -39,6 +39,8 @@ export const API_PATHS = {
   generate: "/api/generate",
   /** 意图澄清（省赛 R-05）：只回追问，不生成。 */
   clarify: "/api/clarify",
+  /** 两阶段蓝图（省赛 R-06）：只回结构，不写库。 */
+  plan: "/api/plan",
   forms: "/api/forms",
   form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   publish: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/publish`,

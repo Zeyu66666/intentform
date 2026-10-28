@@ -14,7 +14,7 @@
  * **在退出时释放 reader**（`finally` 里 `reader.cancel()`，否则 abort 时连接会悬挂）。
  */
 
-import type { Clarification, SseErrorCode } from "@intentform/schema";
+import type { Clarification, FormBlueprint, SseErrorCode } from "@intentform/schema";
 
 import { createTextStreamDecoder } from "./decode";
 
@@ -25,6 +25,8 @@ export interface GenerateRequest {
    * 服务端把「有没有补充」当作两条路径，请求体形状不同，回放键才不会漂。
    */
   readonly clarifications?: readonly Clarification[];
+  /** 教师确认过的蓝图（R-06）；有它才发 plan 阶段。 */
+  readonly blueprint?: FormBlueprint;
   /** 取消信号。取消按钮 → `controller.abort()` → `reader.read()` 抛 AbortError。 */
   readonly signal: AbortSignal;
 }
@@ -83,11 +85,13 @@ export function createFetchStreamSource(options: FetchStreamSourceOptions): Stre
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       },
-      body: JSON.stringify(
-        request.clarifications === undefined || request.clarifications.length === 0
-          ? { requirement: request.requirement }
-          : { requirement: request.requirement, clarifications: request.clarifications },
-      ),
+      body: JSON.stringify({
+        requirement: request.requirement,
+        ...(request.clarifications === undefined || request.clarifications.length === 0
+          ? {}
+          : { clarifications: request.clarifications }),
+        ...(request.blueprint === undefined ? {} : { blueprint: request.blueprint }),
+      }),
       signal: request.signal,
       credentials: "same-origin",
     });
