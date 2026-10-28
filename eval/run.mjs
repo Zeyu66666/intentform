@@ -194,7 +194,34 @@ function collectStats(events) {
   return { errorCodes, repairs, usage, done, terminalError };
 }
 
-async function runOne(baseUrl, row, args) {
+/**
+ * 澄清探针（省赛 R-05）：问一句缺不缺槽位，看它回了几条。
+ * 返回 `null` 表示调用失败——失败就是失败，不按「问过了」算。
+ *
+ * 这条接口走的是 API 应用的跨站写保护，所以必须带 `origin`（与服务端
+ * `APP_ORIGIN` 逐字节一致）与自定义头，否则会拿到 403。
+ */
+async function runClarify(baseUrl, requirement, appOrigin, timeoutMs) {
+  try {
+    const response = await fetch(`${baseUrl}/api/clarify`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: appOrigin,
+        "x-intentform-csrf": "1",
+      },
+      body: JSON.stringify({ requirement }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) return null;
+    const json = await response.json();
+    return Array.isArray(json.questions) ? json.questions : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runOne(baseUrl, row, args, appOrigin) {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), args.timeoutMs);
@@ -221,16 +248,24 @@ async function runOne(baseUrl, row, args) {
   const form = assembleForm(events);
 
   const gateBlocked = stats.terminalError !== null && stats.terminalError.code === "llm_invalid_output";
+  // 缺槽位探针（省赛 R-05）：不再恒判失败，改问「真的追问了吗、条数对不对」。
+  const clarifyQuestions = row.judgeable === true
+    ? null
+    : await runClarify(baseUrl, row.requirement, appOrigin, args.timeoutMs);
+  const clarifyOk = clarifyQuestions !== null && clarifyQuestions.length >= 1 && clarifyQuestions.length <= 3;
   const judged = row.judgeable === true
     ? judgeForm(form, row.expect)
     : {
-        passed: false,
+        passed: clarifyOk,
         checks: [
           {
             layer: "clarify",
             name: "clarify-needed",
-            ok: false,
-            detail: "该需求缺槽位（题量/题型/分值），本应先追问再生成；产品当前没有追问层",
+            ok: clarifyOk,
+            detail:
+              clarifyQuestions === null
+                ? "澄清接口调用失败"
+                : `追问 ${String(clarifyQuestions.length)} 条：${clarifyQuestions.map((question) => question.slot).join("/")}`,
           },
         ],
         deviation: null,
@@ -256,6 +291,7 @@ async function runOne(baseUrl, row, args) {
     passed: judged.passed,
     checks: judged.checks,
     deviation: judged.deviation,
+    clarifyQuestions,
     raw: text,
   };
 }
@@ -307,7 +343,7 @@ function buildMarkdown(report) {
   lines.push("");
   lines.push("| 层 | 指标 | 数值 |");
   lines.push("|---|---|---|");
-  lines.push(`| 澄清 | 缺槽位需求是否被追问 | 0 / ${String(meta.clarifyProbes)}（未实现，见 eval/README.md） |`);
+  lines.push(`| 澄清 | 缺槽位需求被追问（1–3 条为通过） | ${String(summary.clarify.passed)} / ${String(summary.clarify.probes)}（${pct(summary.clarify.rate)}） |`);
   lines.push(`| 蓝图 | 结构完全匹配（题量/题型/分值/知识点） | ${String(summary.blueprint.exact)} / ${String(summary.judged)}（${pct(summary.blueprint.rate)}） |`);
   lines.push(`| 蓝图 | 题量平均绝对偏差（只在有产出的条目上算） | ${summary.blueprint.meanAbsCountDelta.toFixed(2)} 题 |`);
   lines.push(`| 蓝图 | 题型不符 / 分值不符 / 知识点缺失 | ${String(summary.blueprint.typeMismatch)} / ${String(summary.blueprint.scoreMismatch)} / ${String(summary.blueprint.objectiveGaps)} |`);
@@ -405,7 +441,7 @@ async function main() {
     process.stdout.write(`[eval] ${runId}  模式=${args.mode}  需求=${String(rows.length)} 条  →  ${outDir}\n`);
 
     for (const [index, row] of rows.entries()) {
-      const record = await runOne(baseUrl, row, args);
+      const record = await runOne(baseUrl, row, args, appOrigin);
       records.push(record);
       const flags = [];
       if (record.failure !== null) flags.push(`传输失败 ${record.failure}`);

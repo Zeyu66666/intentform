@@ -277,10 +277,21 @@ export function summarize(records) {
     .map((deviation) => Math.abs(deviation.countDelta ?? 0))
     .filter((value) => Number.isFinite(value));
 
+  // 澄清层（省赛 R-05）：缺槽位探针不再恒为 0，而是按「是否真的问了 1–3 条」判。
+  const clarifyProbes = records.filter((record) => record.judgeable !== true);
+
   return {
     judged: judged.length,
     passed: passed.length,
     rate: judged.length === 0 ? 0 : passed.length / judged.length,
+    clarify: {
+      probes: clarifyProbes.length,
+      passed: clarifyProbes.filter((record) => record.passed === true).length,
+      rate:
+        clarifyProbes.length === 0
+          ? 0
+          : clarifyProbes.filter((record) => record.passed === true).length / clarifyProbes.length,
+    },
     noOutput,
     capability: {
       gap: capabilityGap.length,
