@@ -322,6 +322,8 @@ export async function* generateForm(
     if (options.blueprint !== undefined) {
       // 蓝图 vs 成品：真实发生的偏差，写进时间线。数与判定都在 schema 的纯函数里，
       // eval 报告用的是同一份口径。
+      // 题量按**题目**算（分节不算），与蓝图的 totalCount 同一口径。
+      const itemCount = fields.filter((field) => field.node.type !== "section").length;
       const deviation = compareWithBlueprint(options.blueprint, {
         items: fields.map((field) => field.node),
         totalScore: fields.reduce(
@@ -333,7 +335,7 @@ export async function* generateForm(
       yield {
         type: "thinking",
         kind: "summary",
-        delta: `蓝图对照：题量 ${String(options.blueprint.totalCount)} → ${String(fields.length)}（差 ${String(deviation.countDelta)}）；总分差 ${String(deviation.scoreDelta)}；${deviation.isExact ? "题型与知识点完全对上" : "结构与蓝图有偏差"}`,
+        delta: `蓝图对照：题量 ${String(options.blueprint.totalCount)} → ${String(itemCount)}（差 ${String(deviation.countDelta)}）；总分差 ${String(deviation.scoreDelta)}；${deviation.isExact ? "题型与知识点完全对上" : "结构与蓝图有偏差"}`,
       };
     }
 

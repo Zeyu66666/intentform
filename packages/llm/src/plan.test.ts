@@ -7,11 +7,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { LIMITS } from "@intentform/schema";
+import { LIMITS, parseBlueprint } from "@intentform/schema";
 
 import { resolveLlmRuntimeConfig } from "./config.ts";
 import { LlmError } from "./errors.ts";
-import { PLAN_PROMPT_VERSION, buildPlanMessages, planForm } from "./plan.ts";
+import { PLAN_PROMPT_VERSION, buildPlanMessages, buildPlanSystemPrompt, planForm } from "./plan.ts";
 import type { DeltaSource } from "./sources.ts";
 
 const MOCK_CONFIG = resolveLlmRuntimeConfig("mock", {}, {});
@@ -46,6 +46,20 @@ describe("buildPlanMessages", () => {
     expect(messages[0]?.content).toContain("一行 JSON");
     expect(messages[1]?.content).toContain("出一份测验");
     expect(messages[1]?.content).toContain("<<<REQUIREMENT");
+  });
+});
+
+describe("buildPlanSystemPrompt", () => {
+  it("样例本身必须是合法蓝图（模型最爱照抄样例，样例坏=整份输出坏）", () => {
+    const prompt = buildPlanSystemPrompt();
+    const sample = prompt.split(/\n/u).find((line) => line.startsWith('{"title"'));
+    expect(sample).toBeDefined();
+    const parsed = parseBlueprint(JSON.parse(sample ?? "{}"));
+    expect(parsed.ok, parsed.ok ? "" : parsed.message).toBe(true);
+  });
+
+  it(`知识点要求 id + name（题目里的 knowledgePoint 用的就是这些 id）`, () => {
+    expect(buildPlanSystemPrompt()).toContain('"knowledgePoints":[{"id"');
   });
 });
 

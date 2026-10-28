@@ -25,10 +25,15 @@ import { FIXTURE_MAX_BYTES, fixturePaths } from "./fixtures.ts";
 import { inferFormKind } from "./generate.ts";
 import { LineSplitter } from "./line-splitter.ts";
 import { REPLAY_HASH_PATTERN, normalizeRequirement, replayKey } from "./replay-key.ts";
+import { parseBlueprint } from "@intentform/schema";
+
 import { validateLine } from "./validate-line.ts";
 
-/** 总数上限（README §5：仓库里最多 3 条，对应 3 个预置需求按钮）。 */
-export const MAX_FIXTURES = 3;
+/**
+ * 总数上限：每条预置需求**两段录像**（`plan.v1` 蓝图 + `generate.v3` 生成），
+ * 3 条需求 = 6 个 fixture。蓝图与生成是两个回放键，缺一段两阶段就跑不起来。
+ */
+export const MAX_FIXTURES = 6;
 
 export interface FixtureCheckItem {
   readonly name: string;
@@ -220,18 +225,32 @@ async function checkOne(dir: string, hash: string, problems: string[]): Promise<
   lines.push(...splitter.flush());
   // 逐行校验必须带 kind：`validateLine` 默认按 quiz 判（判分题没有 answer/score 就报错），
   // 拿它去校验问卷回放会把「问卷里合法的无答案选择题」全判成非法——这是校验器的错，不是 fixture 的。
-  const kind = inferFormKind(meta === null ? "" : (readString(meta, "requirementPreview") ?? ""));
-  const badLines = lines.filter((line) => line.trim() !== "" && !validateLine(line, { kind }).ok);
-  const linesOk = lines.filter((line) => line.trim() !== "").length > 0 && badLines.length === 0;
-  items.push({
-    name: "回放行能被 formItemSchema 吃下",
-    ok: linesOk,
-    detail:
-      linesOk
-        ? `${String(lines.filter((line) => line.trim() !== "").length)} 行全部合法`
-        : `${String(badLines.length)} 行非法；首条：${(badLines[0] ?? "").slice(0, 120)}`,
-  });
-  if (!linesOk) problems.push(`${hash}: 有 ${String(badLines.length)} 行拼回去后不是合法 FormItem`);
+  const promptVersion = meta === null ? "" : (readString(meta, "promptVersion") ?? "");
+  const nonEmpty = lines.filter((line) => line.trim() !== "");
+  if (promptVersion.startsWith("plan.")) {
+    // 蓝图录像（R-06）：内容是一行 JSON 蓝图，不是 FormItem 流。
+    // 用契约自己的解析器验——这一段坏了，replay 模式下两阶段就起不来。
+    const parsed = parseBlueprint(JSON.parse(nonEmpty.join(String.fromCharCode(10)) || "null"));
+    items.push({
+      name: "蓝图录像能被 blueprintSchema 吃下",
+      ok: parsed.ok,
+      detail: parsed.ok ? `总题量 ${String(parsed.blueprint.totalCount)}` : parsed.message,
+    });
+    if (!parsed.ok) problems.push(`${hash}: 蓝图录像不合法（${parsed.message}）`);
+  } else {
+    const kind = inferFormKind(meta === null ? "" : (readString(meta, "requirementPreview") ?? ""));
+    const badLines = lines.filter((line) => line.trim() !== "" && !validateLine(line, { kind }).ok);
+    const linesOk = nonEmpty.length > 0 && badLines.length === 0;
+    items.push({
+      name: "回放行能被 formItemSchema 吃下",
+      ok: linesOk,
+      detail:
+        linesOk
+          ? `${String(nonEmpty.length)} 行全部合法`
+          : `${String(badLines.length)} 行非法；首条：${(badLines[0] ?? "").slice(0, 120)}`,
+    });
+    if (!linesOk) problems.push(`${hash}: 有 ${String(badLines.length)} 行拼回去后不是合法 FormItem`);
+  }
 
   void replayKey;
   return { hash, ok: items.every((item) => item.ok), items };
