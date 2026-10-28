@@ -816,6 +816,69 @@ async function vc7ItemStats(request, ctx) {
   );
 }
 
+/**
+ * VC8：意图澄清（省赛 R-05）。
+ *
+ * 四件事缺一不可：
+ * 1. 含糊需求能被认出缺哪几个槽位（不是恒问、也不是不问）；
+ * 2. 已经写全的需求**一个问题都不问**（预置需求走的是这条路，问一句就打断演示）；
+ * 3. 补答会拼进需求，并由生成器在 `thinking` 里如实记一笔（时间线可定位）；
+ * 4. 不补答时行为与以前一致——这也是 `VC4` 那类老用例还能过的前提。
+ */
+async function vc8Clarify(request) {
+  const vague = await request("POST", "/api/clarify", {
+    json: { requirement: "帮我出一份英语卷子" },
+  });
+  must(vague.status === 200, `澄清接口失败（${String(vague.status)}）：${firstLine(vague.text)}`);
+  const slots = (vague.json.questions ?? []).map((question) => question.slot);
+  must(slots.length >= 1 && slots.length <= 3, `追问应为 1–3 条，实际 ${String(slots.length)}`);
+  must(
+    JSON.stringify(slots) === JSON.stringify(["count", "score", "types"]),
+    `含糊需求的槽位应为 count/score/types，实际 ${JSON.stringify(slots)}`,
+  );
+  for (const question of vague.json.questions) {
+    must(typeof question.question === "string" && question.question.length > 0, "追问缺少问句");
+  }
+
+  const complete = await request("POST", "/api/clarify", {
+    json: { requirement: "出一份初三物理小测：5 道题，3 道单选、2 道简答，共 25 分" },
+  });
+  must(complete.status === 200, `澄清接口失败（${String(complete.status)}）`);
+  must(
+    (complete.json.questions ?? []).length === 0,
+    `完整需求不该被追问，实际问了 ${String((complete.json.questions ?? []).length)} 条`,
+  );
+
+  // 带着补答生成：只断言"事件流里真的记了这笔"，具体的 schema 由 mock 决定。
+  const sse = await request("POST", "/api/generate", {
+    json: {
+      requirement: "帮我出一份英语卷子",
+      clarifications: [
+        { slot: "count", answer: "10 题" },
+        { slot: "score", answer: "100 分" },
+      ],
+    },
+  });
+  must(sse.status === 200, `带补答生成失败（${String(sse.status)}）：${firstLine(sse.text)}`);
+  const thinking = parseSse(sse.text).filter((event) => event.type === "thinking");
+  const note = thinking.find((event) => typeof event.delta === "string" && event.delta.includes("澄清"));
+  must(note !== undefined, "时间线里没有澄清记录（补答没被当成真实事件）");
+  must(note.delta.includes("题量=10 题"), `澄清记录字段不对：${String(note.delta)}`);
+  must(note.delta.includes("总分=100 分"), `澄清记录字段不对：${String(note.delta)}`);
+
+  // 不带补答：事件流里不许出现澄清（只发真实事件）。
+  const plain = await request("POST", "/api/generate", {
+    json: { requirement: "帮我出一份英语卷子" },
+  });
+  must(plain.status === 200, `无补答生成失败（${String(plain.status)}）`);
+  must(
+    !parseSse(plain.text).some(
+      (event) => event.type === "thinking" && typeof event.delta === "string" && event.delta.includes("澄清"),
+    ),
+    "没有补答却出现了澄清事件（时间线在演没发生的事）",
+  );
+}
+
 /** 把 SSE 文本切成事件对象。注释帧（心跳 `: ping`）没有 data，自然被丢掉。 */
 function parseSse(text) {
   const events = [];
@@ -842,6 +905,7 @@ const CHECKS = [
   ["VC5 人工批改：简答录分、待批归零、看板与 CSV 同口径", vc5ManualGrade],
   ["VC6 受限修改与撤销：PATCH 追加版本、旧 baseVersionId 409、undo 回退", vc6PatchAndUndo],
   ["VC7 每题正确率：分母是提交份数、未作答按未答对计、零提交 rate 为 null", vc7ItemStats],
+  ["VC8 意图澄清：缺槽位追问 1–3 条、完整需求不问、补答在事件流里可定位", vc8Clarify],
 ];
 
 async function main() {

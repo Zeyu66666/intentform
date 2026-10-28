@@ -49,7 +49,9 @@ const DEMO_PASSWORD = "intentform-demo";
  * 生成用的需求文本。刻意不含「问卷/调查/反馈」这类词：`inferFormKind` 见到就会把表单
  * 判成 survey，而 survey 不许有答案与分值（R3），学生页就没有"作答→判分"可走了。
  */
-const REQUIREMENT = "出一份二次函数随堂测：单选、填空、数值和简答各一道，共 25 分";
+// 需求写全（题量 / 题型 / 分值 / 知识点都点明）：第 2 步只验流式渲染，
+// 澄清交互单独放在第 9 步，两件事不挤在同一个步骤里互相掩盖。
+const REQUIREMENT = "出一份二次函数随堂测：单选、填空、数值和简答各一道，共 25 分，覆盖开口方向与顶点坐标";
 
 /** 桌面视口（教师侧）与学生手机视口（学生侧）。 */
 const DESKTOP_VIEWPORT = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false };
@@ -995,6 +997,63 @@ async function main() {
       return { before, proposal: proposal.slice(0, 80), notice };
     });
 
+    // 9) 意图澄清（省赛 R-05）：含糊需求先问 1–3 条，不答也能生成
+    //
+    // 这一步的命题只有两个：**追问是服务端真的判出来的**（不是前端写死的三连问），
+    // 以及**跳过是真的能生成**（澄清是帮忙，不是关卡）。补答如何拼进需求由 VC8 负责，
+    // 这里只看"问得到、看得见、跳得掉"。
+    const clarify = await step("意图澄清：含糊需求 → 追问 → 跳过生成", async () => {
+      await page.goto(`${webBase}/`);
+      await waitFor(
+        async () => (await page.evaluate("return bySelector('#requirement-input') !== null")),
+        "生成页需求输入框渲染",
+      );
+      const typed = await page.evaluate(
+        `return setValue('#requirement-input', "帮我出一份英语卷子");`,
+      );
+      must(typed.ok === true, `需求没填进去：${JSON.stringify(typed)}`);
+      must(
+        await page.evaluate("return clickButtonByText('^生成表单$')"),
+        "没找到「生成表单」按钮",
+      );
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('clarify-block') !== null")),
+        "追问块出现",
+        10_000,
+      );
+      const slots = await page.evaluate(
+        "return Array.prototype.map.call(document.querySelectorAll('[data-testid^=clarify-question-]'), function (el) { return el.getAttribute('data-testid').replace('clarify-question-', ''); });",
+      );
+      must(
+        slots.length >= 1 && slots.length <= 3,
+        `追问应为 1–3 条，实际 ${String(slots.length)}：${JSON.stringify(slots)}`,
+      );
+
+      // 点一个快捷选项：界面要把「将写入什么」摆出来，而不是默默存着。
+      const picked = await page.tap('[data-testid=clarify-question-count] button');
+      must(picked.ok === true, `点不到题量选项：${JSON.stringify(picked)}`);
+      const answerLine = await waitFor(
+        async () => {
+          const value = await page.evaluate(
+            "var el = byTestId('clarify-answer-count'); return el === null ? null : el.textContent.trim();",
+          );
+          return typeof value === "string" && value.length > 0 ? value : null;
+        },
+        "选中后出现「将写入」提示",
+        5_000,
+      );
+      artifacts.push(await page.screenshot("12-clarify.png"));
+
+      const skipped = await page.tap('[data-testid=clarify-skip]');
+      must(skipped.ok === true, `点不到「跳过，直接生成」：${JSON.stringify(skipped)}`);
+      await waitFor(
+        async () => (await page.text()).includes("生成完成"),
+        "跳过追问后生成走完（出现「生成完成」）",
+        30_000,
+      );
+      return { slots, answerLine };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -1005,6 +1064,7 @@ async function main() {
       student,
       submitted,
       edited,
+      clarify,
       dashboard,
       graded,
       steps,

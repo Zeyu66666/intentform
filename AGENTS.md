@@ -83,7 +83,7 @@ node scripts/secret-scan.mjs
 node scripts/secret-scan.mjs --history
 ```
 
-**`pnpm verify` 不是上面这几条的同义词。** 它跑 `scripts/verify.mjs` 的 HTTP 级验证用例，当前是 **VC1–VC7**（发布快照、判分与版本冲突、学生端零泄漏、生成→发布→提交→看板、人工批改、受限修改与撤销、每题正确率）；每落地一条闭环能力就配一条 VC，数量随能力增长，不写死为三条。它证明的是 HTTP 语义闭环，不是浏览器里的真实操作——后者归 `scripts/browser-closed-loop.mjs`。别把 `check` 当成「一条命令跑通生成→渲染→提交」的验收。
+**`pnpm verify` 不是上面这几条的同义词。** 它跑 `scripts/verify.mjs` 的 HTTP 级验证用例，当前是 **VC1–VC8**（发布快照、判分与版本冲突、学生端零泄漏、生成→发布→提交→看板、人工批改、受限修改与撤销、每题正确率、意图澄清）；每落地一条闭环能力就配一条 VC，数量随能力增长，不写死为三条。它证明的是 HTTP 语义闭环，不是浏览器里的真实操作——后者归 `scripts/browser-closed-loop.mjs`。别把 `check` 当成「一条命令跑通生成→渲染→提交」的验收。
 
 涉及外部调用的功能，必须同时提供 `LLM_MODE=replay` 或 `mock` 路径，并在该路径下验证一遍。
 
