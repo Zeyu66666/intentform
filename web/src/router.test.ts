@@ -45,6 +45,33 @@ describe("parseRoute", () => {
     expect(parseRoute("/login/x")).toEqual({ name: "notFound", path: "/login/x" });
   });
 
+  it("/forms/:id/edit 解出编辑页，形状只有一种", () => {
+    expect(parseRoute("/forms/form-1/edit")).toEqual({ name: "edit", formId: "form-1" });
+    // 尾斜杠允许：地址栏里手打或复制时常多一个。
+    expect(parseRoute("/forms/form-1/edit/")).toEqual({ name: "edit", formId: "form-1" });
+    // formId 也要能还原转义，否则建出来的表单 id 里带 `%` 就永远打不开编辑页。
+    expect(parseRoute("/forms/a%20b/edit")).toEqual({ name: "edit", formId: "a b" });
+  });
+
+  it("编辑页的非法形状一律 404，不猜出个 formId 或忽略多余段", () => {
+    // 少一段：`/forms/x` 只说明是哪份表单，没说是要干什么。
+    expect(parseRoute("/forms/form-1")).toEqual({ name: "notFound", path: "/forms/form-1" });
+    expect(parseRoute("/forms")).toEqual({ name: "notFound", path: "/forms" });
+    // 多一段 / 动作拼错：编辑页没有子页签，`edit/x` 不能静默当成编辑页打开。
+    expect(parseRoute("/forms/form-1/edit/x")).toEqual({
+      name: "notFound",
+      path: "/forms/form-1/edit/x",
+    });
+    expect(parseRoute("/forms/form-1/edits")).toEqual({
+      name: "notFound",
+      path: "/forms/form-1/edits",
+    });
+    // 空 formId 与坏转义同 `/f/` 的处理：路由层拦掉，别让它去请求 `/api/forms//`。
+    expect(parseRoute("/forms//edit")).toEqual({ name: "notFound", path: "/forms//edit" });
+    expect(parseRoute("/forms/%zz/edit")).toEqual({ name: "notFound", path: "/forms/%zz/edit" });
+    expect(parseRoute("/forms/%20/edit")).toEqual({ name: "notFound", path: "/forms/%20/edit" });
+  });
+
   it("未知路径归 404，不静默回落到生成页", () => {
     expect(parseRoute("/nope")).toEqual({ name: "notFound", path: "/nope" });
   });
@@ -76,6 +103,8 @@ describe("routeToPath", () => {
       { name: "fill", slug: "abc/def" } as const,
       { name: "dashboard", formId: null } as const,
       { name: "dashboard", formId: "form-1" } as const,
+      { name: "edit", formId: "form-1" } as const,
+      { name: "edit", formId: "a b" } as const,
       { name: "login" } as const,
     ];
     for (const route of cases) {

@@ -1,10 +1,10 @@
 /**
  * 手写路由：`parseRoute()` 是纯函数，`createBrowserHost()` 是唯一的 DOM 接触面。
  *
- * 为什么不装 react-router：本项目只认三条路径（`/` 生成页、`/f/:slug` 学生页、
- * `/dashboard` 看板，外加 `/login`），装一个路由库要引入 match/router context/
- * 过渡期 API 三套概念，而 `window.location.pathname` + `history.pushState` 四十行
- * 就能覆盖。依赖越少，"每行都能讲清为什么"越容易做到。
+ * 为什么不装 react-router：本项目只认四条路径（`/` 生成页、`/f/:slug` 学生页、
+ * `/dashboard` 看板、`/forms/:id/edit` 编辑页，外加 `/login`），装一个路由库要引入
+ * match/router context/过渡期 API 三套概念，而 `window.location.pathname` +
+ * `history.pushState` 四十行就能覆盖。依赖越少，"每行都能讲清为什么"越容易做到。
  *
  * 拆两层是为了可测：`parseRoute()` 不发请求、不碰 window，vitest 直接断言字符串；
  * `createBrowserHost()` 接受一个 `WindowLike` 注入，测试用假 window 断言 push/popstate
@@ -19,11 +19,15 @@ export const FILL_PATH_PREFIX = "/f" as const;
 
 export const DASHBOARD_PATH = "/dashboard" as const;
 export const LOGIN_PATH = "/login" as const;
+/** 编辑页挂 `/forms/<id>/edit`：表单是资源、`edit` 是动作，读地址就能知道改了谁。 */
+export const FORMS_PATH_PREFIX = "/forms" as const;
+const EDIT_SUFFIX = "edit" as const;
 
 export type Route =
   | { readonly name: "generate" }
   | { readonly name: "fill"; readonly slug: string }
   | { readonly name: "dashboard"; readonly formId: string | null }
+  | { readonly name: "edit"; readonly formId: string }
   | { readonly name: "login" }
   | { readonly name: "notFound"; readonly path: string };
 
@@ -80,6 +84,16 @@ export function parseRoute(pathname: string): Route {
     return second === undefined ? { name: "login" } : notFound(pathname);
   }
 
+  if (head === FORMS_PATH_PREFIX.slice(1)) {
+    // 只有一个合法形状：`/forms/<id>/edit`。`/forms/<id>`、`/forms/<id>/edit/x`
+    // 都不猜（编辑页没有子页签），猜出来的地址会让人以为链接对、实际打开空编辑页。
+    if (second === undefined) return notFound(pathname);
+    const formId = decodeSegment(second);
+    if (formId === null || isBlankSegment(formId)) return notFound(pathname);
+    if (rest.length !== 1 || rest[0] !== EDIT_SUFFIX) return notFound(pathname);
+    return { name: "edit", formId };
+  }
+
   return notFound(pathname);
 }
 
@@ -96,6 +110,8 @@ export function routeToPath(route: Route): string {
         : `${DASHBOARD_PATH}/${encodeURIComponent(route.formId)}`;
     case "login":
       return LOGIN_PATH;
+    case "edit":
+      return `${FORMS_PATH_PREFIX}/${encodeURIComponent(route.formId)}/${EDIT_SUFFIX}`;
     case "notFound":
       return route.path;
   }

@@ -159,6 +159,16 @@ export function DashboardPage({ formId }: { readonly formId: string | null }): J
               ))}
             </select>
             <ShareLine form={selected} />
+            {/* 编辑入口放在选择区、一行之内：看板一行的布局（表单 / 提交数 / 批改）
+                不因为多一个入口而换行；表单选谁就编辑谁，不需要再传一个 id。 */}
+            <p className="m-0 text-sm">
+              <Link
+                href={routeToPath({ name: "edit", formId: selected.id })}
+                className="text-accent underline"
+              >
+                编辑这份表单的题目与分值
+              </Link>
+            </p>
           </section>
 
           <SubmissionsSection

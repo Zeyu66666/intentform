@@ -16,9 +16,15 @@ import {
   type LoginRequest,
   type LoginResponse,
   type MeResponse,
+  type PatchFormRequest,
+  type PatchFormResponse,
   type PublishRequest,
   type PublishResponse,
   type SubmissionsResponse,
+  type SuggestPatchRequest,
+  type SuggestPatchResponse,
+  type UndoDraftRequest,
+  type UndoDraftResponse,
 } from "@intentform/schema";
 
 import type { ApiResult, HttpClient } from "./http";
@@ -47,8 +53,34 @@ export interface TeacherApi {
     submissionId: string,
     request: GradeRequest,
   ) => Promise<ApiResult<GradeResponse>>;
-  /** 只读详情：排障与回跳用，界面当前不依赖它。 */
+  /** 表单详情：编辑页拿它的 `version.id` 当乐观锁的 `baseVersionId`。 */
   readonly getForm: (formId: string) => Promise<ApiResult<FormDetailResponse>>;
+  /**
+   * 提交一批 op 生成新草稿版本（省赛 R-03）。
+   *
+   * `baseVersionId` 是乐观锁：它不等于服务端当前草稿指针时返回 409
+   * `version_conflict`。这里**不做**自动重取重试——覆盖别人的改动是数据事故，
+   * 冲突要由人看到并决定（界面给的是「刷新」按钮）。
+   */
+  readonly patchForm: (formId: string, request: PatchFormRequest) => Promise<ApiResult<PatchFormResponse>>;
+  /**
+   * 撤销：把草稿指针退回上一版本（版本行本身不删）。
+   *
+   * `undone === false` 不是错误——它表示已经在第一个版本，调用方据此换一句提示，
+   * 不要当成失败弹红。
+   */
+  readonly undoDraft: (formId: string, request: UndoDraftRequest) => Promise<ApiResult<UndoDraftResponse>>;
+  /**
+   * 一句话改成操作集（建议半步）。
+   *
+   * 这条调用**不写库**：它只回 ops/changes/issues，界面先把差异摆出来，人点「采用」
+   * 之后才走 `patchForm`。所以它可以用 GET 之外的安全语义——但仍然是 POST，
+   * 因为指令可能很长，放 query 里会被代理截断。
+   */
+  readonly suggestPatch: (
+    formId: string,
+    request: SuggestPatchRequest,
+  ) => Promise<ApiResult<SuggestPatchResponse>>;
 }
 
 export function createTeacherApi(client: HttpClient): TeacherApi {
@@ -80,5 +112,25 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
         csrf: true,
       }),
     getForm: (formId) => client.request<FormDetailResponse>(API_PATHS.form(formId)),
+    patchForm: (formId, request) =>
+      client.request<PatchFormResponse>(API_PATHS.patchForm(formId), {
+        // PATCH 而不是 POST：路径与语义都跟服务端注册的那条对齐，
+        // 也让「改了什么」在浏览器网络面板里一眼可辨。
+        method: "PATCH",
+        body: request,
+        csrf: true,
+      }),
+    undoDraft: (formId, request) =>
+      client.request<UndoDraftResponse>(API_PATHS.undoDraft(formId), {
+        method: "POST",
+        body: request,
+        csrf: true,
+      }),
+    suggestPatch: (formId, request) =>
+      client.request<SuggestPatchResponse>(API_PATHS.suggestPatch(formId), {
+        method: "POST",
+        body: request,
+        csrf: true,
+      }),
   };
 }

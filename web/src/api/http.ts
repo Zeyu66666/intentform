@@ -37,7 +37,11 @@ export type ApiResult<T> =
   | { readonly ok: false; readonly failure: ApiFailure };
 
 export interface HttpRequestOptions {
-  readonly method?: "GET" | "POST";
+  /**
+   * `PATCH` 只为「受限修改」加：服务端把 op 数组挂在 `PATCH /api/forms/:id` 上，
+   * 用 `POST` 转发会让路径语义和权限校验都对不上。`DELETE` 至今没有落点，不提前开。
+   */
+  readonly method?: "GET" | "POST" | "PATCH";
   /** 有值才序列化并带 `Content-Type`；`undefined` 表示无请求体。 */
   readonly body?: unknown;
   /**
