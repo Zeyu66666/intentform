@@ -22,6 +22,11 @@ import {
 } from "./constants.ts";
 import type { PublicForm } from "./public-view.ts";
 import type { ErrorCode } from "./errors.ts";
+import {
+  CLARIFY_ANSWER_MAX_CHARS,
+  CLARIFY_SLOTS,
+  type ClarifyQuestion,
+} from "./clarify.ts";
 import { formSchema, type FormSchema } from "./types.ts";
 import { patchOpsSchema, type PatchChange, type PatchError, type PatchOp } from "./patch.ts";
 
@@ -60,6 +65,7 @@ export const API_ERROR_CODES = [
   "forbidden",
   "not_found",
   "version_conflict",
+  "unprocessable",
   "payload_too_large",
   "rate_limited",
   "internal",
@@ -91,6 +97,8 @@ export const API_ERROR_STATUS: Readonly<Record<ApiErrorCode, number>> = {
   forbidden: 403,
   not_found: 404,
   version_conflict: 409,
+  /** 形状合法、内容不合规（如需求超长）。与 `/api/generate` 的 422 同一语义。 */
+  unprocessable: 422,
   payload_too_large: 413,
   rate_limited: 429,
   internal: 500,
@@ -475,3 +483,47 @@ export const CSV_BASE_COLUMNS = ["submission_id", "created_at", "score", "max_sc
 
 /** CSV 的 Content-Type；带 charset，Excel 打开中文表头才不乱码。 */
 export const CSV_CONTENT_TYPE = "text/csv; charset=utf-8";
+
+/* ------------------------------- 意图澄清（R-05） ------------------------------- */
+
+/**
+ * 澄清请求。匿名可用（与生成页一致：还没登录也能先问清楚再生成）。
+ * `kind` 可省：省了由 `inferFormKind` 从文本推断；显式传则以调用方为准
+ * （界面上的品类选择器就是"显式传"的那一方）。
+ */
+export const clarifyRequestSchema = z.object({
+  requirement: z
+    .string()
+    .trim()
+    .min(1, "需求不能为空")
+    .max(LIMITS.requirementMaxChars, `需求最多 ${String(LIMITS.requirementMaxChars)} 字`),
+  kind: z.enum(FORM_KINDS).optional(),
+});
+
+export type ClarifyRequest = z.infer<typeof clarifyRequestSchema>;
+
+export interface ClarifyResponse {
+  readonly ok: true;
+  /** 实际用来找槽位的品类（推断值或调用方指定值），界面据此显示"按问卷问"。 */
+  readonly kind: FormKind;
+  /** 最多 3 条；空数组表示需求已经够完整，直接生成即可。 */
+  readonly questions: readonly ClarifyQuestion[];
+}
+
+/**
+ * 一条回答。`answer` 是自由文本，快捷选项点下去也是文本（"10 题"）——
+ * 保持一种形态，界面与契约都不用为"选项 vs 手填"分叉。
+ */
+export const clarificationSchema = z.object({
+  slot: z.enum(CLARIFY_SLOTS),
+  answer: z
+    .string()
+    .trim()
+    .min(1, "回答不能为空")
+    .max(CLARIFY_ANSWER_MAX_CHARS, `回答最多 ${String(CLARIFY_ANSWER_MAX_CHARS)} 字`),
+});
+
+export type Clarification = z.infer<typeof clarificationSchema>;
+
+/** 一次生成最多带几条补充：与追问上限同量级，防止有人拿它当配置文件灌内容。 */
+export const CLARIFICATIONS_MAX = 8;

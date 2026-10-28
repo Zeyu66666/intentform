@@ -11,6 +11,7 @@ import {
   CLARIFY_MAX_QUESTIONS,
   buildClarifyQuestions,
   composeRequirement,
+  describeClarifications,
   detectMissingSlots,
 } from "./clarify.ts";
 import { GENERATE_PRESETS } from "./presets.ts";
@@ -119,5 +120,21 @@ describe("composeRequirement", () => {
     ]);
     expect(composed).toContain("- 题量：8 题");
     expect(composed).not.toContain("5 题");
+  });
+});
+
+describe("describeClarifications", () => {
+  it("拼成一句可写进时间线的话：澄清 N 项：题量=10 题、总分=100 分", () => {
+    expect(
+      describeClarifications([
+        { slot: "count", answer: "10 题" },
+        { slot: "score", answer: "100 分" },
+      ]),
+    ).toBe("澄清 2 项：题量=10 题、总分=100 分");
+  });
+
+  it("没有回答时返回空串（调用方据此不发 thinking 事件）", () => {
+    expect(describeClarifications([])).toBe("");
+    expect(describeClarifications([{ slot: "count", answer: "   " }])).toBe("");
   });
 });

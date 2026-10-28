@@ -14,6 +14,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleLogin, handleLogout, handleMe } from "./auth.ts";
 import { handleSuggestPatch } from "./suggest-route.ts";
 import { handleSubmissions, handleSubmissionsCsv } from "./analytics-route.ts";
+import { handleClarify } from "./clarify-route.ts";
 import { checkCsrf, corsHeadersFor } from "./csrf.ts";
 import type { Db } from "./db/index.ts";
 import { isMutatingMethod, type ServerEnv } from "./env.ts";
@@ -41,6 +42,15 @@ export const ROUTES: readonly RouteDef[] = [
   { method: "POST", pattern: "/api/auth/login", handler: handleLogin },
   { method: "POST", pattern: "/api/auth/logout", handler: handleLogout },
   { method: "GET", pattern: "/api/auth/me", handler: handleMe },
+
+  // 省赛 R-05：意图澄清。匿名可用（生成页本来就匿名），不写库、不调模型；
+  // 与生成共用同一条每分钟配额，被人刷时先被 429 挡住。
+  {
+    method: "POST",
+    pattern: "/api/clarify",
+    handler: handleClarify,
+    rateLimit: { name: "clarify", limitPerWindow: (env) => env.rateGeneratePerMin },
+  },
 
   { method: "POST", pattern: "/api/forms", handler: handleCreateForm },
   { method: "GET", pattern: "/api/forms", handler: handleListForms },

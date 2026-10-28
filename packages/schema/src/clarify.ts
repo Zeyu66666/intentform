@@ -142,6 +142,25 @@ export function buildClarifyQuestions(
 }
 
 /**
+ * 把回答压成一句给时间线看的话：`澄清 2 项：题量=10 题、总分=100 分`。
+ *
+ * 空回答被跳过；一条不剩时返回空串，调用方据此**不发**那条 `thinking` 事件
+ * （只发真实事件：没澄清就不许在时间线上演出澄清）。
+ */
+export function describeClarifications(answers: readonly ClarifyAnswer[]): string {
+  const parts: string[] = [];
+  const seen = new Set<ClarifySlotId>();
+  for (const entry of answers) {
+    const answer = entry.answer.trim();
+    if (answer === "" || seen.has(entry.slot)) continue;
+    seen.add(entry.slot);
+    parts.push(`${CLARIFY_SLOT_LABELS[entry.slot]}=${answer}`);
+  }
+  if (parts.length === 0) return "";
+  return `澄清 ${String(parts.length)} 项：${parts.join("、")}`;
+}
+
+/**
  * 把回答拼成「教师补充的约束」块，追加在需求原文之后。
  *
  * 两种安全性在这里同时成立：
