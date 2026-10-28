@@ -36,7 +36,7 @@ export function ClarifyForm({
   const answered = answeredCount(questions, drafts);
   return (
     <section
-      className="flex flex-col gap-2 rounded-sm border border-accent/40 bg-bg p-2"
+      className="flex flex-col gap-1 rounded-sm border border-accent/40 bg-bg p-2"
       data-testid="clarify-block"
       aria-label="生成前的补充确认"
     >
@@ -47,7 +47,7 @@ export function ClarifyForm({
         <span className="text-xs text-muted">{`已答 ${String(answered)}/${String(questions.length)}`}</span>
       </header>
       <p className="m-0 text-xs text-muted">
-        回答会作为「教师补充的约束」写进需求；不答也能直接生成。
+        回答会写进需求；不答也能直接生成。
       </p>
 
       {questions.map((question) => {
@@ -56,7 +56,7 @@ export function ClarifyForm({
           <fieldset
             key={question.slot}
             className="m-0 flex flex-col gap-1 border-0 p-0"
-            data-testid={`clarify-${question.slot}`}
+            data-testid={`clarify-question-${question.slot}`}
           >
             <legend className="p-0 text-xs font-medium text-ink">{question.question}</legend>
             <div className="flex flex-wrap gap-1">
@@ -70,7 +70,7 @@ export function ClarifyForm({
                     onClick={() => {
                       onToggleOption(question.slot, option);
                     }}
-                    className={`min-h-[32px] rounded-sm border px-2 py-1 text-xs ${
+                    className={`min-h-[32px] rounded-sm border px-2 py-0.5 text-xs ${
                       selected
                         ? "border-accent bg-accent text-white"
                         : "border-line bg-surface text-muted hover:border-accent hover:text-accent"
@@ -90,7 +90,7 @@ export function ClarifyForm({
               placeholder={question.placeholder}
               aria-label={`${question.question}（自己填）`}
               maxLength={200}
-              className="w-full rounded-sm border border-line bg-surface px-2 py-1 text-sm"
+              className="w-full rounded-sm border border-line bg-surface px-2 py-1 text-xs"
             />
             {answer === "" ? null : (
               <p className="m-0 text-xs text-muted" data-testid={`clarify-answer-${question.slot}`}>
@@ -101,7 +101,8 @@ export function ClarifyForm({
         );
       })}
 
-      <div className="flex flex-col gap-1">
+      {/* 动作区吸底：追问块比左栏高时，主按钮必须始终可见（§2.6 第 1、2 条）。 */}
+      <div className="sticky bottom-0 -mx-2 -mb-2 flex flex-col gap-1 border-t border-line bg-bg px-2 pb-2 pt-1">
         <button
           type="button"
           onClick={onConfirm}
