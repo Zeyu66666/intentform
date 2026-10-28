@@ -10,7 +10,7 @@
  *    如实发 `status: "failed"`——「越修越错」比不修更危险，因为它让人以为在收敛。
  */
 
-import { LIMITS, SCHEMA_VERSION } from "@intentform/schema";
+import { LIMITS, SCHEMA_VERSION, inferFormKind } from "@intentform/schema";
 import type { ErrorCode, FormKind, SseEventBody } from "@intentform/schema";
 
 import type { LlmRuntimeConfig } from "./config.ts";
@@ -45,12 +45,10 @@ export function placeholderVersionId(requirement: string, model: string): string
 }
 
 /**
- * 从需求猜表单类型。只影响两条语义校验（问卷不许带答案），猜错的代价是
- * 「少拦一条」，所以用保守的关键词判定，不引入模型。
+ * 从需求猜表单类型。R-05 起实现搬进 `@intentform/schema`（澄清层要用同一套词表，
+ * 两处各写一份必然漂移），这里保留同名 re-export，调用方不用改。
  */
-export function inferFormKind(requirement: string): FormKind {
-  return /问卷|调查|survey|收集|反馈/i.test(requirement) ? "survey" : "quiz";
-}
+export { inferFormKind };
 
 export interface GenerateOptions {
   readonly requirement: string;
