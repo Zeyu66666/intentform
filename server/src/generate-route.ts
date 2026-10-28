@@ -30,6 +30,8 @@ import {
   CLARIFY_SLOTS,
   LIMITS,
   clarificationSchema,
+  parseBlueprint,
+  type FormBlueprint,
   composeRequirement,
   describeClarifications,
   type Clarification,
@@ -99,6 +101,8 @@ export interface GenerateRequest {
   readonly composedRequirement: string;
   /** `澄清 N 项：…`；没有补充时是空串，生成器据此不发那条 `thinking`。 */
   readonly clarifyNote: string;
+  /** 教师确认过的蓝图（R-06）；没有就是 `undefined`，生成器不发 plan 阶段。 */
+  readonly blueprint?: FormBlueprint;
 }
 
 export type RequirementParseResult =
@@ -168,12 +172,29 @@ export function parseGenerateBody(text: string): RequirementParseResult {
       message: `需求（含补充约束）最多 ${String(LIMITS.requirementMaxChars)} 字，当前 ${String(composedRequirement.length)} 字`,
     };
   }
+  // 蓝图（R-06）：形状不合契约就 400，**不许静默丢掉**——丢掉等于两阶段退化成单阶段。
+  const rawBlueprint = (parsed as Record<string, unknown>)["blueprint"];
+  let blueprint: FormBlueprint | undefined;
+  if (rawBlueprint !== undefined && rawBlueprint !== null) {
+    const parsedBlueprint = parseBlueprint(rawBlueprint);
+    if (!parsedBlueprint.ok) {
+      return {
+        ok: false,
+        status: 400,
+        error: "invalid_blueprint",
+        message: `蓝图不合法：${parsedBlueprint.message}`,
+      };
+    }
+    blueprint = parsedBlueprint.blueprint;
+  }
+
   return {
     ok: true,
     request: {
       requirement,
       composedRequirement,
       clarifyNote: describeClarifications(clarifications),
+      ...(blueprint === undefined ? {} : { blueprint }),
     },
   };
 }
@@ -288,6 +309,9 @@ export function createGenerateHandler(options: GenerateRouteOptions = {}): Gener
           {
             requirement: parsed.request.composedRequirement,
             clarifyNote: parsed.request.clarifyNote,
+            ...(parsed.request.blueprint === undefined
+              ? {}
+              : { blueprint: parsed.request.blueprint }),
             signal: controller.signal,
           },
         ),

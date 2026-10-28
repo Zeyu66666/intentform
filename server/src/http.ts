@@ -12,9 +12,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { API_ERROR_STATUS, type ApiErrorCode } from "@intentform/schema";
 import { readRequestBody } from "./generate-route.ts";
 import type { ServerEnv } from "./env.ts";
+import type { LlmLogger, LlmRuntimeConfig } from "@intentform/llm";
 import type { Db } from "./db/index.ts";
 
 export interface RouteContext {
+  /** 模型依赖（只有 `/api/plan` 用；未配置模型时缺省，路由自行报 internal）。 */
+  readonly llm?: {
+    readonly config: LlmRuntimeConfig;
+    readonly logger: LlmLogger;
+  };
   readonly req: IncomingMessage;
   readonly res: ServerResponse;
   readonly url: URL;

@@ -87,7 +87,7 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
   // 限流器在 `main.ts` 建、同时交给 API 应用和 `/api/generate`：两条写路径共用
   // 同一份内存计数，否则「生成限流」和「提交限流」会各自从 0 开始，也就没有全局视图。
   const limiter = createRateLimiter();
-  const api = createApiApp({ db, env: serverEnv, limiter });
+  const api = createApiApp({ db, env: serverEnv, limiter, llm: { config: llmConfig, logger } });
 
   const server = createServer((req, res) => {
     const pathname = (req.url ?? "/").split("?")[0] ?? "/";

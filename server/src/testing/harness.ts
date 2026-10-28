@@ -15,6 +15,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
 import { hashSync } from "@node-rs/argon2";
 import type { CreateFormResponse, FormSchema, PublishResponse } from "@intentform/schema";
+import { resolveLlmRuntimeConfig, silentLogger } from "@intentform/llm";
+
 import { createApiApp } from "../app.ts";
 import { openDatabase, type Db } from "../db/index.ts";
 import { insertTeacher } from "../db/teachers.ts";
@@ -48,7 +50,12 @@ export function createTestEnv(overrides: NodeJS.ProcessEnv = {}): ServerEnv {
 
 export async function startTestServer(env: ServerEnv = createTestEnv()): Promise<TestServer> {
   const db = openDatabase(env.databasePath);
-  const app = createApiApp({ db, env });
+  // 测试默认给 mock 模式的模型依赖：`/api/plan` 因此能真打，且不联网、不花钱。
+  const llm = {
+    config: resolveLlmRuntimeConfig("mock", {}, {}),
+    logger: silentLogger,
+  };
+  const app = createApiApp({ db, env, llm });
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     if (app.handle(req, res)) return;
     res.writeHead(404, { "content-type": "application/json; charset=utf-8" });

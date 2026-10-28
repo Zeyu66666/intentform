@@ -211,3 +211,59 @@ describe("POST /api/generate（mock 模式，端到端）", () => {
     expect(payload["ok"]).toBe(false);
   });
 });
+
+/**
+ * 生成请求带蓝图（省赛 R-06）。三个命题：
+ * 1. 合法蓝图透传到生成器，事件流里出现「蓝图已确认」；
+ * 2. 非法蓝图**拒收**，不许静默丢掉——丢掉就等于两阶段退化成单阶段；
+ * 3. 不带蓝图时请求体行为与以前一致。
+ */
+describe("POST /api/generate · 蓝图", () => {
+  const BLUEPRINT = {
+    title: "二次函数入门测验",
+    kind: "quiz",
+    sections: [{ title: "全部", count: 4 }],
+    totalCount: 4,
+    typeMix: { single: 4 },
+    totalScore: 20,
+    knowledgePoints: [{ id: "kp-basic", name: "基础运算" }],
+  };
+
+  it("带合法蓝图：事件流里出现 plan 阶段与蓝图摘要", async () => {
+    const baseUrl = await startServer();
+    const response = await fetch(`${baseUrl}${GENERATE_PATH}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ requirement: "出一份小测验", blueprint: BLUEPRINT }),
+    });
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).toContain('"phase":"plan"');
+    expect(text).toContain("蓝图已确认");
+  });
+
+  it("非法蓝图（题量对不上）→ 400，且不开始流", async () => {
+    const baseUrl = await startServer();
+    const response = await fetch(`${baseUrl}${GENERATE_PATH}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requirement: "出一份小测验",
+        blueprint: { ...BLUEPRINT, totalCount: 9 },
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toContain("application/json");
+  });
+
+  it("不带蓝图：事件流里没有 plan 阶段（未发生不许演出）", async () => {
+    const baseUrl = await startServer();
+    const response = await fetch(`${baseUrl}${GENERATE_PATH}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ requirement: "出一份小测验" }),
+    });
+    const text = await response.text();
+    expect(text).not.toContain('"phase":"plan"');
+  });
+});

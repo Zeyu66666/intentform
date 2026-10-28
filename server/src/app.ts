@@ -15,6 +15,7 @@ import { handleLogin, handleLogout, handleMe } from "./auth.ts";
 import { handleSuggestPatch } from "./suggest-route.ts";
 import { handleSubmissions, handleSubmissionsCsv } from "./analytics-route.ts";
 import { handleClarify } from "./clarify-route.ts";
+import { handlePlan } from "./plan-route.ts";
 import { checkCsrf, corsHeadersFor } from "./csrf.ts";
 import type { Db } from "./db/index.ts";
 import { isMutatingMethod, type ServerEnv } from "./env.ts";
@@ -36,6 +37,7 @@ import {
   type RouteDef,
 } from "./http.ts";
 import { createRateLimiter, rateLimitKey, type RateLimiter } from "./rate-limit.ts";
+import type { LlmLogger, LlmRuntimeConfig } from "@intentform/llm";
 import { handleSubmit } from "./submissions-route.ts";
 
 export const ROUTES: readonly RouteDef[] = [
@@ -50,6 +52,13 @@ export const ROUTES: readonly RouteDef[] = [
     pattern: "/api/clarify",
     handler: handleClarify,
     rateLimit: { name: "clarify", limitPerWindow: (env) => env.rateGeneratePerMin },
+  },
+  // 省赛 R-06：两阶段蓝图的第一步。要调模型，所以与生成共用每分钟配额。
+  {
+    method: "POST",
+    pattern: "/api/plan",
+    handler: handlePlan,
+    rateLimit: { name: "plan", limitPerWindow: (env) => env.rateGeneratePerMin },
   },
 
   { method: "POST", pattern: "/api/forms", handler: handleCreateForm },
@@ -88,6 +97,11 @@ export const ROUTES: readonly RouteDef[] = [
 export interface ApiAppDeps {
   readonly db: Db;
   readonly env: ServerEnv;
+  /** 模型依赖（`/api/plan` 用）；不传时该路由回 500，其余接口不受影响。 */
+  readonly llm?: {
+    readonly config: LlmRuntimeConfig;
+    readonly logger: LlmLogger;
+  };
   /** 与 `main.ts` 共用同一个实例，`/api/generate` 的配额才和这里同源。 */
   readonly limiter?: RateLimiter;
 }
@@ -171,6 +185,7 @@ export function createApiApp(deps: ApiAppDeps): ApiApp {
         params: route.params,
         db: deps.db,
         env: deps.env,
+        ...(deps.llm === undefined ? {} : { llm: deps.llm }),
       };
       void route.def.handler(ctx).catch((error: unknown) => {
         const detail = error instanceof Error ? error.message : String(error);
