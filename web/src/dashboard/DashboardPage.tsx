@@ -28,9 +28,11 @@ import {
   EMPTY_SUBMISSIONS_TEXT,
   NO_AVERAGE_TEXT,
   UNPUBLISHED_TEXT,
+  correctRateText,
   formOptionLabel,
   needsGrading,
   pickInitialForm,
+  rateBarWidth,
   rowScoreText,
   sharePath,
   sortRowsNewestFirst,
@@ -302,6 +304,75 @@ function SubmissionsSection({
           导出 CSV
         </a>
       </div>
+
+      {/* 每题正确率（R-04）。survey 与纯人工判分的表没有可判对错的题，整块不出现：
+          渲染一张全是 `—` 的表，比不渲染更容易被误读成「数据坏了」。 */}
+      {state.data.itemStats.length === 0 ? null : (
+        <section className="mt-2" data-testid="dash-item-stats">
+          <div className="flex flex-wrap items-baseline justify-between gap-1">
+            <h2 className="m-0 text-base font-semibold text-ink">每题正确率</h2>
+            <p className="m-0 text-xs text-muted">分母 = 提交份数，未作答按未答对计</p>
+          </div>
+          <table className="mt-1 w-full border-collapse text-sm">
+            <caption className="sr-only">每题正确率</caption>
+            <thead>
+              <tr className="border-b border-line text-left text-muted">
+                <th scope="col" className="py-1 pr-2 font-medium">
+                  题目
+                </th>
+                <th scope="col" className="py-1 pr-2 text-right font-medium">
+                  作答
+                </th>
+                <th scope="col" className="py-1 pr-2 text-right font-medium">
+                  答对
+                </th>
+                <th scope="col" className="py-1 font-medium">
+                  正确率
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.data.itemStats.map((stat) => (
+                <tr
+                  key={stat.itemId}
+                  className="border-b border-line last:border-0"
+                  data-testid="dash-item-stat"
+                >
+                  <td className="py-1 pr-2 text-ink">
+                    {stat.title}
+                    <span className="ml-1 text-xs text-muted">{`${String(stat.score)} 分`}</span>
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink">
+                    {`${String(stat.answered)}/${String(stat.total)}`}
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink">
+                    {String(stat.correct)}
+                  </td>
+                  <td className="py-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`w-12 text-right tabular-nums ${stat.rate === null ? "text-muted" : "text-ink"}`}
+                      >
+                        {correctRateText(stat)}
+                      </span>
+                      {/* 条只是辅助读数的视觉，数字才是事实：条对屏幕阅读器隐藏。 */}
+                      <span
+                        aria-hidden="true"
+                        className="h-2 w-16 overflow-hidden rounded-sm bg-line"
+                      >
+                        <span
+                          className="block h-full bg-accent"
+                          style={{ width: `${String(rateBarWidth(stat))}%` }}
+                        />
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {stats.isEmpty ? (
         <p className="m-0 mt-2 text-base text-ink" data-testid="dash-empty">

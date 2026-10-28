@@ -9,7 +9,14 @@
  *      同一秒的两条记录在多次渲染里顺序不变。
  */
 
-import type { FormKind, FormStatus, FormSummary, SubmissionRow, SubmissionSummary } from "@intentform/schema";
+import type {
+  FormKind,
+  FormStatus,
+  FormSummary,
+  ItemStat,
+  SubmissionRow,
+  SubmissionSummary,
+} from "@intentform/schema";
 
 import { formatScoreNumber } from "../format";
 import { FILL_PATH_PREFIX } from "../router";
@@ -17,6 +24,8 @@ import { FILL_PATH_PREFIX } from "../router";
 export const EMPTY_SUBMISSIONS_TEXT = "还没有人提交" as const;
 /** 未知/无数据一律占位符，绝不填 0（§2.6 第 4 条：未知值不伪填）。 */
 export const NO_AVERAGE_TEXT = "—" as const;
+/** 正确率的「无数据」占位符。与平均分同一个值，但概念不同，各留一个名字。 */
+export const NO_RATE_TEXT = "—" as const;
 export const UNPUBLISHED_TEXT = "未发布" as const;
 
 export const FORM_STATUS_LABELS: Readonly<Record<FormStatus, string>> = {
@@ -127,6 +136,28 @@ export function rowScoreText(row: SubmissionRow): string {
 /** 这条提交还需不需要教师动手。 */
 export function needsGrading(row: SubmissionRow): boolean {
   return row.pendingScore > 0;
+}
+
+/* ------------------------------ 每题正确率（R-04） ------------------------------ */
+
+/**
+ * 正确率的可显示文本：`66.7%` / `100%`。
+ *
+ * `rate === null`（这个版本还没有提交）显示 `—`，**绝不显示 `0%`**：
+ * `0%` 是「全班都答错了」，`—` 是「还没人答」。两者在教师眼里必须是不同的事。
+ * 一位小数足够：看板要回答「这题难不难」，不是给学生发成绩单。
+ */
+export function correctRateText(stat: ItemStat): string {
+  if (stat.rate === null) return NO_RATE_TEXT;
+  // 先乘再取一位小数：0.6667 → 66.7，1 → 100（不拖 `.0`），0 → 0。
+  const percent = Math.round(stat.rate * 1000) / 10;
+  return `${String(percent)}%`;
+}
+
+/** CSS 条的宽度（0..100 的整数）。无数据时为 0，与 `—` 文案同时出现，不构成 0% 的视觉暗示。 */
+export function rateBarWidth(stat: ItemStat): number {
+  if (stat.rate === null) return 0;
+  return Math.round(stat.rate * 100);
 }
 
 /* ------------------------------ 人工批改（R-02） ------------------------------ */

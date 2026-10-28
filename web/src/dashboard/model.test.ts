@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { FormSummary, SubmissionRow, SubmissionSummary } from "@intentform/schema";
+import type { FormSummary, ItemStat, SubmissionRow, SubmissionSummary } from "@intentform/schema";
 
 import {
   EMPTY_SUBMISSIONS_TEXT,
   NO_AVERAGE_TEXT,
+  NO_RATE_TEXT,
+  correctRateText,
+  rateBarWidth,
   UNPUBLISHED_TEXT,
   formOptionLabel,
   isPublished,
@@ -198,5 +201,44 @@ describe("待批改（R-02）", () => {
     const graded = row({ submissionId: "s1", manualScores: { q03: 5 } });
     expect(ungradedCount(graded, shortItems)).toBe(1);
     expect(ungradedCount(row({ submissionId: "s2", manualScores: { q03: 5, q04: 4 } }), shortItems)).toBe(0);
+  });
+});
+
+/* ------------------------------ 每题正确率（R-04） ------------------------------ */
+
+function stat(partial: Partial<ItemStat> & Pick<ItemStat, "itemId">): ItemStat {
+  return {
+    title: "单选",
+    score: 5,
+    total: 0,
+    answered: 0,
+    correct: 0,
+    rate: null,
+    ...partial,
+  };
+}
+
+describe("correctRateText", () => {
+  it("零提交时是 —，不是 0%", () => {
+    // `0%` 会被读成「全班全错」，实际是「还没有人提交」——与平均分同一条口径。
+    expect(correctRateText(stat({ itemId: "q1" }))).toBe(NO_RATE_TEXT);
+    expect(NO_RATE_TEXT).not.toContain("0%");
+  });
+
+  it("有提交时按一位小数显示，整数不拖 .0", () => {
+    expect(correctRateText(stat({ itemId: "q1", total: 3, rate: 1 }))).toBe("100%");
+    expect(correctRateText(stat({ itemId: "q1", total: 3, rate: 0.6667 }))).toBe("66.7%");
+    expect(correctRateText(stat({ itemId: "q1", total: 3, rate: 0 }))).toBe("0%");
+  });
+});
+
+describe("rateBarWidth", () => {
+  it("无数据宽度为 0（配合 — 文案，不构成 0% 的视觉暗示）", () => {
+    expect(rateBarWidth(stat({ itemId: "q1" }))).toBe(0);
+  });
+
+  it("按百分比四舍五入成 0..100 的整数", () => {
+    expect(rateBarWidth(stat({ itemId: "q1", total: 3, rate: 0.3333 }))).toBe(33);
+    expect(rateBarWidth(stat({ itemId: "q1", total: 3, rate: 1 }))).toBe(100);
   });
 });
