@@ -38,6 +38,7 @@ export const API_PATHS = {
   patchForm: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   /** 撤销一步：把草稿指针退回当前草稿的父版本。 */
   undoDraft: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/undo`,
+  suggestPatch: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/suggest`,
   submissions: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions`,
   submissionsCsv: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions.csv`,
   /** 教师给某条提交里的某道简答打分（省赛 R-02）。 */
@@ -223,6 +224,37 @@ export const patchFormRequestSchema = z.object({
 });
 
 export type PatchFormRequest = z.infer<typeof patchFormRequestSchema>;
+
+/**
+ * `POST /api/forms/:id/suggest` 的请求：一句中文修改要求（R-03）。
+ *
+ * 带 `baseVersionId` 而不只是指令，是因为"改哪一版"必须由调用方说清楚：建议是基于
+ * 某一版算出来的，如果草稿在两次点击之间前进过，把建议套到新版上就可能对不上题号。
+ */
+export const suggestPatchRequestSchema = z.object({
+  baseVersionId: z.string().min(1).max(64),
+  instruction: z.string().trim().min(1).max(LIMITS.requirementMaxChars),
+});
+
+export type SuggestPatchRequest = z.infer<typeof suggestPatchRequestSchema>;
+
+/**
+ * 建议的响应：**只回操作集与差异，不写库**。
+ *
+ * 界面必须先把差异摆给使用者看，人确认之后才发 `PATCH /api/forms/:id`——
+ * 一步到位地"边生成边写入"会让"模型理解错了"变成一次真实的版本增量，
+ * 而撤销栈再干净，也不如一开始就没写进去。
+ */
+export interface SuggestPatchResponse {
+  readonly ok: true;
+  readonly ops: readonly PatchOp[];
+  readonly changes: readonly PatchChange[];
+  /** 套用之后的可发布状态；与 PATCH 返回的 issues 同源同义。 */
+  readonly issues: readonly PatchIssue[];
+  /** 产生这条建议的来源；界面据此标注「本次由 mock 脚本产生」。 */
+  readonly source: "live" | "record" | "mock";
+  readonly promptVersion: string;
+}
 
 /** 撤销：把草稿指针退回 `fromVersionId` 的父版本。 */
 export const undoDraftRequestSchema = z.object({

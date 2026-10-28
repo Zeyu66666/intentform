@@ -12,6 +12,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleLogin, handleLogout, handleMe } from "./auth.ts";
+import { handleSuggestPatch } from "./suggest-route.ts";
 import { handleSubmissions, handleSubmissionsCsv } from "./analytics-route.ts";
 import { checkCsrf, corsHeadersFor } from "./csrf.ts";
 import type { Db } from "./db/index.ts";
@@ -49,6 +50,14 @@ export const ROUTES: readonly RouteDef[] = [
   // 撤销用 `POST .../undo` 而不是 `DELETE /versions/:id`：版本行本来就不删。
   { method: "PATCH", pattern: "/api/forms/:id", handler: handlePatchForm },
   { method: "POST", pattern: "/api/forms/:id/undo", handler: handleUndoDraft },
+  // 省赛 R-03：一句话改成操作集。放在 `/undo` 之后、提交类接口之前——它不写库，
+  // 但会调上游，所以和生成一样要限流。
+  {
+    method: "POST",
+    pattern: "/api/forms/:id/suggest",
+    handler: handleSuggestPatch,
+    rateLimit: { name: "suggest", limitPerWindow: (env) => env.rateSuggestPerMin },
+  },
   { method: "GET", pattern: "/api/forms/:id/submissions", handler: handleSubmissions },
   { method: "GET", pattern: "/api/forms/:id/submissions.csv", handler: handleSubmissionsCsv },
   // 省赛 R-02：人工批改。`POST` 而不是 `PUT`：路径里没有"哪个分"，分值在体里，

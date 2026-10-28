@@ -36,6 +36,8 @@ export interface ServerEnv {
   readonly rateSubmitPerMin: number;
   /** `POST /api/generate` 的单窗口配额（每个 IP 哈希每分钟）。 */
   readonly rateGeneratePerMin: number;
+  /** `POST /api/forms/:id/suggest` 的配额：同样会调上游，所以同样计数。 */
+  readonly rateSuggestPerMin: number;
   /**
    * 生产同源部署时 `/f/:slug` 要托管的 SPA 壳文件路径；空串表示按
    * `<cwd>/web/dist/index.html`、`<cwd>/../web/dist/index.html` 自动探测。
@@ -45,6 +47,15 @@ export interface ServerEnv {
    * 而且测试需要一条**确定没有**的路径来锁住「缺产物时回什么」。
    */
   readonly webIndexHtml: string;
+  /**
+   * 原始环境变量（只读）。
+   *
+   * 存在理由：本服务把大部分配置在启动期解析成强类型字段，但 LLM 那一组是**按请求**
+   * 解析的（`POST /api/forms/:id/suggest` 要按当前 `LLM_MODE` 决定走 mock 还是上游，
+   * 而 `LLM_MODE=mock` 的测试不该被迫配 Key）。把原样 env 挂在这里，比在每个调用点
+   * 重新读 `process.env` 更可控——测试能塞一份假 env，进程里的真实环境不参与。
+   */
+  readonly rawEnv: NodeJS.ProcessEnv;
 }
 
 /** 与 `.env.example` 的 DATABASE_PATH 同一口径；`data/` 与 `*.db` 都在 .gitignore 里。 */
@@ -61,6 +72,8 @@ const MAX_SESSION_TTL_HOURS = 24 * 365;
 /** 与 `.env.example` 的 RATE_SUBMIT_PER_MIN / RATE_GENERATE_PER_MIN 同口径。 */
 const DEFAULT_RATE_SUBMIT_PER_MIN = 30;
 const DEFAULT_RATE_GENERATE_PER_MIN = 10;
+/** `POST /api/forms/:id/suggest` 与生成同源花钱，配额也同源，但单独可调。 */
+const DEFAULT_RATE_SUGGEST_PER_MIN = 10;
 const MAX_RATE_PER_MIN = 100_000;
 
 function readString(raw: string | undefined): string {
@@ -134,7 +147,15 @@ export function readServerEnv(env: NodeJS.ProcessEnv = process.env): ServerEnv {
       MAX_RATE_PER_MIN,
       "RATE_GENERATE_PER_MIN",
     ),
+    rateSuggestPerMin: readInt(
+      env["RATE_SUGGEST_PER_MIN"],
+      DEFAULT_RATE_SUGGEST_PER_MIN,
+      1,
+      MAX_RATE_PER_MIN,
+      "RATE_SUGGEST_PER_MIN",
+    ),
     webIndexHtml: readString(env["WEB_INDEX_HTML"]),
+    rawEnv: env,
   };
 }
 
