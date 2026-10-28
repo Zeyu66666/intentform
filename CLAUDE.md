@@ -7,4 +7,4 @@
 
 其他 AI 工具（Cursor / Copilot / 各类 CLI agent）如果不是通过 `CLAUDE.md` 读取，直接让它读 `AGENTS.md`。
 
-读完之后按 `AGENTS.md` 的规矩干活：先类型契约再实现、禁用库清单不许碰、一个工作单元 1–3 个 commit 且每个 commit 单独过 `pnpm typecheck`、做不到就说做不到。
+读完之后按 `AGENTS.md` 的规矩干活：先类型契约再实现、禁用库清单不许碰、提交数量由真实模块边界决定（不设配额）且每个 commit 单独过 `pnpm typecheck`、做不到就说做不到。

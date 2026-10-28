@@ -105,12 +105,12 @@ docs              证据、留痕、交付文档（见下）
 ## 已知限制
 
 改表单只支持受限的七种操作（改题干/选项/分值，加、删、移题），不做通用 Patch；版本冲突只在 HTTP 层有自动化证据、演示走 replay/mock 不证明模型输出质量、
-只在 Windows + Chrome 156 验证过。完整清单见 `docs/deliverables/参赛说明-意卷IntentForm.pdf` 第 10 页。
+只在 Windows + Chrome 156 验证过。完整清单见 `docs/deliverables/作品介绍-意卷IntentForm-v1.pdf` 的「附录 A 已知缺口」。
 
 ## 文档
 
 - `docs/evidence/README.md` —— 两种证据的边界、怎么重跑、本次运行的 commit 戳
 - `docs/evidence/video-script.md` —— 七段演示视频的录制清单
 - `docs/prompt-log/` —— 每个迭代的提问记录与 summary（含被否决的 AI 建议、真实 bug、偏离计划项）
-- `docs/deliverables/` —— 参赛说明 PDF（10 页）与生成脚本
+- `docs/deliverables/` —— 作品介绍 PDF（23 页）与生成脚本
 - `AGENTS.md` —— 模块边界、类型契约、提交纪律等硬约束（改代码前先读）
