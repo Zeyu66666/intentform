@@ -53,6 +53,15 @@ describe("detectMissingSlots", () => {
     expect(detectMissingSlots("出两道简答题")).not.toContain("count");
   });
 
+  it("书名号里的章节名算知识点（「《二次函数》」不用再问考什么）", () => {
+    expect(
+      detectMissingSlots("出一份二次函数随堂测：单选、填空、数值和简答各一道，共 20 分"),
+    ).toContain("knowledge");
+    expect(
+      detectMissingSlots("出一份《二次函数》随堂测：单选、填空、数值和简答各一道，共 20 分"),
+    ).not.toContain("knowledge");
+  });
+
   it("「分钟」不是分值（避免把时长当成满分）", () => {
     // 只有一个「分」字时判有分值会把「限时 30 分钟」当成总分；
     // 反过来只认「总分/满分/共 N 分」又会漏掉「每题 5 分」。
