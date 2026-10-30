@@ -241,10 +241,45 @@ describe("GET /api/forms/:id/submissions.csv", () => {
     const response = await call(app, "GET", `/api/forms/${quiz.formId}/submissions.csv`);
     expect(response.status).toBe(401);
   });
+  it("survey 看板只返回回收统计，不返回均分语义或 0/0 占位", async () => {
+    const { app, cookie } = await boot();
+    const survey = await createPublishedQuiz(app, cookie, "survey");
+    const before = await call<SubmissionsResponse>(
+      app,
+      "GET",
+      `/api/forms/${survey.formId}/submissions`,
+      { cookie },
+    );
+    expect(before.json.summary.kind).toBe("survey");
+    expect(before.json.summary.count).toBe(0);
+    expect(before.json.collectionStats).toEqual([
+      { itemId: "s-short", title: "收获", type: "short", total: 0, answered: 0, rate: null },
+      { itemId: "s-scale", title: "作业量", type: "scale", total: 0, answered: 0, rate: null },
+    ]);
+    expect(before.json.itemStats).toEqual([]);
+
+    await call(app, "POST", "/api/submissions", {
+      body: {
+        slug: survey.slug,
+        formVersionId: survey.versionId,
+        answers: { "s-short": "还行", "s-scale": "3" },
+      },
+    });
+    const after = await call<SubmissionsResponse>(
+      app,
+      "GET",
+      `/api/forms/${survey.formId}/submissions`,
+      { cookie },
+    );
+    expect(after.json.summary).toMatchObject({ kind: "survey", count: 1, avgScore: 0, maxScore: 0 });
+    expect(after.json.collectionStats).toEqual([
+      { itemId: "s-short", title: "收获", type: "short", total: 1, answered: 1, rate: 1 },
+      { itemId: "s-scale", title: "作业量", type: "scale", total: 1, answered: 1, rate: 1 },
+    ]);
+  });
 });
 
 /**
- * 省赛 R-04：每题正确率。
  *
  * 三个数各有各的坑，所以每个都要点名断言：
  * - **分母是提交份数**，未作答算没答对（不是"从分母里剔掉"）；

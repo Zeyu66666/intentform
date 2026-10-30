@@ -16,6 +16,7 @@ import {
   formSchema,
   type FormSchema,
   type ItemStat,
+  type CollectionStat,
   type SubmissionRow as SubmissionRowDto,
   type SubmissionSummary,
   type SubmissionsResponse,
@@ -155,6 +156,30 @@ function itemStatsOf(
   });
 }
 
+function collectionStatsOf(
+  schema: FormSchema,
+  rows: readonly SubmissionRow[],
+): readonly CollectionStat[] {
+  if (schema.meta.kind !== "survey") return [];
+  const answersByRow = rows.map((row) => parseAnswers(row.answers_json));
+  return schema.items.flatMap((item) => {
+    if (item.type === "section") return [];
+    let answered = 0;
+    for (const answers of answersByRow) {
+      const value = answers[item.id];
+      if (value !== undefined && isAnswered(value)) answered += 1;
+    }
+    return [{
+      itemId: item.id,
+      title: item.title,
+      type: item.type,
+      total: rows.length,
+      answered,
+      rate: rows.length === 0 ? null : Math.round((answered / rows.length) * 10000) / 10000,
+    }];
+  });
+}
+
 function averageScore(rows: readonly SubmissionRowDto[]): number | null {
   if (rows.length === 0) return null;
   const sum = rows.reduce((acc, row) => acc + row.score, 0);
@@ -186,6 +211,7 @@ export async function handleSubmissions(ctx: RouteContext): Promise<void> {
   const summary: SubmissionSummary = {
     versionId: resolved.versionId,
     versionN: resolved.versionN,
+    kind: resolved.schema.meta.kind,
     count: dtos.length,
     avgScore: averageScore(dtos),
     maxScore: maxScoreOf(resolved.schema),
@@ -197,6 +223,7 @@ export async function handleSubmissions(ctx: RouteContext): Promise<void> {
     rows: dtos,
     shortItems: shortItemsOf(resolved.schema),
     itemStats: itemStatsOf(resolved.schema, rows),
+    collectionStats: collectionStatsOf(resolved.schema, rows),
     coverageMatrix: coverageMatrixOf(resolved.schema),
   };
   sendJson(ctx.res, 200, response);
