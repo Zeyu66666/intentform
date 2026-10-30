@@ -410,12 +410,24 @@ export interface GradableShortItem {
 export interface SubmissionSummary {
   readonly versionId: string;
   readonly versionN: number;
+  /** 表单类型决定看板的评分区块：survey 只显示回收数，不显示分数。 */
+  readonly kind: FormKind;
   readonly count: number;
   /** 无提交时为 `null`，不要补 0——0 分和"还没有人交"是两件事。 */
   readonly avgScore: number | null;
   readonly maxScore: number;
   /** 还有待批改简答的提交条数；`0` 表示这个版本已经全部批完。 */
   readonly pendingCount: number;
+}
+
+/** 收集型表单的逐字段回收统计。 */
+export interface CollectionStat {
+  readonly itemId: string;
+  readonly title: string;
+  readonly type: "single" | "multi" | "fill" | "number" | "short" | "scale";
+  readonly total: number;
+  readonly answered: number;
+  readonly rate: number | null;
 }
 
 /**
@@ -451,6 +463,8 @@ export interface SubmissionsResponse {
   readonly shortItems: readonly GradableShortItem[];
   /** 逐题正确率（按 schema 顺序）；survey 或没有可判分题时是空数组。 */
   readonly itemStats: readonly ItemStat[];
+  /** 收集型表单的逐字段回收统计；quiz 为空数组。 */
+  readonly collectionStats: readonly CollectionStat[];
   /** 由当前版本实际 Schema 计算的知识点 × 布鲁姆覆盖矩阵。 */
   readonly coverageMatrix: CoverageMatrix;
 }
