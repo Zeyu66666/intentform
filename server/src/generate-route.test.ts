@@ -131,6 +131,21 @@ describe("parseGenerateBody · 澄清补充", () => {
     }
   });
 
+  it("kind 可显式传：survey 原样带出，非法值 400（R-09）", () => {
+    const ok = parseGenerateBody(JSON.stringify({ requirement: "做一份课程反馈问卷", kind: "survey" }));
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.request.kind).toBe("survey");
+
+    // 不传 kind 时请求形状与 R-08 之前逐字节相同（回放键不漂）。
+    const omitted = parseGenerateBody(JSON.stringify({ requirement: "做一份课程反馈问卷" }));
+    expect(omitted.ok).toBe(true);
+    if (omitted.ok) expect(omitted.request).not.toHaveProperty("kind");
+
+    const bad = parseGenerateBody(JSON.stringify({ requirement: "做一份课程反馈问卷", kind: "exam" }));
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.status).toBe(400);
+  });
+
   it("拼完超过需求字数上限 → 422（而不是把超长串塞给模型）", () => {
     const almost = "题".repeat(LIMITS.requirementMaxChars - 10);
     const result = parseGenerateBody(

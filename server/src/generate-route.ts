@@ -34,7 +34,9 @@ import {
   type FormBlueprint,
   composeRequirement,
   describeClarifications,
+  formKindSchema,
   type Clarification,
+  type FormKind,
 } from "@intentform/schema";
 
 /** 请求体上限：4000 字需求 + JSON 包装，64KiB 足够，也挡住无脑大包。 */
@@ -103,6 +105,8 @@ export interface GenerateRequest {
   readonly clarifyNote: string;
   /** 教师确认过的蓝图（R-06）；没有就是 `undefined`，生成器不发 plan 阶段。 */
   readonly blueprint?: FormBlueprint;
+  /** 教师在生成页选择的表单类型；省略时由需求文本推断。 */
+  readonly kind?: FormKind;
 }
 
 export type RequirementParseResult =
@@ -144,6 +148,12 @@ export function parseGenerateBody(text: string): RequirementParseResult {
   const requirement = raw.trim();
   if (requirement === "") {
     return { ok: false, status: 400, error: "invalid_requirement", message: "需求不能为空" };
+  }
+  const rawKind = (parsed as Record<string, unknown>)["kind"];
+  const kindResult =
+    rawKind === undefined ? { success: true as const, data: undefined } : formKindSchema.safeParse(rawKind);
+  if (!kindResult.success) {
+    return { ok: false, status: 400, error: "invalid_kind", message: "kind 必须是 quiz 或 survey" };
   }
   if (requirement.length > LIMITS.requirementMaxChars) {
     return {
@@ -195,6 +205,7 @@ export function parseGenerateBody(text: string): RequirementParseResult {
       composedRequirement,
       clarifyNote: describeClarifications(clarifications),
       ...(blueprint === undefined ? {} : { blueprint }),
+      ...(kindResult.data === undefined ? {} : { kind: kindResult.data }),
     },
   };
 }
@@ -312,6 +323,7 @@ export function createGenerateHandler(options: GenerateRouteOptions = {}): Gener
             ...(parsed.request.blueprint === undefined
               ? {}
               : { blueprint: parsed.request.blueprint }),
+            ...(parsed.request.kind === undefined ? {} : { kind: parsed.request.kind }),
             signal: controller.signal,
           },
         ),
