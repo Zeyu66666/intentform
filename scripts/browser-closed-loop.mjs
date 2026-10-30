@@ -52,6 +52,17 @@ const DEMO_PASSWORD = "intentform-demo";
 // 澄清交互单独放在第 9 步，两件事不挤在同一个步骤里互相掩盖。
 const REQUIREMENT = "出一份二次函数随堂测：单选、填空、数值和简答各一道，共 25 分，覆盖开口方向与顶点坐标";
 
+/**
+ * 第 10 步（R-09）的问卷需求。
+ *
+ * 两个刻意的约束：
+ * - 带「问卷」二字且点明题量/题型：`inferFormKind` 与蓝图都会判成 survey，
+ *   需求本身也过得了澄清（0 条追问）——这一步只验收集页链路，不验澄清；
+ * - 题量写「3 道题」：mock 问卷脚本恰好出 3 个字段（2 简答 + 1 量表），
+ *   蓝图对照因此能对上，时间线上不会出现"结构与蓝图有偏差"的噪声。
+ */
+const SURVEY_REQUIREMENT = "做一份课程反馈问卷，3 道题：2 道简答题收集收获与建议、1 道量表题打分，不判分";
+
 /** 桌面视口（教师侧）与学生手机视口（学生侧）。 */
 const DESKTOP_VIEWPORT = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false };
 const MOBILE_VIEWPORT = { width: 390, height: 844, deviceScaleFactor: 2, mobile: true };
@@ -529,6 +540,13 @@ function buildGeneratedQuiz(nodes) {
 async function itemStatRows(page) {
   return page.evaluate(
     "return Array.prototype.map.call(document.querySelectorAll('[data-testid=dash-item-stat]'), function (tr) { return Array.prototype.map.call(tr.querySelectorAll('td'), function (td) { return td.textContent.trim(); }); });",
+  );
+}
+
+// Collection stats are intentionally read from the survey dashboard rather than score fields.
+async function collectionStatRows(page) {
+  return page.evaluate(
+    "return Array.prototype.map.call(document.querySelectorAll('[data-testid=dash-collection-stat]'), function (tr) { return Array.prototype.map.call(tr.querySelectorAll('td'), function (td) { return td.textContent.trim(); }); });",
   );
 }
 
@@ -1100,6 +1118,130 @@ async function main() {
       return { slots, answerLine };
     });
 
+    // 10) 收集页闭环（省赛 R-09）：生成问卷 → 发布 → 手机填写 → 回收看板 → CSV
+    //
+    // 与第 2 步的分工：第 2 步证明"测验"能生成判分；这一步证明"问卷"能从同一个
+    // 生成页点出来（选问卷 → 蓝图 → mock 问卷脚本 → 发布），再走完收集页闭环。
+    // 三处口径在这里被断死：①问卷字段不带答案/分值；②成功卡片与看板都不出现分数
+    // （0.2 #5 的 `0/0` 与"均分 0"）；③CSV 能导出回收的答案。
+    const surveyCollection = await step("收集页闭环：生成问卷 → 填写 → 回收看板与 CSV", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/`);
+      await waitFor(
+        async () => (await page.evaluate("return bySelector('#requirement-input') !== null")),
+        "生成页需求输入框渲染",
+      );
+      const pickedKind = await page.evaluate("return clickButtonByText('^问卷$');");
+      must(pickedKind === true, "没找到「问卷」类型按钮");
+      const typed = await page.evaluate(
+        `return setValue('#requirement-input', ${JSON.stringify(SURVEY_REQUIREMENT)});`,
+      );
+      must(typed.ok === true, `问卷需求没填进去：${JSON.stringify(typed)}`);
+      must(await page.evaluate("return clickButtonByText('^生成表单$')"), "没找到「生成表单」按钮");
+
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('plan-card') !== null")),
+        "问卷蓝图卡片出现",
+        20_000,
+      );
+      const planText = await page.evaluate(
+        "var el = byTestId('plan-card'); return el === null ? '' : el.textContent;",
+      );
+      must(planText.includes("问卷"), `蓝图卡没有把表单类型标成问卷：${planText.slice(0, 120)}`);
+      const confirmPlan = await page.tap('[data-testid=plan-confirm]');
+      must(confirmPlan.ok === true, `点不到「按蓝图生成」：${JSON.stringify(confirmPlan)}`);
+      await waitFor(
+        async () => (await page.text()).includes("生成完成"),
+        "问卷生成走完（出现「生成完成」）",
+        30_000,
+      );
+      // kind 真的传到了生成链路：时间线上一句「判定为 问卷」来自服务端，不是前端写死的。
+      const generatedText = await page.text();
+      must(generatedText.includes("判定为 问卷"), "时间线没有把表单判成问卷（kind 没有传到生成链路）");
+      artifacts.push(await page.screenshot("13-survey-generated.png"));
+
+      // 发布：UI 上的「发布」按钮（与第 3 步同一入口）。
+      must(
+        await page.evaluate("return buttonLabels().some(function (t) { return /发布/.test(t); })"),
+        "问卷生成后没有发布按钮",
+      );
+      await page.evaluate("return clickButtonByText('发布')");
+      await waitFor(
+        async () => /\/f\/[a-z0-9]+/.test(await page.text()),
+        "问卷发布后页面出现学生短链",
+        12_000,
+      );
+      const slug = /\/f\/([a-z0-9]+)/.exec(await page.text())?.[1] ?? "";
+      must(slug !== "", "问卷发布成功但页面里没抓到 slug");
+      const list = await request("GET", "/api/forms", { cookie });
+      must(list.status === 200, `读取表单列表失败（${String(list.status)}）`);
+      const surveyForm = (list.json.forms ?? []).find((form) => form.slug === slug);
+      must(surveyForm !== undefined && surveyForm.kind === "survey", `发布出来的不是问卷：${JSON.stringify(surveyForm)}`);
+
+      // 学生端：手机视口填写。问卷字段没有答案/分值，ui 上没有"对错"。
+      await page.viewport(MOBILE_VIEWPORT);
+      await page.goto(`${webBase}/f/${slug}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('fill-submit') !== null")),
+        "survey 收集页渲染提交按钮",
+        20_000,
+      );
+      const surveyDetail = await request("GET", `/api/forms/${surveyForm.id}`, { cookie });
+      must(surveyDetail.status === 200, `读取 survey 详情失败（${String(surveyDetail.status)}）`);
+      const surveyItems = surveyDetail.json.schema.items;
+      must(
+        surveyItems.every((item) => item.answer === undefined && item.score === undefined),
+        `问卷字段不应带答案或分值：${JSON.stringify(surveyItems)}`,
+      );
+      for (const item of surveyItems) {
+        if (item.type === "section") continue;
+        if (item.type === "scale") {
+          const hit = await page.tap(`[data-testid="fill-${item.id}-4"]`);
+          must(hit.ok === true, `点不到 survey 量表 ${item.id}：${JSON.stringify(hit)}`);
+        } else if (item.required === true) {
+          const filled = await page.evaluate(
+            `return setValue('[data-testid="fill-${item.id}"]', "浏览器闭环 survey 填写");`,
+          );
+          must(filled.ok === true, `survey 字段 ${item.id} 没填进去：${JSON.stringify(filled)}`);
+        }
+      }
+      artifacts.push(await page.screenshot("14-survey-student.png"));
+      const submitted = await page.tap('[data-testid="fill-submit"]');
+      must(submitted.ok === true, "点不到 survey 提交按钮");
+      await waitFor(async () => (await page.text()).includes("答案已记录"), "survey 提交成功卡片", 20_000);
+      const successText = await page.text();
+      // 问卷不判分：成功卡片只有「已提交」，不许出现「得分 / 满分」。
+      must(!/\d+\s*\/\s*\d+/.test(successText), `survey 成功卡片不应出现分数：${successText.slice(0, 160)}`);
+
+      // 教师看板：回收情况 + 提交记录（无分数列）+ CSV。
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/dashboard/${surveyForm.id}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('dash-collection-stats') !== null")),
+        "survey 回收看板出现逐字段统计",
+        20_000,
+      );
+      const collectionRows = await collectionStatRows(page);
+      must(collectionRows.length > 0, "survey 看板没有逐字段回收统计");
+      const dashboardText = await page.text();
+      must(!dashboardText.includes("平均分"), "survey 看板不应出现「平均分」");
+      must(!dashboardText.includes("满分"), "survey 看板不应出现「满分」");
+      must(
+        !/\b0\s*\/\s*0\b/.test(dashboardText),
+        `survey 看板不应出现 0/0。页面文本片段：${dashboardText.replace(/\s+/g, " ").slice(0, 400)}`,
+      );
+      must(!/每题正确率/.test(dashboardText), "survey 看板不应出现每题正确率");
+      must(dashboardText.includes("回收记录"), "survey 看板没有「回收记录」标题");
+      // CSV 入口在页面上；内容用同一份会话从接口取（headless 下载不便断言）。
+      must(await page.evaluate("return byTestId('dash-csv') !== null"), "survey 看板没有 CSV 入口");
+      const csv = await request("GET", `/api/forms/${surveyForm.id}/submissions.csv`, { cookie });
+      must(csv.status === 200, `survey CSV 导出失败（${String(csv.status)}）`);
+      must(csv.text.includes("s_feedback"), `survey CSV 缺少回收字段列：${csv.text.slice(0, 200)}`);
+      must(csv.text.includes("浏览器闭环 survey 填写"), "survey CSV 里没有刚提交的答案");
+      artifacts.push(await page.screenshot("15-survey-dashboard.png"));
+      return { formId: surveyForm.id, slug, collectionRows, csvLines: csv.text.split("\r\n").length };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -1111,6 +1253,7 @@ async function main() {
       submitted,
       edited,
       clarify,
+      survey: surveyCollection,
       dashboard,
       graded,
       steps,

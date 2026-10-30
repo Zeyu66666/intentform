@@ -1034,6 +1034,61 @@ async function vc10CoverageMatrix(request) {
   must(empty !== undefined && Object.values(empty.counts).every((count) => count === 0), `VC10 空知识点单元格未保留：${JSON.stringify(empty)}`);
 }
 
+/**
+ * VC11：survey 收集页闭环（省赛 R-09）。
+ *
+ * 问卷不参与评分：看板只展示逐字段填写数/分母/填写率；随后验证学生提交
+ * 真正进入 CSV，避免只测一个静态 survey 页面。
+ */
+async function vc11SurveyCollection(request, ctx) {
+  const schema = {
+    meta: { version: 1, kind: "survey", title: "verify · 课程反馈", objectives: [] },
+    items: [
+      { id: "s-feedback", type: "short", title: "最有收获的一点", required: true, maxLength: 200 },
+      { id: "s-confidence", type: "scale", title: "掌握信心", required: true, min: 1, max: 5 },
+      { id: "s-suggest", type: "short", title: "建议", required: false, maxLength: 200 },
+    ],
+  };
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: schema.meta.title, kind: "survey", schema },
+  });
+  must(created.status === 201, `VC11 建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const formId = created.json.form.id;
+  const versionId = created.json.version.id;
+  const published = await request("POST", `/api/forms/${formId}/publish`, {
+    cookie: ctx.cookie,
+    json: { versionId },
+  });
+  must(published.status === 200, `VC11 发布失败（${String(published.status)}）：${firstLine(published.text)}`);
+  const slug = published.json.slug;
+
+  const empty = await request("GET", `/api/forms/${formId}/submissions`, { cookie: ctx.cookie });
+  must(empty.status === 200, `VC11 空看板失败（${String(empty.status)}）`);
+  must(empty.json.summary.kind === "survey", `VC11 summary.kind 应为 survey：${JSON.stringify(empty.json.summary)}`);
+  must(empty.json.collectionStats.length === 3, `VC11 应返回 3 个可回收字段：${JSON.stringify(empty.json.collectionStats)}`);
+  must(empty.json.collectionStats.every((stat) => stat.rate === null), `VC11 零提交填写率应为 null：${JSON.stringify(empty.json.collectionStats)}`);
+
+  const submitted = await request("POST", "/api/submissions", {
+    json: {
+      slug,
+      formVersionId: versionId,
+      answers: { "s-feedback": "很有收获", "s-confidence": "4" },
+    },
+  });
+  must(submitted.status === 201, `VC11 收集页提交失败（${String(submitted.status)}）：${firstLine(submitted.text)}`);
+  const dashboard = await request("GET", `/api/forms/${formId}/submissions`, { cookie: ctx.cookie });
+  must(dashboard.status === 200, `VC11 回收看板失败（${String(dashboard.status)}）`);
+  must(dashboard.json.summary.kind === "survey", "VC11 回收看板类型不是 survey");
+  must(dashboard.json.collectionStats.find((stat) => stat.itemId === "s-feedback")?.answered === 1, `VC11 简答回收数不对：${JSON.stringify(dashboard.json.collectionStats)}`);
+  must(dashboard.json.collectionStats.find((stat) => stat.itemId === "s-confidence")?.rate === 1, `VC11 量表填写率不对：${JSON.stringify(dashboard.json.collectionStats)}`);
+  must(dashboard.json.itemStats.length === 0, `VC11 survey 不应出现正确率：${JSON.stringify(dashboard.json.itemStats)}`);
+
+  const csv = await request("GET", `/api/forms/${formId}/submissions.csv`, { cookie: ctx.cookie });
+  must(csv.status === 200, `VC11 CSV 导出失败（${String(csv.status)}）`);
+  must(csv.text.includes("s-feedback") && csv.text.includes("很有收获"), `VC11 CSV 未回收填写数据：${firstLine(csv.text)}`);
+}
+
 /** 把 SSE 文本切成事件对象。注释帧（心跳 `: ping`）没有 data，自然被丢掉。 */
 function parseSse(text) {
   const events = [];
@@ -1063,6 +1118,7 @@ const CHECKS = [
   ["VC8 意图澄清：缺槽位追问 1–3 条、完整需求不问、补答在事件流里可定位", vc8Clarify],
   ["VC9 两阶段蓝图：规划自洽、补答同源、plan 阶段只在有蓝图时出现", vc9Blueprint],
   ["VC10 覆盖矩阵：实际 Schema 的知识点 × 布鲁姆计数与空单元格", vc10CoverageMatrix],
+  ["VC11 收集页闭环：survey 填写、回收看板与 CSV", vc11SurveyCollection],
 ];
 
 async function main() {
