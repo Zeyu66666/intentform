@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { FormSummary, ItemStat, SubmissionRow, SubmissionSummary } from "@intentform/schema";
+import type { CollectionStat, FormSummary, ItemStat, SubmissionRow, SubmissionSummary } from "@intentform/schema";
 
 import {
   EMPTY_SUBMISSIONS_TEXT,
   NO_AVERAGE_TEXT,
   NO_RATE_TEXT,
+  collectionRateBarWidth,
+  collectionRateText,
   correctRateText,
   rateBarWidth,
   UNPUBLISHED_TEXT,
@@ -37,7 +39,7 @@ function form(partial: Partial<FormSummary> & Pick<FormSummary, "id">): FormSumm
 }
 
 function summary(partial: Partial<SubmissionSummary>): SubmissionSummary {
-  return { versionId: "ver-2", versionN: 2, count: 0, avgScore: null, maxScore: 20, pendingCount: 0, ...partial };
+  return { versionId: "ver-2", versionN: 2, kind: "quiz", count: 0, avgScore: null, maxScore: 20, pendingCount: 0, ...partial };
 }
 
 /** 一行提交的最小合法形状：新字段（R-02 之后）统一从这里补，免得每个用例都写一遍。 */
@@ -83,6 +85,25 @@ describe("statsOf", () => {
     expect(EMPTY_SUBMISSIONS_TEXT).toBe("还没有人提交");
   });
 });
+
+function collection(partial: Partial<CollectionStat>): CollectionStat {
+  return { itemId: "s1", title: "反馈", type: "short", total: 0, answered: 0, rate: null, ...partial };
+}
+
+describe("survey 回收率", () => {
+  it("零提交显示 —，不显示 0% 或空条", () => {
+    const stat = collection({});
+    expect(collectionRateText(stat)).toBe(NO_RATE_TEXT);
+    expect(collectionRateBarWidth(stat)).toBe(0);
+  });
+
+  it("有回收时按提交份数显示填写率", () => {
+    const stat = collection({ total: 3, answered: 2, rate: 0.6667 });
+    expect(collectionRateText(stat)).toBe("66.7%");
+    expect(collectionRateBarWidth(stat)).toBe(67);
+  });
+});
+
 
 describe("表单元信息", () => {
   it("未发布 = 没有 publishedVersionId；未发布不给学生链接", () => {

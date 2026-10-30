@@ -154,9 +154,9 @@ export function App(): JSX.Element {
       setClarify({ status: "idle" });
       setPlan({ status: "idle" });
       setDrafts(EMPTY_DRAFTS);
-      start(requirementText, clarifications, blueprint);
+      start(requirementText, clarifications, blueprint, kind);
     },
-    [start],
+    [start, kind],
   );
 
   /**

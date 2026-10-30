@@ -10,6 +10,7 @@
  */
 
 import type {
+  CollectionStat,
   FormKind,
   FormStatus,
   FormSummary,
@@ -160,7 +161,17 @@ export function rateBarWidth(stat: ItemStat): number {
   return Math.round(stat.rate * 100);
 }
 
-/* ------------------------------ 人工批改（R-02） ------------------------------ */
+export function collectionRateText(stat: CollectionStat): string {
+  if (stat.rate === null) return NO_RATE_TEXT;
+  const percent = Math.round(stat.rate * 1000) / 10;
+  return `${String(percent)}%`;
+}
+
+export function collectionRateBarWidth(stat: CollectionStat): number {
+  if (stat.rate === null) return 0;
+  return Math.round(stat.rate * 100);
+}
+
 
 /**
  * 批改输入框的初值：已录过分的题显示原值，没录过的是空串。

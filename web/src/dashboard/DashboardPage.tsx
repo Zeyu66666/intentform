@@ -28,6 +28,8 @@ import {
   EMPTY_SUBMISSIONS_TEXT,
   NO_AVERAGE_TEXT,
   UNPUBLISHED_TEXT,
+  collectionRateBarWidth,
+  collectionRateText,
   correctRateText,
   formOptionLabel,
   needsGrading,
@@ -269,6 +271,7 @@ function SubmissionsSection({
   const rows = sortRowsNewestFirst(state.data.rows);
   const gradingRow = gradingId === null ? null : (rows.find((row) => row.submissionId === gradingId) ?? null);
   const hasManualItems = state.data.shortItems.length > 0;
+  const isSurvey = summary.kind === "survey";
 
   return (
     <section className="mt-2 rounded-md border border-line bg-surface p-2">
@@ -278,18 +281,22 @@ function SubmissionsSection({
             <dt className="text-muted">提交数</dt>
             <dd className="m-0 font-medium tabular-nums text-ink">{stats.count}</dd>
           </div>
-          <div className="flex items-baseline gap-1">
-            <dt className="text-muted">平均分</dt>
-            <dd
-              className={`m-0 font-medium tabular-nums ${stats.averageIsUnknown ? "text-muted" : "text-ink"}`}
-            >
-              {stats.averageText}
-            </dd>
-          </div>
-          <div className="flex items-baseline gap-1">
-            <dt className="text-muted">满分</dt>
-            <dd className="m-0 font-medium tabular-nums text-ink">{stats.maxScoreText}</dd>
-          </div>
+          {isSurvey ? null : (
+            <>
+              <div className="flex items-baseline gap-1">
+                <dt className="text-muted">平均分</dt>
+                <dd
+                  className={`m-0 font-medium tabular-nums ${stats.averageIsUnknown ? "text-muted" : "text-ink"}`}
+                >
+                  {stats.averageText}
+                </dd>
+              </div>
+              <div className="flex items-baseline gap-1">
+                <dt className="text-muted">满分</dt>
+                <dd className="m-0 font-medium tabular-nums text-ink">{stats.maxScoreText}</dd>
+              </div>
+            </>
+          )}
           <div className="flex items-baseline gap-1">
             <dt className="text-muted">版本</dt>
             <dd className="m-0 font-medium tabular-nums text-ink">{stats.versionLabel}</dd>
@@ -304,6 +311,51 @@ function SubmissionsSection({
           导出 CSV
         </a>
       </div>
+
+      {isSurvey ? (
+        <section className="mt-2" data-testid="dash-collection-stats">
+          <div className="flex flex-wrap items-baseline justify-between gap-1">
+            <h2 className="m-0 text-base font-semibold text-ink">回收情况</h2>
+            <p className="m-0 text-xs text-muted">分母 = 提交份数，未填写按未填写计</p>
+          </div>
+          {state.data.collectionStats.length === 0 ? (
+            <p className="m-0 mt-1 text-sm text-muted">这份问卷没有可回收字段</p>
+          ) : (
+            <table className="mt-1 w-full border-collapse text-sm">
+              <caption className="sr-only">问卷回收情况</caption>
+              <thead>
+                <tr className="border-b border-line text-left text-muted">
+                  <th scope="col" className="py-1 pr-2 font-medium">字段</th>
+                  <th scope="col" className="py-1 pr-2 text-right font-medium">已填写</th>
+                  <th scope="col" className="py-1 font-medium">填写率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.data.collectionStats.map((stat) => (
+                  <tr key={stat.itemId} className="border-b border-line last:border-0" data-testid="dash-collection-stat">
+                    <td className="py-1 pr-2 text-ink">{stat.title}</td>
+                    <td className="py-1 pr-2 text-right tabular-nums text-ink">
+                      {`${String(stat.answered)}/${String(stat.total)}`}
+                    </td>
+                    <td className="py-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-12 text-right tabular-nums ${stat.rate === null ? "text-muted" : "text-ink"}`}>
+                          {collectionRateText(stat)}
+                        </span>
+                        {stat.rate === null ? null : (
+                          <span aria-hidden="true" className="h-2 w-16 overflow-hidden rounded-sm bg-line">
+                            <span className="block h-full bg-accent" style={{ width: `${String(collectionRateBarWidth(stat))}%` }} />
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      ) : null}
 
       {/* 每题正确率（R-04）。survey 与纯人工判分的表没有可判对错的题，整块不出现：
           渲染一张全是 `—` 的表，比不渲染更容易被误读成「数据坏了」。 */}
@@ -417,51 +469,61 @@ function SubmissionsSection({
 
       {/* R-04 之后上面多了一张「每题正确率」表，两张表挨着时第二张的表头会被
           读成第一张的续行；给提交表一个标题，边界不靠间距猜。 */}
-      <h2 className="m-0 mt-3 text-base font-semibold text-ink">提交记录</h2>
+      {/* 问卷不判分（R-09）：没有「得分」可言，行里只留提交时间，标题叫「回收记录」。
+          给每条回收行挂一个 `0 / 0` 会被读成「全员 0 分」，正是 0.2 #5 要修的缺陷。 */}
+      <h2 className="m-0 mt-3 text-base font-semibold text-ink">{isSurvey ? "回收记录" : "提交记录"}</h2>
 
       {stats.isEmpty ? (
         <p className="m-0 mt-2 text-base text-ink" data-testid="dash-empty">
           {EMPTY_SUBMISSIONS_TEXT}
           {/* 空数据时平均分是"未知"而不是 0，这一句是防止误解的关键。 */}
-          <span className="ml-1 text-sm text-muted">{`（平均分 ${NO_AVERAGE_TEXT}，不是 0 分）`}</span>
+          {isSurvey ? null : <span className="ml-1 text-sm text-muted">{`（平均分 ${NO_AVERAGE_TEXT}，不是 0 分）`}</span>}
         </p>
       ) : (
         <table className="mt-2 w-full border-collapse text-sm" data-testid="dash-rows">
-          <caption className="sr-only">提交记录</caption>
+          <caption className="sr-only">{isSurvey ? "回收记录" : "提交记录"}</caption>
           <thead>
             <tr className="border-b border-line text-left text-muted">
               <th scope="col" className="py-1 pr-2 font-medium">
                 提交时间
               </th>
-              <th scope="col" className="py-1 pr-2 text-right font-medium">
-                得分
-              </th>
-              <th scope="col" className="py-1 pr-2 text-right font-medium">
-                简答
-              </th>
+              {isSurvey ? null : (
+                <>
+                  <th scope="col" className="py-1 pr-2 text-right font-medium">
+                    得分
+                  </th>
+                  <th scope="col" className="py-1 pr-2 text-right font-medium">
+                    简答
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.submissionId} className="border-b border-line last:border-0" data-testid="dash-row">
                 <td className="py-1 pr-2 text-ink">{formatDateTime(row.createdAt)}</td>
-                <td className="py-1 pr-2 text-right tabular-nums text-ink">{rowScoreText(row)}</td>
-                <td className="py-1 pr-2 text-right">
-                  {needsGrading(row) ? (
-                    <button
-                      type="button"
-                      data-testid={`dash-grade-${row.submissionId}`}
-                      className="min-h-[44px] rounded-sm border border-accent px-2 text-sm text-accent"
-                      onClick={() => {
-                        onToggleGrading(row.submissionId);
-                      }}
-                    >
-                      {gradingId === row.submissionId ? "收起批改" : "批改"}
-                    </button>
-                  ) : (
-                    <span className="text-xs text-muted">{pendingLabel(row.pendingScore, hasManualItems)}</span>
-                  )}
-                </td>
+                {isSurvey ? null : (
+                  <>
+                    <td className="py-1 pr-2 text-right tabular-nums text-ink">{rowScoreText(row)}</td>
+                    <td className="py-1 pr-2 text-right">
+                      {needsGrading(row) ? (
+                        <button
+                          type="button"
+                          data-testid={`dash-grade-${row.submissionId}`}
+                          className="min-h-[44px] rounded-sm border border-accent px-2 text-sm text-accent"
+                          onClick={() => {
+                            onToggleGrading(row.submissionId);
+                          }}
+                        >
+                          {gradingId === row.submissionId ? "收起批改" : "批改"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-muted">{pendingLabel(row.pendingScore, hasManualItems)}</span>
+                      )}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>

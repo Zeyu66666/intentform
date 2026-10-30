@@ -275,4 +275,15 @@ describe("createFetchStreamSource · 澄清补充（R-05）", () => {
     await collect(source({ requirement: "出一道题", clarifications: [], signal: new AbortController().signal }));
     expect(calls[0]?.body).toBe(JSON.stringify({ requirement: "出一道题" }));
   });
+
+  it("选了问卷类型时把 kind 发出去（R-09）；没选时请求体不变", async () => {
+    const calls: { body: string | undefined }[] = [];
+    const source = capture(calls);
+    await collect(
+      source({ requirement: "做一份课程反馈问卷", kind: "survey", signal: new AbortController().signal }),
+    );
+    expect(calls[0]?.body).toBe(
+      JSON.stringify({ requirement: "做一份课程反馈问卷", kind: "survey" }),
+    );
+  });
 });

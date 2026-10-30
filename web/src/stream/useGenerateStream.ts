@@ -37,6 +37,7 @@ export interface UseGenerateStreamResult {
     requirement: string,
     clarifications?: readonly Clarification[],
     blueprint?: FormBlueprint,
+    kind?: "quiz" | "survey",
   ) => void;
   readonly cancel: () => void;
   readonly reset: () => void;
@@ -86,6 +87,7 @@ export function useGenerateStream(source: StreamSource): UseGenerateStreamResult
       requirement: string,
       clarifications: readonly Clarification[] = [],
       blueprint?: FormBlueprint,
+      kind?: "quiz" | "survey",
     ): void => {
       const trimmed = requirement.trim();
       if (trimmed === "") return;
@@ -107,6 +109,7 @@ export function useGenerateStream(source: StreamSource): UseGenerateStreamResult
             requirement: trimmed,
             clarifications,
             ...(blueprint === undefined ? {} : { blueprint }),
+            ...(kind === undefined ? {} : { kind }),
             signal: controller.signal,
           })) {
             if (runId !== runIdRef.current) return;

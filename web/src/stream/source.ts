@@ -27,6 +27,8 @@ export interface GenerateRequest {
   readonly clarifications?: readonly Clarification[];
   /** 教师确认过的蓝图（R-06）；有它才发 plan 阶段。 */
   readonly blueprint?: FormBlueprint;
+  /** 教师选择的表单类型；缺省时服务端按需求推断。 */
+  readonly kind?: "quiz" | "survey";
   /** 取消信号。取消按钮 → `controller.abort()` → `reader.read()` 抛 AbortError。 */
   readonly signal: AbortSignal;
 }
@@ -91,6 +93,7 @@ export function createFetchStreamSource(options: FetchStreamSourceOptions): Stre
           ? {}
           : { clarifications: request.clarifications }),
         ...(request.blueprint === undefined ? {} : { blueprint: request.blueprint }),
+        ...(request.kind === undefined ? {} : { kind: request.kind }),
       }),
       signal: request.signal,
       credentials: "same-origin",
