@@ -2,7 +2,7 @@
 
 - 迭代：省赛 `R-08` · 日期：`2026-10-30` · 涉及模块：`server`、`scripts`、`web`、文档
 - 会话导出：本轮未导出原始会话；本文件按实际修改与命令结果整理，未把失败的浏览器启动写成成功证据
-- 提交边界：**本轮 1 个 commit**，不是多次提交：`2cd234c`
+- 提交边界：R-08 功能本轮 1 个 commit：`2cd234c`；浏览器/CDP 修复、生产截图与证据索引随后单独提交为 `782ba70`。因此 P13 相关最终有 2 个 commit，功能与证据分开。
 
 ## 开工前写清的四件事（纪律 4.0 第 1 条）
 
@@ -70,7 +70,8 @@
 
 | commit | message | 说明 |
 |---|---|---|
-| `2cd234c` | `feat(server): enforce production CSP and serve build [P13]` | 本轮唯一 commit：CSP、生产静态托管、浏览器脚本切换、测试与文档 |
+| `2cd234c` | `feat(server): enforce production CSP and serve build [P13]` | R-08 功能实现：CSP、生产静态托管、浏览器脚本切换、测试与文档 |
+| `782ba70` | `test(scripts): prove production browser loop with CSP [P13]` | Chrome 临时 profile 加 `--no-sandbox`；生产闭环 9 步全绿、14 张截图与证据索引更新 |
 
 **已知边界**（不写成能力）：
 

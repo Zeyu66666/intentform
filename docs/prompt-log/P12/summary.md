@@ -2,7 +2,7 @@
 
 - 迭代：省赛 `R-07` · 日期：`2026-10-30` · 涉及模块：`packages/schema`、`server`、`web`、`scripts`
 - 会话导出：本轮未导出原始会话；本文件按实际修改与命令结果整理，未补造不存在的会话原文
-- 提交边界：**本轮 1 个 commit**，不是多次提交：`312cfb9`
+- 提交边界：R-07 功能本轮 1 个 commit：`312cfb9`；随后因浏览器闭环共用脚本修复又产生 1 个证据提交：`782ba70`。P12 功能本身不是多次拆提交。
 
 ## 开工前写清的四件事（纪律 4.0 第 1 条）
 
@@ -69,6 +69,7 @@
 | commit | message | 说明 |
 |---|---|---|
 | `312cfb9` | `feat(schema): add knowledge bloom coverage matrix [P12]` | 本轮唯一 commit：schema 契约/纯函数、服务端响应、看板、VC10、浏览器断言与证据文档 |
+| `782ba70` | `test(scripts): prove production browser loop with CSP [P13]` | 与 R-08 共用浏览器脚本修复；补上 Chrome/CDP 生产闭环并覆盖 R-07 矩阵截图 |
 
 **已知边界**（不写成能力）：
 

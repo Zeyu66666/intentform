@@ -39,7 +39,7 @@ node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + std
 
 | 项 | 值 |
 |---|---|
-| commit | `待本轮截图与脚本修正提交后回填`（截图提交可由 `git log -1 -- "docs/evidence/*.png"` 核，README 本身的改动不算） |
+| commit | `782ba70`（生产构建闭环脚本修复与 14 张截图提交；`git log -1 -- "docs/evidence/*.png"` 可核，README 本身的改动不算） |
 | 时间 | 2026-10-28 19:30（Asia/Shanghai） |
 | 浏览器 | Chrome 156.0.8078.47（headless=new，CDP 驱动） |
 | 服务 | `LLM_MODE=mock`；`NODE_ENV=production` 的同源 Node 服务托管 `web/dist`，端口临时分配 |
