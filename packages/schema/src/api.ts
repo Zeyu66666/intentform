@@ -29,6 +29,7 @@ import {
 } from "./clarify.ts";
 import { formSchema, type FormSchema } from "./types.ts";
 import type { FormBlueprint } from "./blueprint.ts";
+import type { CoverageMatrix } from "./coverage.ts";
 import { patchOpsSchema, type PatchChange, type PatchError, type PatchOp } from "./patch.ts";
 
 /** 路由表：前后端都从这里取路径，避免 "/api/forms/:id/publish" 手写成两种拼法。 */
@@ -450,6 +451,8 @@ export interface SubmissionsResponse {
   readonly shortItems: readonly GradableShortItem[];
   /** 逐题正确率（按 schema 顺序）；survey 或没有可判分题时是空数组。 */
   readonly itemStats: readonly ItemStat[];
+  /** 由当前版本实际 Schema 计算的知识点 × 布鲁姆覆盖矩阵。 */
+  readonly coverageMatrix: CoverageMatrix;
 }
 
 /* ------------------------------- 人工批改 -------------------------------- */

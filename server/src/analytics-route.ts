@@ -19,6 +19,7 @@ import {
   type SubmissionRow as SubmissionRowDto,
   type SubmissionSummary,
   type SubmissionsResponse,
+  coverageMatrixOf,
 } from "@intentform/schema";
 import { findVersion } from "./db/forms.ts";
 import { listManualGrades, listSubmissionsByVersion, type SubmissionRow } from "./db/submissions.ts";
@@ -196,6 +197,7 @@ export async function handleSubmissions(ctx: RouteContext): Promise<void> {
     rows: dtos,
     shortItems: shortItemsOf(resolved.schema),
     itemStats: itemStatsOf(resolved.schema, rows),
+    coverageMatrix: coverageMatrixOf(resolved.schema),
   };
   sendJson(ctx.res, 200, response);
 }

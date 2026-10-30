@@ -71,6 +71,16 @@ describe("GET /api/forms/:id/submissions", () => {
       maxScore: 20,
     });
     expect(response.json.rows).toHaveLength(2);
+    expect(response.json.coverageMatrix).toEqual({
+      blooms: ["remember", "understand", "apply", "analyze", "evaluate", "create"],
+      rows: [
+        {
+          objectiveId: "kp-a",
+          objectiveName: "知识点 A",
+          counts: { remember: 1, understand: 1, apply: 2, analyze: 0, evaluate: 0, create: 0 },
+        },
+      ],
+    });
     // 行的键集合就是契约本身：**教师的看板可以看答案**（那是批改的前提），
     // 但键必须逐个点名——多出来的键（比如 `answer`、`knowledgePoint`）是回归。
     expect(Object.keys(response.json.rows[0] ?? {}).sort()).toEqual([
@@ -94,6 +104,15 @@ describe("GET /api/forms/:id/submissions", () => {
     );
     expect(response.json.summary.count).toBe(0);
     expect(response.json.summary.avgScore).toBeNull();
+    expect(response.json.coverageMatrix.rows).toHaveLength(1);
+    expect(Object.values(response.json.coverageMatrix.rows[0]?.counts ?? {})).toEqual([
+      1,
+      1,
+      2,
+      0,
+      0,
+      0,
+    ]);
   });
 
   it("跨版本不合并：v2 的看板看不到 v1 的提交", async () => {

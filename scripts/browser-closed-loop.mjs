@@ -534,6 +534,13 @@ async function itemStatRows(page) {
   );
 }
 
+/** 看板「知识点 × 布鲁姆覆盖」矩阵的行文本（R-07）。 */
+async function coverageMatrixRows(page) {
+  return page.evaluate(
+    "var table = document.querySelector('[data-testid=dash-coverage-matrix]'); return table === null ? [] : Array.prototype.map.call(table.querySelectorAll('tbody tr'), function (tr) { return Array.prototype.map.call(tr.querySelectorAll('th,td'), function (cell) { return cell.textContent.trim(); }); });",
+  );
+}
+
 const steps = [];
 const artifacts = [];
 
@@ -751,6 +758,12 @@ async function main() {
         emptyStats.every((cells) => cells[3] === "—"),
         `零提交时正确率应显示 —（不是 0%），实际 ${JSON.stringify(emptyStats)}`,
       );
+      const emptyCoverage = await coverageMatrixRows(page);
+      must(emptyCoverage.length > 0, "看板上没有「知识点 × 布鲁姆覆盖」区块");
+      must(
+        emptyCoverage.every((cells) => cells.slice(1).every((cell) => cell === "0")),
+        `零提交时覆盖矩阵应保留空单元格，实际 ${JSON.stringify(emptyCoverage)}`,
+      );
       artifacts.push(await page.screenshot("03b-published-dashboard.png"));
       return {
         mode,
@@ -894,6 +907,12 @@ async function main() {
       must(
         statCells.every((cells) => cells[3] === "100%"),
         `全部答对时每题正确率应为 100%，实际 ${JSON.stringify(statCells)}`,
+      );
+      const coverage = await coverageMatrixRows(page);
+      must(coverage.length > 0, "看板上没有覆盖矩阵行");
+      must(
+        coverage.some((cells) => cells.slice(1).some((cell) => cell !== "0")),
+        `覆盖矩阵没有渲染实际题目标注，实际 ${JSON.stringify(coverage)}`,
       );
       const stats = await page.text();
       return {

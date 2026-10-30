@@ -16,7 +16,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import type { FormSummary, SubmissionsResponse } from "@intentform/schema";
+import { BLOOM_LEVELS, type FormSummary, type SubmissionsResponse } from "@intentform/schema";
 
 import { describeFailure, isUnauthorized } from "../api/failures";
 import type { ApiFailure } from "../api/http";
@@ -377,6 +377,44 @@ function SubmissionsSection({
         </section>
       )}
 
+      {state.data.coverageMatrix.rows.length === 0 ? null : (
+        <section className="mt-3" data-testid="dash-coverage-matrix">
+          <div className="flex flex-wrap items-baseline justify-between gap-1">
+            <h2 className="m-0 text-base font-semibold text-ink">知识点 × 布鲁姆覆盖</h2>
+            <p className="m-0 text-xs text-muted">按当前版本实际题目统计，0 表示尚未覆盖</p>
+          </div>
+          <div className="mt-1 overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse text-sm">
+              <caption className="sr-only">知识点 × 布鲁姆覆盖矩阵</caption>
+              <thead>
+                <tr className="border-b border-line text-left text-muted">
+                  <th scope="col" className="py-1 pr-2 font-medium">知识点</th>
+                  {BLOOM_LEVELS.map((bloom) => (
+                    <th key={bloom} scope="col" className="px-1 py-1 text-center font-medium">
+                      {bloomLabel(bloom)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {state.data.coverageMatrix.rows.map((row) => (
+                  <tr key={row.objectiveId} className="border-b border-line last:border-0">
+                    <th scope="row" className="py-1 pr-2 text-left font-medium text-ink">
+                      {row.objectiveName}
+                    </th>
+                    {BLOOM_LEVELS.map((bloom) => (
+                      <td key={bloom} className="px-1 py-1 text-center tabular-nums text-ink">
+                        {String(row.counts[bloom])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* R-04 之后上面多了一张「每题正确率」表，两张表挨着时第二张的表头会被
           读成第一张的续行；给提交表一个标题，边界不靠间距猜。 */}
       <h2 className="m-0 mt-3 text-base font-semibold text-ink">提交记录</h2>
@@ -444,6 +482,19 @@ function SubmissionsSection({
       )}
     </section>
   );
+}
+
+const BLOOM_LABELS = {
+  remember: "记忆",
+  understand: "理解",
+  apply: "应用",
+  analyze: "分析",
+  evaluate: "评价",
+  create: "创造",
+} as const;
+
+function bloomLabel(bloom: (typeof BLOOM_LEVELS)[number]): string {
+  return BLOOM_LABELS[bloom];
 }
 
 /**

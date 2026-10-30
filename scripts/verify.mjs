@@ -736,7 +736,13 @@ function answerPartly(scoredIds, items, _ctx) {
  */
 async function vc7ItemStats(request, ctx) {
   const schema = {
-    meta: { version: 1, kind: "quiz", title: "verify · 逐题正确率", objectives: [], totalScore: 10 },
+    meta: {
+      version: 1,
+      kind: "quiz",
+      title: "verify · 逐题正确率",
+      objectives: [{ id: "kp-basic", name: "基础运算" }],
+      totalScore: 10,
+    },
     items: [
       {
         id: "s-one",
@@ -748,6 +754,8 @@ async function vc7ItemStats(request, ctx) {
         ],
         answer: "op2",
         score: 5,
+        bloom: "remember",
+        knowledgePoint: "kp-basic",
         required: true,
       },
       {
@@ -760,6 +768,8 @@ async function vc7ItemStats(request, ctx) {
         ],
         answer: "op4",
         score: 5,
+        bloom: "apply",
+        knowledgePoint: "kp-basic",
         required: true,
       },
     ],
@@ -783,6 +793,19 @@ async function vc7ItemStats(request, ctx) {
   must(
     Array.isArray(empty.json.itemStats) && empty.json.itemStats.length === 2,
     `VC7 零提交时应有 2 条逐题统计，实际 ${JSON.stringify(empty.json.itemStats)}`,
+  );
+  const matrix = empty.json.coverageMatrix;
+  must(
+    matrix !== undefined && Array.isArray(matrix.blooms) && matrix.blooms.length === 6,
+    `VC7 覆盖矩阵缺少六级布鲁姆列，实际 ${JSON.stringify(matrix)}`,
+  );
+  must(Array.isArray(matrix?.rows) && matrix.rows.length === 1, `VC7 矩阵应有 1 个知识点行，实际 ${JSON.stringify(matrix?.rows)}`);
+  must(
+    matrix.rows[0]?.objectiveId === "kp-basic" &&
+      matrix.rows[0]?.counts.remember === 1 &&
+      matrix.rows[0]?.counts.apply === 1 &&
+      matrix.rows[0]?.counts.understand === 0,
+    `VC7 矩阵计数不对：${JSON.stringify(matrix?.rows)}`,
   );
   for (const stat of empty.json.itemStats) {
     must(stat.total === 0, `VC7 零提交时 total 应为 0，实际 ${String(stat.total)}`);
@@ -941,6 +964,76 @@ async function vc9Blueprint(request) {
   );
 }
 
+/**
+ * VC10：知识点 × 布鲁姆覆盖矩阵（省赛 R-07）。
+ *
+ * 矩阵必须来自当前版本的真实 Schema：六个层级固定可见，声明的知识点保留空单元格，
+ * 未标注的字段不被猜测成覆盖，也不产生任何补题操作。
+ */
+async function vc10CoverageMatrix(request) {
+  const schema = {
+    meta: {
+      version: 1,
+      kind: "quiz",
+      title: "verify · 覆盖矩阵",
+      objectives: [
+        { id: "kp-basic", name: "基础运算" },
+        { id: "kp-empty", name: "未覆盖知识点" },
+      ],
+      totalScore: 10,
+    },
+    items: [
+      {
+        id: "m-one",
+        type: "single",
+        title: "概念题",
+        options: [{ id: "a", text: "对" }, { id: "b", text: "错" }],
+        answer: "a",
+        score: 5,
+        bloom: "remember",
+        knowledgePoint: "kp-basic",
+        required: true,
+      },
+      {
+        id: "m-two",
+        type: "single",
+        title: "应用题",
+        options: [{ id: "a", text: "对" }, { id: "b", text: "错" }],
+        answer: "a",
+        score: 5,
+        bloom: "apply",
+        knowledgePoint: "kp-basic",
+        required: true,
+      },
+      { id: "m-note", type: "short", title: "未标注题", required: false, maxLength: 100 },
+    ],
+  };
+  const login = await request("POST", "/api/auth/login", {
+    json: { email: DEMO_EMAIL, password: DEMO_PASSWORD },
+  });
+  must(login.status === 200, `VC10 登录失败（${String(login.status)}）`);
+  const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
+  const created = await request("POST", "/api/forms", {
+    cookie,
+    json: { title: schema.meta.title, kind: "quiz", schema },
+  });
+  must(created.status === 201, `VC10 建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const published = await request("POST", `/api/forms/${created.json.form.id}/publish`, {
+    cookie,
+    json: { versionId: created.json.version.id },
+  });
+  must(published.status === 200, `VC10 发布失败（${String(published.status)}）`);
+  const response = await request("GET", `/api/forms/${created.json.form.id}/submissions`, { cookie });
+  must(response.status === 200, `VC10 看板失败（${String(response.status)}）`);
+  const matrix = response.json.coverageMatrix;
+  must(JSON.stringify(matrix.blooms) === JSON.stringify(["remember", "understand", "apply", "analyze", "evaluate", "create"]), "VC10 布鲁姆列不完整");
+  must(matrix.rows.length === 2, `VC10 知识点行数应为 2，实际 ${String(matrix.rows.length)}`);
+  const covered = matrix.rows.find((row) => row.objectiveId === "kp-basic");
+  const empty = matrix.rows.find((row) => row.objectiveId === "kp-empty");
+  must(covered?.counts.remember === 1 && covered.counts.apply === 1 && covered.counts.understand === 0, `VC10 已覆盖行计数不对：${JSON.stringify(covered)}`);
+  must(empty !== undefined && Object.values(empty.counts).every((count) => count === 0), `VC10 空知识点单元格未保留：${JSON.stringify(empty)}`);
+}
+
 /** 把 SSE 文本切成事件对象。注释帧（心跳 `: ping`）没有 data，自然被丢掉。 */
 function parseSse(text) {
   const events = [];
@@ -969,6 +1062,7 @@ const CHECKS = [
   ["VC7 每题正确率：分母是提交份数、未作答按未答对计、零提交 rate 为 null", vc7ItemStats],
   ["VC8 意图澄清：缺槽位追问 1–3 条、完整需求不问、补答在事件流里可定位", vc8Clarify],
   ["VC9 两阶段蓝图：规划自洽、补答同源、plan 阶段只在有蓝图时出现", vc9Blueprint],
+  ["VC10 覆盖矩阵：实际 Schema 的知识点 × 布鲁姆计数与空单元格", vc10CoverageMatrix],
 ];
 
 async function main() {
