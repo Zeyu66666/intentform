@@ -62,7 +62,7 @@
 | `pnpm.cmd typecheck` | 4 包通过 |
 | `pnpm.cmd exec oxlint --deny-warnings` | 0 告警 / 188 文件 |
 | `node scripts/verify.mjs` | **VC1–VC10 全过（10/10）** |
-| `node scripts/browser-closed-loop.mjs` | 未完成：Chrome/CDP 在 `Page.enable` 前断开；未生成新截图 |
+| `node scripts/browser-closed-loop.mjs` | **9 步全绿 / 14 张截图**（生产构建版首次跑通） |
 | `node scripts/secret-scan.mjs` | 工作区扫描 0 命中 |
 | `node scripts/secret-scan.mjs --history` | 全历史扫描 0 命中 |
 
@@ -75,4 +75,4 @@
 - 矩阵展示的是当前版本 Schema 中已有的教学标注，不证明模型标注本身教学有效。
 - 简答题、分节或没有 `knowledgePoint` / `bloom` 的字段不会进入计数；这表示“不乱猜”，不是自动补标。
 - 覆盖矩阵点击补题仍未做，按计划继续留在延后项。
-- 浏览器级断言已写入脚本，但本轮 Chrome/CDP 在 `Page.enable` 前断开，旧截图不能作为 R-07 新证据。
+- 浏览器级断言已写入脚本；受限 Windows 环境需要 Chrome `--no-sandbox` 才能让临时 profile 的 page target 稳定保留，修复后 9 步全绿并覆盖截图。

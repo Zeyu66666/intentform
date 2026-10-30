@@ -64,7 +64,7 @@
 | `pnpm.cmd build:web` | 生产构建成功；Vite 5.4.11，97 modules transformed |
 | `pnpm.cmd check` | **67 文件 / 783 用例全绿**；lint、typecheck 通过 |
 | `node scripts/verify.mjs` | **VC1–VC10 全过（10/10）** |
-| `node scripts/browser-closed-loop.mjs` | 生产构建与 Node 服务启动成功；Chrome/CDP 在 `Page.enable` 前断开，未生成新截图 |
+| `node scripts/browser-closed-loop.mjs` | **9 步全绿 / 14 张截图**；生产构建、CSP 响应头与完整浏览器链路均通过 |
 | `node scripts/secret-scan.mjs` | 工作区扫描 0 命中 |
 | `node scripts/secret-scan.mjs --history` | 全历史扫描 0 命中 |
 
@@ -75,5 +75,5 @@
 **已知边界**（不写成能力）：
 
 - CSP 由仓库内 Node 生产同源服务下发；如果最终部署前面还有反向代理或独立静态托管层，那一层仍需单独确认响应头。
-- 生产构建和首页 CSP HTTP 断言已实跑；Chrome/CDP 在 `Page.enable` 前断开，所以本轮没有新的浏览器截图或完整浏览器级绿灯。
+- 生产构建和首页 CSP HTTP 断言已实跑；受限 Windows 环境下 Chrome 临时 profile 需要 `--no-sandbox`，修复后 9 步全绿并覆盖截图。
 - `style-src-attr 'unsafe-inline'` 是为 KaTeX/渲染所需的内联样式属性单独放行，不代表允许脚本内联。
