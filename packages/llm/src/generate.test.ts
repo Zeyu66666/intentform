@@ -71,6 +71,16 @@ describe("generateForm · mock 模式", () => {
     }
   });
 
+  it("教师选择 survey 时，生成器把 kind 传给 mock 生成源并产出无答案字段", async () => {
+    const bodies: SseEventBody[] = [];
+    for await (const body of generateForm(
+      { config: MOCK_CONFIG },
+      { requirement: "请收集课堂反馈", kind: "survey" },
+    )) bodies.push(body);
+    const fields = bodies.filter((body): body is Extract<SseEventBody, { type: "field" }> => body.type === "field");
+    expect(bodies.at(-1)).toMatchObject({ type: "done" });
+    expect(fields.some((field) => "answer" in field.node || "score" in field.node)).toBe(false);
+  });
   it("修复环是真实路径：坏行 → field_error → repair(fixed) → 补回 field，门禁照样放行", async () => {
     const bodies = await collect({ config: MOCK_CONFIG }, "出一份初二数学测验，8 道题");
 

@@ -138,11 +138,13 @@ export async function* generateForm(
     readonly startedAt: number;
     readonly signal?: AbortSignal;
     readonly blueprint?: FormBlueprint;
+    readonly kind?: FormKind;
   } = {
     requirement,
     startedAt,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.blueprint === undefined ? {} : { blueprint: options.blueprint }),
+    ...(options.kind === undefined ? {} : { kind: options.kind }),
   };
 
   yield { type: "phase", phase: "understand", ts: clock() };

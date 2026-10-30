@@ -48,6 +48,8 @@ export interface StreamInput {
   readonly promptVersion?: string;
   /** 已确认的蓝图：只对生成提示有效，会作为硬约束块进用户消息。 */
   readonly blueprint?: FormBlueprint;
+  /** 教师选择的表单类型；省略时由需求文本推断。 */
+  readonly kind?: "quiz" | "survey";
   /** 完全覆写消息（蓝图链路用自己的提示词）；缺省按需求 + 版本 + 蓝图组装。 */
   readonly messages?: readonly ChatMessage[];
 }
@@ -266,8 +268,17 @@ export function createReplaySource(
  */
 export const MOCK_BROKEN_LINE_ID = "q_repair_demo";
 
-export function mockLines(requirement: string): readonly string[] {
+export function mockLines(requirement: string, kind: "quiz" | "survey" = "quiz"): readonly string[] {
   const title = requirement.trim().slice(0, 12).replace(/\s+/g, " ") || "未命名需求";
+  if (kind === "survey") {
+    const lines = [
+      { type: "section", id: "sec_survey", title: `模拟问卷：${title}`, description: "mock 模式输出，仅用于联调" },
+      { type: "short", id: "s_feedback", title: "这次课程最有收获的一点是什么？", required: true, maxLength: 200 },
+      { type: "scale", id: "s_confidence", title: "你对本章内容的掌握信心有多大？", required: true, min: 1, max: 5, labels: ["没把握", "很有把握"] },
+      { type: "short", id: "s_suggest", title: "还有什么建议？", required: false, maxLength: 200 },
+    ];
+    return lines.map((line) => `${JSON.stringify(line)}\n`);
+  }
   const lines = [
     { type: "section", id: "sec_main", title: `模拟表单：${title}`, description: "mock 模式输出，仅用于联调" },
     {
@@ -348,7 +359,7 @@ export function createMockSource(options: MockSourceOptions = {}): DeltaSource {
   return {
     label: "mock",
     async *stream(input: StreamInput): AsyncGenerator<SourceDelta, void, undefined> {
-      const lines = mockLines(input.requirement);
+      const lines = mockLines(input.requirement, input.kind ?? "quiz");
       let elapsed = 0;
       for (const line of lines) {
         if (chunkDelayMs > 0) await sleep(chunkDelayMs, input.signal, clock);
