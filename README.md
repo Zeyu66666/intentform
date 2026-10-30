@@ -52,16 +52,17 @@ teacher@example.com / intentform-demo
 
 ```bash
 pnpm typecheck                  # 4 个包
-npx vitest run                  # 59 文件 / 685 用例
+npx vitest run                  # 67 文件 / 789 用例
 pnpm lint                       # oxlint --deny-warnings
-node scripts/verify.mjs         # VC1–VC6，HTTP 语义闭环，自起服务 + 临时库
+node scripts/verify.mjs         # VC1–VC11，HTTP 语义闭环，自起服务 + 临时库
 node scripts/browser-closed-loop.mjs   # 生产构建 + 真浏览器闭环；同时断言 CSP 响应头
 pnpm eval                       # 整份需求达标率（默认 replay，不用 Key；出报告到 eval/runs/）
 ```
 
 `verify.mjs` 不用浏览器、不碰你的 `data/intentform.db`，会自己起一个临时服务再关掉。
 `browser-closed-loop.mjs` 需要本机 Chrome（`CHROME_PATH` 可指定；找不到会 `exit 2` 而不是静默跳过），
-它启动服务 + vite + headless Chrome，点完九步（含教师批改、编辑器里一句话改）并把截图写进 `docs/evidence/`。
+它先构建生产前端、再由同源 Node 服务托管，用 headless Chrome 点完十步（含教师批改、编辑器里一句话改、
+生成问卷并走完收集页闭环）并把截图写进 `docs/evidence/`。
 
 期望输出：
 
@@ -72,7 +73,12 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 [verify] VC4 生成→发布→提交→看板：SSE 组装、得分对账、CSV 表头 … 通过
 [verify] VC5 人工批改：简答录分、待批归零、看板与 CSV 同口径 … 通过
 [verify] VC6 受限修改与撤销：PATCH 追加版本、旧 baseVersionId 409、undo 回退 … 通过
-[verify] 全部通过（6/6）
+[verify] VC7 每题正确率：分母是提交份数、未作答按未答对计、零提交 rate 为 null … 通过
+[verify] VC8 意图澄清：缺槽位追问 1–3 条、完整需求不问、补答在事件流里可定位 … 通过
+[verify] VC9 两阶段蓝图：规划自洽、补答同源、plan 阶段只在有蓝图时出现 … 通过
+[verify] VC10 覆盖矩阵：实际 Schema 的知识点 × 布鲁姆计数与空单元格 … 通过
+[verify] VC11 收集页闭环：survey 填写、回收看板与 CSV … 通过
+[verify] 全部通过（11/11）
 ```
 
 ## 目录
