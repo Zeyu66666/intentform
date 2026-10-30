@@ -14,8 +14,9 @@
  * 换来的是评审能把整条 HTTP 链路一次读完。
  */
 
-import { existsSync } from "node:fs";
-import { createServer } from "node:http";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { createServer, type ServerResponse } from "node:http";
+import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -32,6 +33,7 @@ import { openDatabase } from "./db/index.ts";
 import { readServerEnv, type ServerEnv } from "./env.ts";
 import { clientIp } from "./http.ts";
 import { createRateLimiter, rateLimitKey } from "./rate-limit.ts";
+import { isProductionEnvironment, PRODUCTION_CONTENT_SECURITY_POLICY } from "./security.ts";
 
 export interface ServerConfig {
   readonly port: number;
@@ -47,6 +49,47 @@ function parsePort(raw: string | undefined): number {
     throw new Error(`invalid PORT: ${raw}`);
   }
   return parsed;
+}
+
+function acceptsHtml(accept: string | string[] | undefined): boolean {
+  const value = Array.isArray(accept) ? accept.join(",") : (accept ?? "");
+  return value.includes("text/html");
+}
+
+function contentTypeFor(pathname: string): string {
+  const extension = extname(pathname).toLowerCase();
+  if (extension === ".js" || extension === ".mjs") return "text/javascript; charset=utf-8";
+  if (extension === ".css") return "text/css; charset=utf-8";
+  if (extension === ".html") return "text/html; charset=utf-8";
+  if (extension === ".json") return "application/json; charset=utf-8";
+  if (extension === ".svg") return "image/svg+xml";
+  if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".webp") return "image/webp";
+  if (extension === ".woff2") return "font/woff2";
+  return "application/octet-stream";
+}
+
+function readWebFile(indexHtml: string, pathname: string): { readonly body: Buffer; readonly contentType: string } | undefined {
+  const root = resolve(indexHtml, "..");
+  const relative = pathname === "/" ? "index.html" : pathname.slice(1);
+  const candidate = resolve(root, relative);
+  if (candidate !== root && !candidate.startsWith(`${root}\\`) && !candidate.startsWith(`${root}/`)) {
+    return undefined;
+  }
+  try {
+    if (!statSync(candidate).isFile()) return undefined;
+    return { body: readFileSync(candidate), contentType: contentTypeFor(candidate) };
+  } catch {
+    return undefined;
+  }
+}
+
+function sendWebFile(res: ServerResponse, file: { readonly body: Buffer; readonly contentType: string }): void {
+  res.statusCode = 200;
+  res.setHeader("content-type", file.contentType);
+  res.setHeader("cache-control", file.contentType.startsWith("text/html") ? "no-store" : "public, max-age=31536000, immutable");
+  res.end(file.body);
 }
 
 /** 读取并校验启动配置。任何非法值在启动阶段就抛错。 */
@@ -83,6 +126,7 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
 
   // I4 持久层：数据库打开即完成幂等迁移，句柄跟着这条连接活。
   const serverEnv: ServerEnv = readServerEnv(env);
+  const production = isProductionEnvironment(serverEnv.rawEnv);
   const db = openDatabase(serverEnv.databasePath);
   // 限流器在 `main.ts` 建、同时交给 API 应用和 `/api/generate`：两条写路径共用
   // 同一份内存计数，否则「生成限流」和「提交限流」会各自从 0 开始，也就没有全局视图。
@@ -91,6 +135,36 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
 
   const server = createServer((req, res) => {
     const pathname = (req.url ?? "/").split("?")[0] ?? "/";
+
+    if (production) {
+      res.setHeader("content-security-policy", PRODUCTION_CONTENT_SECURITY_POLICY);
+      res.setHeader("x-content-type-options", "nosniff");
+      res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
+    }
+
+    // 生产同源部署直接由 Node 托管 Vite 产物；开发期仍由 Vite dev server 负责。
+    // `/f/:slug` 留给 API 应用处理，它要区分 HTML 壳与学生 JSON。
+    if (production && serverEnv.webIndexHtml !== "" && req.method === "GET" && pathname !== "/healthz" && !pathname.startsWith("/api/") && !pathname.startsWith("/f/") && acceptsHtml(req.headers.accept)) {
+      const file = readWebFile(serverEnv.webIndexHtml, "/");
+      if (file === undefined) {
+        res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ ok: false, error: "not_found", message: "未找到前端构建产物" }));
+      } else {
+        sendWebFile(res, file);
+      }
+      return;
+    }
+
+    if (production && serverEnv.webIndexHtml !== "" && req.method === "GET" && pathname.startsWith("/assets/")) {
+      const file = readWebFile(serverEnv.webIndexHtml, pathname);
+      if (file === undefined) {
+        res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ ok: false, error: "not_found" }));
+      } else {
+        sendWebFile(res, file);
+      }
+      return;
+    }
 
     if (req.method === "GET" && pathname === "/healthz") {
       const body = JSON.stringify(healthPayload(config));

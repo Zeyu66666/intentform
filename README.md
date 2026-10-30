@@ -55,7 +55,7 @@ pnpm typecheck                  # 4 个包
 npx vitest run                  # 59 文件 / 685 用例
 pnpm lint                       # oxlint --deny-warnings
 node scripts/verify.mjs         # VC1–VC6，HTTP 语义闭环，自起服务 + 临时库
-node scripts/browser-closed-loop.mjs   # 真浏览器九步，落十二张图到 docs/evidence/
+node scripts/browser-closed-loop.mjs   # 生产构建 + 真浏览器闭环；同时断言 CSP 响应头
 pnpm eval                       # 整份需求达标率（默认 replay，不用 Key；出报告到 eval/runs/）
 ```
 

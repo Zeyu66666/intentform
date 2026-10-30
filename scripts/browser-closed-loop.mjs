@@ -14,10 +14,10 @@
  *   EVIDENCE_DIR     截图目录，缺省 `docs/evidence`（相对仓库根）。
  *   KEEP_RUN_DIR=1   保留临时目录（库文件、vite 日志、chrome 用户目录），默认跑完删掉。
  *
- * 它自己起三个进程，跑完全部收掉：
+ * 它自己起两个进程，跑完全部收掉：
  *   1. `server/src/seed.ts`（一次性写入演示教师 + 2 张表单 + 30 条提交，库在临时目录）；
- *   2. `server/src/main.ts`，`LLM_MODE=mock`（确定性生成流，不联网、不花额度）；
- *   3. `web/node_modules/vite/bin/vite.js`（dev server，代理 /api 与 /f 到上面那个服务）；
+ *   2. `server/src/main.ts`，`NODE_ENV=production` + `WEB_INDEX_HTML=web/dist/index.html`
+ *     （生产构建由同一个 Node 服务托管，确定性生成流不联网、不花额度）；
  * 然后启动 headless Chrome，用 **CDP**（WebSocket + JSON-RPC）驱动页面。
  * 不装任何依赖：`fetch` 与全局 `WebSocket` 都是 Node 内置。
  *
@@ -38,7 +38,6 @@ import { setTimeout as sleep } from "node:timers/promises";
 const ROOT = resolve(import.meta.dirname, "..");
 const SERVER_ENTRY = join(ROOT, "server", "src", "main.ts");
 const SEED_ENTRY = join(ROOT, "server", "src", "seed.ts");
-const VITE_ENTRY = join(ROOT, "web", "node_modules", "vite", "bin", "vite.js");
 const EVIDENCE_DIR = resolve(ROOT, process.env["EVIDENCE_DIR"] ?? join("docs", "evidence"));
 
 /** 演示账号：`server/src/seed.ts` 里写死的那个（密码只在本机演示库生效）。 */
@@ -182,32 +181,28 @@ async function spawnServer(env, port) {
   return { child, sink };
 }
 
-async function spawnVite(webPort, apiPort) {
-  if (!existsSync(VITE_ENTRY)) {
-    throw new Error(`找不到 vite：${VITE_ENTRY}（先在仓库根跑 pnpm install）`);
-  }
+async function buildWeb() {
+  const command = process.platform === "win32" ? (process.env["ComSpec"] ?? "cmd.exe") : "pnpm";
+  const args =
+    process.platform === "win32"
+      ? ["/d", "/s", "/c", "pnpm.cmd --filter @intentform/web build"]
+      : ["--filter", "@intentform/web", "build"];
   const sink = { stdout: [], stderr: [] };
-  const child = spawn(
-    process.execPath,
-    [VITE_ENTRY, "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"],
-    {
-      cwd: join(ROOT, "web"),
-      env: { ...process.env, VITE_DEV_PROXY_TARGET: `http://127.0.0.1:${String(apiPort)}` },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const child = spawn(command, args, {
+    cwd: ROOT,
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   collect(child, sink);
-  const base = `http://127.0.0.1:${String(webPort)}`;
-  await waitFor(
-    async () => {
-      const response = await fetch(`${base}/`).catch(() => null);
-      return response !== null && response.ok;
-    },
-    `vite 就绪（stderr=${sink.stderr.join("").slice(-400)}）`,
-    60_000,
-    250,
-  );
-  return { child, sink };
+  const code = await new Promise((resolveCode) => child.on("exit", resolveCode));
+  if (code !== 0) {
+    throw new Error(`生产前端构建失败（exit ${String(code)}）：\n${sink.stderr.join("")}${sink.stdout.join("")}`);
+  }
+}
+
+async function spawnProductionServer(env, port) {
+  const server = await spawnServer(env, port);
+  return server;
 }
 
 function resolveChrome() {
@@ -571,10 +566,9 @@ async function main() {
   const dbPath = join(runDir, "loop.db");
   const chromeProfile = join(runDir, "chrome-profile");
   const apiPort = await findFreePort();
-  const webPort = await findFreePort();
   const debugPort = await findFreePort();
   const apiBase = `http://127.0.0.1:${String(apiPort)}`;
-  const webBase = `http://127.0.0.1:${String(webPort)}`;
+  const webBase = apiBase;
 
   const env = {
     PORT: String(apiPort),
@@ -583,8 +577,10 @@ async function main() {
     SESSION_SECRET: `loop-session-${randomUUID()}`,
     SESSION_TTL_HOURS: "1",
     COOKIE_SECURE: "false",
-    // 浏览器从 vite 的源出发，所以 APP_ORIGIN 是 vite 的地址（CSRF 逐字节比对 Origin）。
+    // 生产同源部署时页面与 API 共用一个来源（CSRF 逐字节比对 Origin）。
     APP_ORIGIN: webBase,
+    NODE_ENV: "production",
+    WEB_INDEX_HTML: join(ROOT, "web", "dist", "index.html"),
     LLM_MODE: "mock",
     ARGON2_MEMORY_KIB: "8192",
   };
@@ -594,11 +590,10 @@ async function main() {
   let failure = null;
 
   try {
+    await buildWeb();
     await runToCompletion(SEED_ENTRY, env, "种子数据写入");
-    const server = await spawnServer(env, apiPort);
+    const server = await spawnProductionServer(env, apiPort);
     children.push(server.child);
-    const vite = await spawnVite(webPort, apiPort);
-    children.push(vite.child);
     const browser = await spawnChrome(chrome, debugPort, chromeProfile);
     children.push(browser.child);
 
@@ -609,6 +604,12 @@ async function main() {
     const page = new Page(cdp);
 
     const request = makeApi(apiBase, webBase);
+    const csp = await fetch(`${webBase}/`, { headers: { accept: "text/html" } });
+    const cspHeader = csp.headers.get("content-security-policy") ?? "";
+    must(csp.ok, `生产首页不可访问（${String(csp.status)}）`);
+    must(cspHeader.includes("script-src 'self'"), `生产首页缺少 script-src 'self'：${cspHeader}`);
+    must(cspHeader.includes("style-src-attr 'unsafe-inline'"), `生产首页缺少 KaTeX style 放行：${cspHeader}`);
+    must(!cspHeader.includes("script-src 'unsafe-inline'"), `CSP 不得放开脚本内联：${cspHeader}`);
     // 脚本自己在 Node 里也登一次：它要用这份会话去读表单详情（学生页得按 schema 答题）、
     // 以及在 UI 还没提供「保存并发布」时兜底建表单。浏览器有自己独立的会话 cookie。
     const nodeLogin = await request("POST", "/api/auth/login", {
@@ -1099,7 +1100,7 @@ async function main() {
     const summary = {
       ok: true,
       chrome,
-      ports: { api: apiPort, web: webPort, cdp: debugPort },
+      ports: { app: apiPort, cdp: debugPort },
       form: { formId: publish.formId, slug: publish.slug, publishMode: publish.mode },
       login,
       generate: { source: generate.source },

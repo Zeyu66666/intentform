@@ -16,6 +16,8 @@
 **不调用任何模型**。这样截图每次一致，但也就意味着——它证明的是"链路通电"，不是"模型答得好"。
 需要后者时看 `fixtures/replays/` 的三条回放（`LLM_MODE=replay`，同样不调模型）与《计划 v3.0》§7 的 live 说明。
 
+从 R-08 起，浏览器脚本会先构建 `web/dist`，再用 `NODE_ENV=production` 的同源 Node 服务托管页面与 `/assets/*`；启动浏览器前先断言首页响应头含 `script-src 'self'`、`style-src-attr 'unsafe-inline'`，且没有 `script-src 'unsafe-inline'`。开发期 Vite 不使用这条严格 CSP。
+
 ## 怎么跑
 
 ```bash
@@ -49,6 +51,9 @@ node scripts/browser-closed-loop.mjs   # 期望：每步截图进本目录 + std
 
 第 9 步是 R-05 的界面级证据：追问条数由服务端判出（不是前端写死的三连问），
 「跳过，直接生成」真的能出流——澄清是帮忙，不是关卡。
+
+R-08 的 CSP 响应头断言已进入闭环脚本，但本轮运行在 Chrome/CDP 的 `Page.enable` 前断开，
+没有生成新的截图；旧截图仍对应 `4ef6e56`，不把它们冒充成生产构建证据。
 
 第 3 步（发布后、还没人提交）与第 6 步（学生全答对）是 R-04 的界面级证据：
 `verify.mjs` 的 VC7 验的是接口数字，这两步验的是**看板真的把那组数字画出来了**——
