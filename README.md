@@ -168,7 +168,7 @@ pnpm install --frozen-lockfile
 pnpm check                      # = lint + typecheck + test
 node scripts/secret-scan.mjs    # 工作区密钥扫描
 node scripts/secret-scan.mjs --history   # 全历史扫描
-pnpm verify                     # = node scripts/verify.mjs，VC1–VC11
+pnpm verify                     # = node scripts/verify.mjs，VC1–VC12
 node scripts/browser-closed-loop.mjs     # 生产构建 + 真浏览器闭环
 pnpm eval                       # 整份需求达标率（默认 replay，不用 Key）
 ```
@@ -176,9 +176,9 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | 命令 | 覆盖范围 |
 |---|---|
 | `pnpm typecheck` | 四个包全量类型检查 |
-| `pnpm test` | 67 个测试文件 / 789 条用例（oxlint `--deny-warnings`、Vitest） |
-| `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC11；自起临时服务与临时库，不碰 `data/intentform.db` |
-| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十步并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
+| `pnpm test` | 71 个测试文件 / 815 条用例（oxlint `--deny-warnings`、Vitest） |
+| `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC12；自起临时服务与临时库，不碰 `data/intentform.db` |
+| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十三步（含打印版 PDF、答案解析、暗色模式）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
 | `pnpm eval` | 30 条需求集的整份达标率，报告写入 `eval/runs/<runId>/` 并更新 `eval/runs/latest.json` |
 
 浏览器闭环需要本机 Chrome（`CHROME_PATH` 可指定；找不到会 `exit 2` 而不是静默跳过）。
@@ -197,7 +197,8 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 [verify] VC9 两阶段蓝图：规划自洽、补答同源、plan 阶段只在有蓝图时出现 … 通过
 [verify] VC10 覆盖矩阵：实际 Schema 的知识点 × 布鲁姆计数与空单元格 … 通过
 [verify] VC11 收集页闭环：survey 填写、回收看板与 CSV … 通过
-[verify] 全部通过（11/11）
+[verify] VC12 答案解析开关：默认关闭、开启后随提交返回、公开视图不变 … 通过
+[verify] 全部通过（12/12）
 ```
 
 `pnpm verify` 证明的是 HTTP 语义闭环，不是浏览器里的真实操作；后者归 `browser-closed-loop.mjs`。两条证据链互不替代。
@@ -218,6 +219,7 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | `GET` | `/api/forms` | 列出当前教师的表单 |
 | `GET` | `/api/forms/:id` | 表单详情（含版本信息） |
 | `POST` | `/api/forms/:id/publish` | 发布指定版本快照 |
+| `GET` / `POST` | `/api/forms/:id/settings` | 表单展示设置（提交后是否展示答案解析；默认关闭） |
 | `PATCH` | `/api/forms/:id` | 受限修改：六种 op，追加草稿版本；旧 `baseVersionId` 返回 409 |
 | `POST` | `/api/forms/:id/undo` | 撤销一步（草稿指针退回父版本） |
 | `POST` | `/api/forms/:id/suggest` | 一句话改题 → 操作集建议；不写库，限流 |
@@ -228,7 +230,7 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | `GET` | `/f/:slug` | 学生收集页（HTML 壳或公开视图 JSON） |
 | `GET` | `/healthz` | 健康检查 |
 
-学生端接口只经 `publicView(schema)` 输出：响应里不含 `answer`、`explanation` 等教师侧字段；提交响应只含得分；未发布的表单返回 404。
+学生端接口只经 `publicView(schema)` 输出：响应里不含 `answer`、`explanation` 等教师侧字段；提交响应默认只含得分；未发布的表单返回 404。唯一例外：教师在该表单上打开「提交后展示答案解析」后，`POST /api/submissions` 的**那一次成功响应**会带 `review`（对错、正确答案、解析）；`GET /f/:slug` 在任何情况下都不含答案。
 
 ## 配置
 
@@ -307,6 +309,9 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 - `replay` / `mock` 模式证明的是链路通电与确定性，不证明模型输出质量；模型能力以 `eval/runs/latest.json` 指向的 live 报告为准。
 - 浏览器闭环目前只在 Windows + Chrome 156 上验证过；其他平台未取得实测证据。
 - 学生端作答为匿名短链，不含账号体系与防刷除限流之外的措施。
+- 「提交后展示答案解析」开启后，交过一次的学生可以把答案转给别人；这是该功能的固有代价，所以默认关闭、由教师逐表单开启。
+- 打印版打的是当前草稿版；要打发布版，先发布。
+- 暗色模式只换设计 Token 的颜色变量，KaTeX 公式没有单独的深色主题。
 - 完整缺口清单见 `docs/deliverables/作品介绍-意卷IntentForm-v1.pdf` 附录 A。
 
 ## 文档与留痕
