@@ -53,6 +53,15 @@ describe("parseRoute", () => {
     expect(parseRoute("/forms/a%20b/edit")).toEqual({ name: "edit", formId: "a b" });
   });
 
+  it("/forms/:id/print 解出打印页（A-17），与编辑页互不误认", () => {
+    expect(parseRoute("/forms/form-1/print")).toEqual({ name: "print", formId: "form-1" });
+    expect(parseRoute("/forms/form-1/print/")).toEqual({ name: "print", formId: "form-1" });
+    expect(parseRoute("/forms/form-1/prints")).toEqual({
+      name: "notFound",
+      path: "/forms/form-1/prints",
+    });
+  });
+
   it("编辑页的非法形状一律 404，不猜出个 formId 或忽略多余段", () => {
     // 少一段：`/forms/x` 只说明是哪份表单，没说是要干什么。
     expect(parseRoute("/forms/form-1")).toEqual({ name: "notFound", path: "/forms/form-1" });
@@ -105,6 +114,7 @@ describe("routeToPath", () => {
       { name: "dashboard", formId: "form-1" } as const,
       { name: "edit", formId: "form-1" } as const,
       { name: "edit", formId: "a b" } as const,
+      { name: "print", formId: "form-1" } as const,
       { name: "login" } as const,
     ];
     for (const route of cases) {

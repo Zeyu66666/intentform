@@ -53,6 +53,70 @@
 }
 
 /*
- * 说明：没有 dark 模式。评委在默认浅色系统上评审，多一套主题就多一倍截图对照成本；
- * 真要加是 I7 之后的事，且必须同时改这里的 `--color-*` 与 `tailwind.config.js`。
+ * 暗色模式（省赛附加 A-19）。
+ *
+ * 只换**值**，不换名字：`tailwind.config.js` 把工具类接到同一批变量上，所以
+ * 组件里没有一个 `dark:` 变体，换主题就是换这十几个变量。
+ *
+ * 对比度按 WCAG AA 取值（正文 ≥ 4.5:1，大字/图标 ≥ 3:1）：
+ *   正文 #f2f1ea / 底色 #14130f ≈ 15:1；次要 #b8b4a9 / 面板 #1d1c17 ≈ 8:1；
+ *   主色 #7aa7ff / 面板 #1d1c17 ≈ 6.6:1；危险 #ff9a90 / 面板 ≈ 7.2:1。
+ *
+ * `:root[data-theme]` 由 `theme/useTheme.ts` 写在 `<html>` 上；下面那条
+ * `prefers-color-scheme` 兜底只覆盖「JS 还没跑起来」的极短瞬间，避免白闪。
  */
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg: #14130f;
+  --color-surface: #1d1c17;
+  --color-border: #3a3831;
+  --color-text: #f2f1ea;
+  --color-text-muted: #b8b4a9;
+  --color-accent: #7aa7ff;
+
+  --color-danger: #ff9a90;
+  --color-success: #6fe3a1;
+}
+
+/* 首次加载兜底：JS 尚未写入 data-theme 时跟随系统，避免深色用户看到白闪。 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --color-bg: #14130f;
+    --color-surface: #1d1c17;
+    --color-border: #3a3831;
+    --color-text: #f2f1ea;
+    --color-text-muted: #b8b4a9;
+    --color-accent: #7aa7ff;
+
+    --color-danger: #ff9a90;
+    --color-success: #6fe3a1;
+  }
+}
+
+/*
+ * 打印永远用浅色：纸是白的，深色底打印出来是一整片黑。
+ * 这里在 `@media print` 里把变量强制回浅色值，而不是让打印页单独维护一套样式。
+ */
+@media print {
+  :root,
+  :root[data-theme],
+  :root[data-theme="dark"] {
+    color-scheme: light;
+
+    --color-bg: #ffffff;
+    --color-surface: #ffffff;
+    --color-border: #999999;
+    --color-text: #000000;
+    --color-text-muted: #444444;
+    --color-accent: #000000;
+    --color-danger: #000000;
+    --color-success: #000000;
+  }
+}

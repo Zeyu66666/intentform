@@ -12,7 +12,9 @@ import { DashboardPage } from "./dashboard/DashboardPage";
 import { EditorPage } from "./edit/EditorPage";
 import { StudentPage } from "./fill/StudentPage";
 import { Link } from "./Link";
+import { PrintPage } from "./print/PrintPage";
 import { parseRoute, routeToPath } from "./router";
+import { ThemeToggle } from "./theme/ThemeToggle";
 import { useRoutePath } from "./useRoute";
 
 export function RouteView(): JSX.Element {
@@ -21,20 +23,35 @@ export function RouteView(): JSX.Element {
 
   switch (route.name) {
     case "generate":
-      return <App />;
+      return <PageShell><App /></PageShell>;
     case "fill":
-      return <StudentPage slug={route.slug} />;
+      return <PageShell><StudentPage slug={route.slug} /></PageShell>;
     case "dashboard":
-      return <DashboardPage formId={route.formId} />;
+      return <PageShell><DashboardPage formId={route.formId} /></PageShell>;
     case "edit":
-      return <EditorPage formId={route.formId} />;
+      return <PageShell><EditorPage formId={route.formId} /></PageShell>;
+    case "print":
+      return <PageShell><PrintPage formId={route.formId} /></PageShell>;
     case "login":
-      return <LoginPage />;
+      return <PageShell><LoginPage /></PageShell>;
     case "notFound":
-      return <NotFound path={route.path} />;
+      return <PageShell><NotFound path={route.path} /></PageShell>;
     default:
       return assertNeverRoute(route);
   }
+}
+
+/**
+ * 全站外壳：主题开关挂在路由层，五个页面各自不用记得加。
+ * 打印时它被 `.no-print` 隐藏，纸上不会出现这个按钮。
+ */
+function PageShell({ children }: { readonly children: JSX.Element }): JSX.Element {
+  return (
+    <>
+      <ThemeToggle />
+      {children}
+    </>
+  );
 }
 
 function NotFound({ path }: { readonly path: string }): JSX.Element {

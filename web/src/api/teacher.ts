@@ -10,6 +10,8 @@ import {
   type CreateFormRequest,
   type CreateFormResponse,
   type FormDetailResponse,
+  type FormSettingsRequest,
+  type FormSettingsResponse,
   type GradeRequest,
   type GradeResponse,
   type ListFormsResponse,
@@ -55,6 +57,15 @@ export interface TeacherApi {
   ) => Promise<ApiResult<GradeResponse>>;
   /** 表单详情：编辑页拿它的 `version.id` 当乐观锁的 `baseVersionId`。 */
   readonly getForm: (formId: string) => Promise<ApiResult<FormDetailResponse>>;
+  /**
+   * 表单展示设置（A-18）：目前只有「提交后向学生展示答案解析」，默认关闭。
+   * 它不进版本快照，所以改它不产生新版本，也不用重新发布。
+   */
+  readonly getSettings: (formId: string) => Promise<ApiResult<FormSettingsResponse>>;
+  readonly updateSettings: (
+    formId: string,
+    request: FormSettingsRequest,
+  ) => Promise<ApiResult<FormSettingsResponse>>;
   /**
    * 提交一批 op 生成新草稿版本（省赛 R-03）。
    *
@@ -112,6 +123,13 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
         csrf: true,
       }),
     getForm: (formId) => client.request<FormDetailResponse>(API_PATHS.form(formId)),
+    getSettings: (formId) => client.request<FormSettingsResponse>(API_PATHS.formSettings(formId)),
+    updateSettings: (formId, request) =>
+      client.request<FormSettingsResponse>(API_PATHS.formSettings(formId), {
+        method: "POST",
+        body: request,
+        csrf: true,
+      }),
     patchForm: (formId, request) =>
       client.request<PatchFormResponse>(API_PATHS.patchForm(formId), {
         // PATCH 而不是 POST：路径与语义都跟服务端注册的那条对齐，

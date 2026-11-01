@@ -22,12 +22,14 @@ export const LOGIN_PATH = "/login" as const;
 /** 编辑页挂 `/forms/<id>/edit`：表单是资源、`edit` 是动作，读地址就能知道改了谁。 */
 export const FORMS_PATH_PREFIX = "/forms" as const;
 const EDIT_SUFFIX = "edit" as const;
+const PRINT_SUFFIX = "print" as const;
 
 export type Route =
   | { readonly name: "generate" }
   | { readonly name: "fill"; readonly slug: string }
   | { readonly name: "dashboard"; readonly formId: string | null }
   | { readonly name: "edit"; readonly formId: string }
+  | { readonly name: "print"; readonly formId: string }
   | { readonly name: "login" }
   | { readonly name: "notFound"; readonly path: string };
 
@@ -85,13 +87,15 @@ export function parseRoute(pathname: string): Route {
   }
 
   if (head === FORMS_PATH_PREFIX.slice(1)) {
-    // 只有一个合法形状：`/forms/<id>/edit`。`/forms/<id>`、`/forms/<id>/edit/x`
-    // 都不猜（编辑页没有子页签），猜出来的地址会让人以为链接对、实际打开空编辑页。
+    // 两个合法形状：`/forms/<id>/edit` 与 `/forms/<id>/print`（A-17 打印版考卷）。
+    // `/forms/<id>`、`/forms/<id>/edit/x` 都不猜，猜出来的地址会让人以为链接对、实际打开空页。
     if (second === undefined) return notFound(pathname);
     const formId = decodeSegment(second);
     if (formId === null || isBlankSegment(formId)) return notFound(pathname);
-    if (rest.length !== 1 || rest[0] !== EDIT_SUFFIX) return notFound(pathname);
-    return { name: "edit", formId };
+    if (rest.length !== 1) return notFound(pathname);
+    if (rest[0] === EDIT_SUFFIX) return { name: "edit", formId };
+    if (rest[0] === PRINT_SUFFIX) return { name: "print", formId };
+    return notFound(pathname);
   }
 
   return notFound(pathname);
@@ -112,6 +116,8 @@ export function routeToPath(route: Route): string {
       return LOGIN_PATH;
     case "edit":
       return `${FORMS_PATH_PREFIX}/${encodeURIComponent(route.formId)}/${EDIT_SUFFIX}`;
+    case "print":
+      return `${FORMS_PATH_PREFIX}/${encodeURIComponent(route.formId)}/${PRINT_SUFFIX}`;
     case "notFound":
       return route.path;
   }

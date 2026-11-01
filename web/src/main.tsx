@@ -6,6 +6,10 @@ import "katex/dist/katex.min.css";
 
 import { RouteView } from "./RouteView";
 import "./styles/index.css";
+import { applyStoredTheme } from "./theme/useTheme";
+
+// 在 React 渲染之前把主题写进 <html>：晚一帧，深色系统用户就会看到白闪。
+applyStoredTheme();
 
 const container = document.getElementById("root");
 

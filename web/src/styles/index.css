@@ -58,3 +58,50 @@
     animation: none;
   }
 }
+
+/*
+ * 打印（省赛附加 A-17）。
+ *
+ * 只做三件事：藏掉界面外壳（`.no-print`）、去掉阴影与底色、控制分页。
+ * 颜色本身由 tokens.css 的 `@media print` 强制成浅色——打印页不需要第二套样式表。
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+    background: #ffffff;
+  }
+
+  body {
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    background-image: none !important;
+  }
+
+  /* 一题尽量不跨页；跨页时至少不要把题干和选项拆开。 */
+  .print-question,
+  .print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

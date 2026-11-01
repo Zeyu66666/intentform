@@ -165,14 +165,22 @@ export function DashboardPage({ formId }: { readonly formId: string | null }): J
             <ShareLine form={selected} />
             {/* 编辑入口放在选择区、一行之内：看板一行的布局（表单 / 提交数 / 批改）
                 不因为多一个入口而换行；表单选谁就编辑谁，不需要再传一个 id。 */}
-            <p className="m-0 text-sm">
+            <p className="m-0 flex flex-wrap gap-2 text-sm">
               <Link
                 href={routeToPath({ name: "edit", formId: selected.id })}
                 className="text-accent underline"
               >
                 编辑这份表单的题目与分值
               </Link>
+              <Link
+                href={routeToPath({ name: "print", formId: selected.id })}
+                className="text-accent underline"
+                data-testid="dash-print-link"
+              >
+                打印版考卷
+              </Link>
             </p>
+            <SettingsRow formId={selected.id} kind={selected.kind} api={api} />
           </section>
 
           <SubmissionsSection
@@ -215,6 +223,91 @@ function FormsError({ failure }: { readonly failure: ApiFailure }): JSX.Element 
         </p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * 表单展示设置（A-18）：目前只有「提交后向学生展示答案解析」。
+ *
+ * 三条界面规矩：
+ * 1. 问卷不显示这个开关——问卷没有标准答案，开了也没有内容可展示；
+ * 2. 开关**默认关闭**，且改动立即生效（它是展示策略，不产生新版本，也不用重新发布）；
+ * 3. 保存失败把开关退回原值并说明原因：留着「看起来开着的开关」比直接报错更危险。
+ */
+function SettingsRow({
+  formId,
+  kind,
+  api,
+}: {
+  readonly formId: string;
+  readonly kind: FormSummary["kind"];
+  readonly api: TeacherApi;
+}): JSX.Element {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setEnabled(null);
+    setMessage(null);
+    void api.getSettings(formId).then((outcome) => {
+      if (cancelled) return;
+      if (outcome.ok) {
+        setEnabled(outcome.data.showAnswersAfterSubmit);
+        return;
+      }
+      setMessage(describeFailure(outcome.failure, { notFound: "读不到这份表单的设置" }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, formId]);
+
+  if (kind !== "quiz") return <></>;
+
+  const toggle = (next: boolean): void => {
+    if (busy) return;
+    const previous = enabled;
+    setBusy(true);
+    setMessage(null);
+    setEnabled(next);
+    void api.updateSettings(formId, { showAnswersAfterSubmit: next }).then((outcome) => {
+      setBusy(false);
+      if (outcome.ok) {
+        setEnabled(outcome.data.showAnswersAfterSubmit);
+        return;
+      }
+      // 失败时把开关拨回去：界面上的状态必须和服务端一致。
+      setEnabled(previous);
+      setMessage(describeFailure(outcome.failure, { notFound: "这份表单不存在" }));
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="flex min-h-[44px] items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          data-testid="dash-show-answers"
+          className="size-4 accent-accent"
+          checked={enabled === true}
+          disabled={enabled === null || busy}
+          onChange={(event) => {
+            toggle(event.target.checked);
+          }}
+        />
+        提交后向学生展示答案解析
+        <span className="text-xs text-muted">
+          {enabled === null ? "（读取中…）" : enabled ? "（已开启）" : "（默认关闭）"}
+        </span>
+      </label>
+      {message === null ? null : (
+        <p className="m-0 text-sm text-danger" role="alert" data-testid="dash-settings-error">
+          {message}
+        </p>
+      )}
+    </div>
   );
 }
 

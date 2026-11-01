@@ -19,6 +19,7 @@ import {
   type FormKind,
   type SubmitRequest,
   type SubmitResponse,
+  type SubmitReviewItem,
 } from "@intentform/schema";
 
 import { describeFailure, isVersionConflict } from "../api/failures";
@@ -91,6 +92,11 @@ export function buildSubmitRequest(view: FillViewResponse, answers: AnswerState)
 export interface SubmitSuccess {
   /** quiz：`8 / 10 分`；survey：`已提交`。除这两个之外不显示任何东西。 */
   readonly summary: string;
+  /**
+   * 提交后答案解析（A-18）。只有教师打开了该表单的开关，服务端才会返回；
+   * 默认 `undefined`，界面因此什么也不多画。
+   */
+  readonly review?: readonly SubmitReviewItem[];
 }
 
 export type SubmitState =
@@ -150,6 +156,8 @@ export function mapSubmitOutcome(
           outcome.data.maxScore,
           outcome.data.pendingScore,
         ),
+        // 有才带：没有这个键时 `success.review` 是 `undefined`，界面一行都不多画。
+        ...(outcome.data.review === undefined ? {} : { review: outcome.data.review }),
       },
     };
   }

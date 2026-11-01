@@ -22,6 +22,12 @@ import { createHttpClient } from "../api/http";
 import { Link } from "../Link";
 import { answerReducer, EMPTY_ANSWERS } from "./answers";
 import { mapFillLoad, type FillLoad } from "./errors";
+import {
+  reviewExpectedText,
+  reviewGivenText,
+  reviewStatusText,
+  reviewToneClass,
+} from "./review";
 import { StudentField } from "./StudentField";
 import {
   beginSubmit,
@@ -106,6 +112,7 @@ export function StudentPage({ slug }: { readonly slug: string }): JSX.Element {
   }
 
   if (submit.kind === "success") {
+    const review = submit.success.review;
     return (
       <main className={MAX_WIDTH}>
         <section className="rounded-md border border-success bg-surface p-3 text-center">
@@ -114,6 +121,45 @@ export function StudentPage({ slug }: { readonly slug: string }): JSX.Element {
           <p className="m-0 mt-1 text-xl font-semibold text-success">{submit.success.summary}</p>
           <p className="m-0 mt-1 text-sm text-muted">答案已记录，可以关闭这个页面</p>
         </section>
+
+        {/* 提交后答案解析（A-18）：只有教师打开了开关，服务端才会返回 review。 */}
+        {review === undefined || review.length === 0 ? null : (
+          <section className="mt-2 text-left" data-testid="fill-review">
+            <h2 className="m-0 text-base font-semibold text-ink">答案解析</h2>
+            <ul className="m-0 mt-1 flex list-none flex-col gap-2 p-0">
+              {review.map((item) => {
+                const expected = reviewExpectedText(item);
+                return (
+                  <li
+                    key={item.itemId}
+                    data-testid={`fill-review-${item.itemId}`}
+                    className="rounded-md border border-line bg-surface p-2"
+                  >
+                    <p className="m-0 flex flex-wrap items-baseline gap-1 text-base font-medium text-ink">
+                      <span>{item.title}</span>
+                      <span className={`ml-auto text-sm ${reviewToneClass(item)}`}>
+                        {reviewStatusText(item)}
+                      </span>
+                    </p>
+                    <p className="m-0 mt-1 text-sm text-muted">
+                      {"你的答案："}
+                      <span className="text-ink">{reviewGivenText(item)}</span>
+                    </p>
+                    {expected === null ? null : (
+                      <p className="m-0 mt-1 text-sm text-muted">
+                        {"正确答案："}
+                        <span className="text-ink">{expected}</span>
+                      </p>
+                    )}
+                    {item.explanation === undefined ? null : (
+                      <p className="m-0 mt-1 text-sm text-muted">{`解析：${item.explanation}`}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
       </main>
     );
   }
