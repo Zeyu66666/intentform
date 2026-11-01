@@ -80,6 +80,16 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
      PRIMARY KEY (submission_id, item_id)
    )`,
 
+  // 省赛附加 A-18：表单级展示设置。**不进版本快照**——它是「给不给学生看答案解析」
+  // 的展示策略，不是卷面内容；改它不产生新版本，也不改变历史提交的判分依据。
+  // 用单独一张表而不是给 forms 加列：本文件只跑 `CREATE ... IF NOT EXISTS`，
+  // 给已存在的表加列要么写 ALTER 兼容逻辑，要么在各处判空，都不如一张新表干净。
+  `CREATE TABLE IF NOT EXISTS form_settings (
+     form_id                  TEXT PRIMARY KEY REFERENCES forms(id) ON DELETE CASCADE,
+     show_answers_after_submit INTEGER NOT NULL DEFAULT 0 CHECK (show_answers_after_submit IN (0, 1)),
+     updated_at               TEXT NOT NULL
+   )`,
+
   `CREATE TABLE IF NOT EXISTS usage_daily (
      teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
      day        TEXT NOT NULL,

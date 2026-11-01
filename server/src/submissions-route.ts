@@ -25,7 +25,7 @@ import {
   type SubmitResponse,
 } from "@intentform/schema";
 import { formSchema } from "@intentform/schema";
-import { findPublishedFormBySlug, findVersion } from "./db/forms.ts";
+import { findPublishedFormBySlug, findVersion, getFormSettings } from "./db/forms.ts";
 import { insertSubmission } from "./db/submissions.ts";
 import {
   clientIp,
@@ -36,6 +36,7 @@ import {
   type RouteContext,
 } from "./http.ts";import { gradeSubmission, type AnswerValue } from "./grading.ts";
 import { newId } from "./ids.ts";
+import { buildSubmitReview } from "./review.ts";
 
 export function hashIp(secret: string, ip: string): string {
   return createHash("sha256").update(`${secret}${ip}`).digest("hex");
@@ -107,12 +108,19 @@ export async function handleSubmit(ctx: RouteContext): Promise<void> {
     ipHash: hashIp(ctx.env.sessionSecret, clientIp(ctx.req)),
     createdAt: new Date().toISOString(),
   });
+  // 提交后答案解析（A-18）：默认关闭。只有教师在这份表单上显式打开时，
+  // 才随这一次提交的响应带上 review——`publicView()` 与 `GET /f/:slug` 一行都没变，
+  // 学生提交之前仍然拿不到任何答案载体。
+  const settings = getFormSettings(ctx.db, form.id);
   const response: SubmitResponse = {
     ok: true,
     submissionId,
     score: grade.score,
     maxScore: grade.maxScore,
     pendingScore: grade.pendingScore,
+    ...(settings.showAnswersAfterSubmit
+      ? { review: buildSubmitReview(schema.data, answers) }
+      : {}),
   };
   // 201 + `Location`：这是唯一一个「学生创建了资源」的接口，给它正确的语义。
   // 指向的是**该表单的提交列表**而不是某条提交——契约里没有按 id 读单条提交的路由，

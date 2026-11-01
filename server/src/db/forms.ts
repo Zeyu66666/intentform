@@ -227,3 +227,37 @@ export function setDraftVersion(db: Db, formId: string, versionId: string, updat
     formId,
   );
 }
+
+/* --------------------------- 表单展示设置（A-18） --------------------------- */
+
+/**
+ * 读表单设置。**没有行 = 全部默认值**（答案解析关闭），
+ * 所以老数据、种子数据都不需要回填——「没有记录」和「显式关闭」在这里等价。
+ */
+export function getFormSettings(
+  db: Db,
+  formId: string,
+): { readonly showAnswersAfterSubmit: boolean } {
+  const row = db
+    .prepare<[string], { show_answers_after_submit: number }>(
+      "SELECT show_answers_after_submit FROM form_settings WHERE form_id = ?",
+    )
+    .get(formId);
+  return { showAnswersAfterSubmit: row?.show_answers_after_submit === 1 };
+}
+
+/** 覆盖写设置。`form_id` 是主键，重复写就是改这一行。 */
+export function setFormSettings(
+  db: Db,
+  formId: string,
+  settings: { readonly showAnswersAfterSubmit: boolean },
+  updatedAt: string,
+): void {
+  db.prepare(
+    `INSERT INTO form_settings (form_id, show_answers_after_submit, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(form_id) DO UPDATE SET
+       show_answers_after_submit = excluded.show_answers_after_submit,
+       updated_at = excluded.updated_at`,
+  ).run(formId, settings.showAnswersAfterSubmit ? 1 : 0, updatedAt);
+}

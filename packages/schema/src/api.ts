@@ -45,6 +45,11 @@ export const API_PATHS = {
   forms: "/api/forms",
   form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   publish: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/publish`,
+  /**
+   * 表单级展示设置（省赛附加 A-18）：目前只有「提交后向学生展示答案解析」。
+   * 独立于版本快照——它是展示策略，不是卷面内容；改它不产生新版本。
+   */
+  formSettings: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/settings`,
   /** 受限修改（省赛 R-03）：只接受六种操作，追加一个新草稿版本。 */
   patchForm: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   /** 撤销一步：把草稿指针退回当前草稿的父版本。 */
@@ -219,6 +224,25 @@ export interface PublishResponse {
   readonly publishedAt: string;
 }
 
+/* ---------------------------- 表单展示设置（A-18） --------------------------- */
+
+/**
+ * `POST /api/forms/:id/settings` 的请求。
+ *
+ * 只接受**显式布尔值**，不接受 `undefined`/`null` 表示「不改」——这个接口只有
+ * 一个开关，含糊的写入会让「我以为我关了」变成事故。
+ */
+export const formSettingsRequestSchema = z.object({
+  showAnswersAfterSubmit: z.boolean(),
+});
+
+export type FormSettingsRequest = z.infer<typeof formSettingsRequestSchema>;
+
+export interface FormSettingsResponse {
+  readonly ok: true;
+  readonly showAnswersAfterSubmit: boolean;
+}
+
 /* ------------------------------ 受限修改（R-03） ---------------------------- */
 
 /**
@@ -372,6 +396,32 @@ export interface SubmitResponse {
    * 学生看到「28 / 40 分，其中 10 分待老师批改」时不至于以为自己被误判。
    */
   readonly pendingScore: number;
+  /**
+   * 提交后答案解析（省赛附加 A-18）。**默认不出现**：只有教师在该表单上打开
+   * 「提交后向学生展示答案解析」时，才随这一次提交的响应返回。
+   *
+   * 只在提交成功的响应里出现，是为了让 `publicView()` 保持零答案：学生没有提交
+   * 之前，拿不到任何可回放的答案载体。代价是「交一次就能把答案转给别人」——
+   * 所以它默认关闭，并且由教师逐表单决定是否开启。
+   */
+  readonly review?: readonly SubmitReviewItem[];
+}
+
+/** 一道题的提交后回看：学生填了什么、对不对、正确答案与解析。 */
+export interface SubmitReviewItem {
+  readonly itemId: string;
+  readonly title: string;
+  readonly type: "single" | "multi" | "fill" | "number" | "short" | "scale";
+  /** 学生答案的可读文本（选项 id 已换成选项文字）。没作答是空串。 */
+  readonly given: string;
+  /**
+   * 客观题：`judgeItem` 的判定结果（与判分、统计同一入口）；
+   * 简答与量表没有对错，固定 `null`——未知值不伪填。
+   */
+  readonly correct: boolean | null;
+  /** 正确答案的可读文本；简答 / 量表没有标准答案，是空串。 */
+  readonly expected: string;
+  readonly explanation?: string;
 }
 
 /** 版本冲突时给人类看的话。前端直接展示，所以文案放在契约里而不是各处硬编码。 */
