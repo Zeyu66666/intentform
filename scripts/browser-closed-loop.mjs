@@ -454,6 +454,26 @@ class Page {
     return await this.evaluate("return location.pathname");
   }
 
+  /**
+   * 切「媒体类型 / 系统颜色偏好」：打印样式与暗色模式都只能在这里验。
+   * `Emulation.setEmulatedMedia` 是 CDP 的正规入口，比改 DOM 类名更接近真实环境。
+   */
+  async emulateMedia({ media = "", colorScheme = null } = {}) {
+    const features = colorScheme === null ? [] : [{ name: "prefers-color-scheme", value: colorScheme }];
+    await this.cdp.send("Emulation.setEmulatedMedia", { media, features });
+  }
+
+  /** 真出一份 PDF：打印版考卷的证据不是「看起来像」，而是可打开的成品。 */
+  async printToPdf(fileName) {
+    const pdf = await this.cdp.send("Page.printToPDF", {
+      printBackground: true,
+      preferCSSPageSize: true,
+    });
+    const target = join(EVIDENCE_DIR, fileName);
+    writeFileSync(target, Buffer.from(pdf.data, "base64"));
+    return target;
+  }
+
   async screenshot(fileName) {
     const shot = await this.cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
     const target = join(EVIDENCE_DIR, fileName);
@@ -1242,6 +1262,154 @@ async function main() {
       return { formId: surveyForm.id, slug, collectionRows, csvLines: csv.text.split("\r\n").length };
     });
 
+    // 11) 打印版考卷（省赛附加 A-17）：卷面 + 含答案开关 + 打印媒体
+    //
+    // 三条断言各自防一种「看着像打印版」的假实现：题号要只数题目（分节不占号）；
+    // 答案默认不出现、勾选后才出现（不是靠 CSS 藏）；打印媒体下界面外壳真的消失。
+    // 最后用 `Page.printToPDF` 落一份 PDF——纸上能不能用，打开它就知道。
+    const printed = await step("打印版考卷：卷面、含答案开关与打印媒体", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/forms/${publish.formId}/print`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('print-sheet') !== null")),
+        "打印页渲染出卷面",
+        20_000,
+      );
+      const plainText = await page.evaluate("return byTestId('print-sheet').innerText");
+      must(/1\./.test(plainText), `打印页没有题号：${plainText.slice(0, 120)}`);
+      must(!plainText.includes("答案："), `打印页默认不应出现答案：${plainText.slice(0, 200)}`);
+      must(!plainText.includes("解析："), "打印页默认不应出现解析");
+
+      const toggled = await page.tap('[data-testid="print-with-answers"]');
+      must(toggled.ok === true, `点不到「含答案与解析」：${JSON.stringify(toggled)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('print-sheet').innerText")).includes("答案："),
+        "勾选后卷面出现答案",
+        5_000,
+      );
+
+      await page.emulateMedia({ media: "print" });
+      const toolbarDisplay = await page.evaluate(
+        "var el = document.querySelector('.no-print'); return el === null ? 'missing' : getComputedStyle(el).display;",
+      );
+      must(toolbarDisplay === "none", `打印媒体下界面外壳应隐藏，实际 display=${String(toolbarDisplay)}`);
+      artifacts.push(await page.screenshot("16-print-preview.png"));
+      const pdf = await page.printToPdf("16-print-sheet.pdf");
+      await page.emulateMedia({});
+      return { pdf, questionCount: (plainText.match(/\n\d+\./g) ?? []).length };
+    });
+
+    // 12) 提交后答案解析（省赛附加 A-18）：
+    // 教师在看板上打开开关 → 学生重新提交 → 成功页出现「答案解析」。
+    //
+    // 这一步证明的是**开关真的改变了学生端收到的东西**；VC12 证明的是接口语义。
+    const answerReview = await step("答案解析：教师开启 → 学生重交 → 看到答案与解析", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/dashboard/${publish.formId}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('dash-show-answers') !== null")),
+        "看板出现「提交后展示答案解析」开关",
+        20_000,
+      );
+      const toggle = await page.tap('[data-testid="dash-show-answers"]');
+      must(toggle.ok === true, `点不到答案解析开关：${JSON.stringify(toggle)}`);
+      await waitFor(
+        async () => (await page.text()).includes("（已开启）"),
+        "开关变为已开启",
+        10_000,
+      );
+
+      // 学生重新答一遍：这次要全对，好让「正确」出现（简答仍然是待批改）。
+      await page.viewport(MOBILE_VIEWPORT);
+      await page.goto(`${webBase}/f/${publish.slug}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('fill-submit') !== null")),
+        "学生页渲染",
+        20_000,
+      );
+      const detail = await request("GET", `/api/forms/${publish.formId}`, { cookie });
+      must(detail.status === 200, `读取表单详情失败（${String(detail.status)}）`);
+      const items = detail.json.schema.items.filter((item) => item.type !== "section");
+      let answered = 0;
+      for (const item of items) {
+        if (item.type === "single" && typeof item.answer === "string") {
+          const hit = await page.tap(`[data-testid="fill-${item.id}-${item.answer}"]`);
+          must(hit.ok === true, `点不到单选 ${item.id}`);
+          answered += 1;
+        } else if (item.type === "multi" && Array.isArray(item.answer)) {
+          for (const optionId of item.answer) {
+            const hit = await page.tap(`[data-testid="fill-${item.id}-${optionId}"]`);
+            must(hit.ok === true, `点不到多选 ${item.id}/${optionId}`);
+          }
+          answered += 1;
+        } else if (item.type === "number" && item.answer !== undefined) {
+          const filled = await page.evaluate(
+            `return setValue('[data-testid="fill-${item.id}"]', ${JSON.stringify(String(item.answer.value))});`,
+          );
+          must(filled.ok === true, `数字题 ${item.id} 没填进去`);
+          answered += 1;
+        } else if (item.type === "fill" && Array.isArray(item.answer)) {
+          const filled = await page.evaluate(
+            `return setValue('[data-testid="fill-${item.id}"]', ${JSON.stringify(item.answer.join("／"))});`,
+          );
+          must(filled.ok === true, `填空题 ${item.id} 没填进去`);
+          answered += 1;
+        } else if (item.type === "short") {
+          const filled = await page.evaluate(
+            `return setValue('[data-testid="fill-${item.id}"]', "答案解析演示作答");`,
+          );
+          must(filled.ok === true, `简答题 ${item.id} 没填进去`);
+          answered += 1;
+        }
+      }
+      must(answered > 0, "没有可作答的字段");
+
+      const submitted = await page.tap('[data-testid="fill-submit"]');
+      must(submitted.ok === true, "点不到提交按钮");
+      await waitFor(async () => (await page.text()).includes("答案解析"), "成功页出现答案解析", 20_000);
+      const reviewText = await page.text();
+      must(reviewText.includes("正确答案："), "答案解析里没有「正确答案」");
+      must(reviewText.includes("解析："), "答案解析里没有「解析」");
+      must(reviewText.includes("正确"), "全对答卷应至少有一题显示「正确」");
+      must(reviewText.includes("待老师批改"), "简答应显示「待老师批改」而不是错误");
+      artifacts.push(await page.screenshot("17-answer-review.png"));
+      return { reviewed: true };
+    });
+
+    // 13) 暗色模式（省赛附加 A-19）：
+    // 系统深色 → 自动深色；点开关 → 浅色 → 深色 → 回到跟随系统。
+    const darkMode = await step("暗色模式：跟随系统 → 浅色 → 深色", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.goto(`${webBase}/dashboard/${publish.formId}`);
+      const themeOf = async () => page.evaluate("return document.documentElement.dataset.theme ?? ''");
+      await waitFor(async () => (await themeOf()) === "dark", "系统深色时自动进入深色", 10_000);
+      const darkBg = await page.evaluate("return getComputedStyle(document.body).backgroundColor");
+      must(darkBg === "rgb(20, 19, 15)", `深色底色不对：${String(darkBg)}`);
+      artifacts.push(await page.screenshot("18-dark-dashboard.png"));
+
+      const first = await page.tap('[data-testid="theme-toggle"]');
+      must(first.ok === true, `点不到主题开关：${JSON.stringify(first)}`);
+      await waitFor(async () => (await themeOf()) === "light", "手动切到浅色", 10_000);
+      const lightBg = await page.evaluate("return getComputedStyle(document.body).backgroundColor");
+      must(lightBg === "rgb(247, 247, 245)", `浅色底色不对：${String(lightBg)}`);
+
+      await page.tap('[data-testid="theme-toggle"]');
+      await waitFor(async () => (await themeOf()) === "dark", "再切到深色", 10_000);
+      await page.tap('[data-testid="theme-toggle"]');
+      // 第三次点回「跟随系统」：系统仍是深色，所以解析结果仍是深色——
+      // 这里断的是偏好本身，而不是颜色，才能区分"跟随系统"与"手动深色"。
+      await waitFor(
+        async () =>
+          (await page.evaluate("return byTestId('theme-toggle').getAttribute('data-theme-preference')")) ===
+          "system",
+        "第三次点回到跟随系统",
+        10_000,
+      );
+      await page.emulateMedia({});
+      return { darkBg, lightBg };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -1254,6 +1422,9 @@ async function main() {
       edited,
       clarify,
       survey: surveyCollection,
+      printed,
+      answerReview,
+      darkMode,
       dashboard,
       graded,
       steps,

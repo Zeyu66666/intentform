@@ -1089,6 +1089,82 @@ async function vc11SurveyCollection(request, ctx) {
   must(csv.text.includes("s-feedback") && csv.text.includes("很有收获"), `VC11 CSV 未回收填写数据：${firstLine(csv.text)}`);
 }
 
+/**
+ * VC12：提交后答案解析开关（省赛附加 A-18）。
+ *
+ * 三个命题：
+ * 1. 默认关闭：提交响应里连 `review` 键都没有，`GET /f/:slug` 依然零答案；
+ * 2. 开启后：`review` 只随这次提交返回，选项 id 已换成文字，简答 `correct: null`；
+ * 3. 开关是表单级设置，不进版本快照——开启后版本号不变。
+ */
+async function vc12AnswerReview(request, ctx) {
+  const schema = {
+    meta: { version: 1, kind: "quiz", title: "verify · 答案解析", objectives: [], totalScore: 10 },
+    items: [
+      {
+        id: "r-single",
+        type: "single",
+        title: "一加一等于",
+        options: [
+          { id: "op1", text: "1" },
+          { id: "op2", text: "2" },
+        ],
+        answer: "op2",
+        score: 5,
+        required: true,
+        explanation: "基础加法",
+      },
+      { id: "r-short", type: "short", title: "说说思路", required: false, score: 5, maxLength: 100 },
+    ],
+  };
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: schema.meta.title, kind: "quiz", schema },
+  });
+  must(created.status === 201, `VC12 建表单失败（${String(created.status)}）`);
+  const formId = created.json.form.id;
+  const versionId = created.json.version.id;
+  const published = await request("POST", `/api/forms/${formId}/publish`, {
+    cookie: ctx.cookie,
+    json: { versionId },
+  });
+  must(published.status === 200, `VC12 发布失败（${String(published.status)}）`);
+  const slug = published.json.slug;
+
+  const settings = await request("GET", `/api/forms/${formId}/settings`, { cookie: ctx.cookie });
+  must(settings.status === 200 && settings.json.showAnswersAfterSubmit === false, `VC12 默认应关闭：${settings.text}`);
+
+  const answers = { "r-single": "op2", "r-short": "因为 1+1=2" };
+  const closed = await request("POST", "/api/submissions", {
+    json: { slug, formVersionId: versionId, answers },
+  });
+  must(closed.status === 201, `VC12 关闭态提交失败（${String(closed.status)}）`);
+  must(!Object.hasOwn(closed.json, "review"), "VC12 关闭时提交响应不应带 review");
+  must(!closed.text.includes("基础加法"), "VC12 关闭时提交响应泄露了解析");
+
+  const enabled = await request("POST", `/api/forms/${formId}/settings`, {
+    cookie: ctx.cookie,
+    json: { showAnswersAfterSubmit: true },
+  });
+  must(enabled.status === 200 && enabled.json.showAnswersAfterSubmit === true, `VC12 开启失败：${enabled.text}`);
+
+  const opened = await request("POST", "/api/submissions", {
+    json: { slug, formVersionId: versionId, answers },
+  });
+  must(opened.status === 201, `VC12 开启态提交失败（${String(opened.status)}）`);
+  const review = opened.json.review;
+  must(Array.isArray(review) && review.length === 2, `VC12 review 应有 2 条：${opened.text}`);
+  must(review[0].given === "2" && review[0].expected === "2" && review[0].correct === true, `VC12 单选题回看不对：${JSON.stringify(review[0])}`);
+  must(review[0].explanation === "基础加法", "VC12 解析没有随 review 返回");
+  must(review[1].correct === null && review[1].expected === "", `VC12 简答应为 null/空串：${JSON.stringify(review[1])}`);
+
+  const view = await request("GET", `/f/${slug}`);
+  must(view.status === 200 && !view.text.includes("基础加法") && !view.text.includes('"answer"'), "VC12 开启后公开视图仍应零答案");
+
+  const detail = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(detail.json.version.n === 1, "VC12 展示设置不应产生新版本");
+}
+
 /** 把 SSE 文本切成事件对象。注释帧（心跳 `: ping`）没有 data，自然被丢掉。 */
 function parseSse(text) {
   const events = [];
@@ -1119,6 +1195,7 @@ const CHECKS = [
   ["VC9 两阶段蓝图：规划自洽、补答同源、plan 阶段只在有蓝图时出现", vc9Blueprint],
   ["VC10 覆盖矩阵：实际 Schema 的知识点 × 布鲁姆计数与空单元格", vc10CoverageMatrix],
   ["VC11 收集页闭环：survey 填写、回收看板与 CSV", vc11SurveyCollection],
+  ["VC12 答案解析开关：默认关闭、开启后随提交返回、公开视图不变", vc12AnswerReview],
 ];
 
 async function main() {

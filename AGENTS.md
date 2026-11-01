@@ -63,7 +63,7 @@
 | SQL | 只用 better-sqlite3 预编译语句，禁止字符串拼接 |
 | XSS | 禁止 `dangerouslySetInnerHTML`，唯一例外是 KaTeX 输出（`trust:false`、`strict`） |
 | 注入 | 用户输入放在定界数据块内；输出只接受 Schema；学生答案**永不**进入生成链路 |
-| 答案泄露 | 学生端接口**只能**经过 `publicView(schema)` 输出，学生端路由里禁止直接读 `schema_json`；提交响应只含得分，不含 `answer` / `explanation`；未发布表单返回 404 |
+| 答案泄露 | 学生端接口**只能**经过 `publicView(schema)` 输出，学生端路由里禁止直接读 `schema_json`；提交响应**默认只含得分**，不含 `answer` / `explanation`；未发布表单返回 404。**唯一例外（A-18）**：教师在该表单上显式打开 `show_answers_after_submit` 时，`POST /api/submissions` **那一次成功响应**可带 `review`（本题对错、正确答案、解析）。`GET /f/:slug` 与 `publicView()` 在任何情况下都不含答案；开关默认关闭，开关本身是表单级设置、不进版本快照 |
 | 发布快照 | `form_versions` 追加式写入、写后不改；发布 = 把某个 version 写入 `forms.published_version_id`；提交记录 `form_version_id`。发布后再改 Schema 不得影响历史提交的判分与统计 |
 | 归属 | 每个资源读写都校验 owner；越权返回 403 而不是 404 之外的模糊处理 |
 | 脱敏 | 真实姓名、手机号、学校名、邮箱不得进入仓库（含 `docs/prompt-log/*/raw-*.md`）。导出文件用**占位符替换**（如 `[REDACTED-NAME]`），不整段删除，并在 `summary.md` 末尾记一行「替换了哪几类信息」 |
@@ -83,7 +83,7 @@ node scripts/secret-scan.mjs
 node scripts/secret-scan.mjs --history
 ```
 
-**`pnpm verify` 不是上面这几条的同义词。** 它跑 `scripts/verify.mjs` 的 HTTP 级验证用例，当前是 **VC1–VC11**（发布快照、判分与版本冲突、学生端零泄漏、生成→发布→提交→看板、人工批改、受限修改与撤销、每题正确率、意图澄清、两阶段蓝图、覆盖矩阵、收集页闭环）；每落地一条闭环能力就配一条 VC，数量随能力增长，不写死为三条。它证明的是 HTTP 语义闭环，不是浏览器里的真实操作——后者归 `scripts/browser-closed-loop.mjs`。别把 `check` 当成「一条命令跑通生成→渲染→提交」的验收。
+**`pnpm verify` 不是上面这几条的同义词。** 它跑 `scripts/verify.mjs` 的 HTTP 级验证用例，当前是 **VC1–VC12**（发布快照、判分与版本冲突、学生端零泄漏、生成→发布→提交→看板、人工批改、受限修改与撤销、每题正确率、意图澄清、两阶段蓝图、覆盖矩阵、收集页闭环、答案解析开关）；每落地一条闭环能力就配一条 VC，数量随能力增长，不写死为三条。它证明的是 HTTP 语义闭环，不是浏览器里的真实操作——后者归 `scripts/browser-closed-loop.mjs`。别把 `check` 当成「一条命令跑通生成→渲染→提交」的验收。
 
 涉及外部调用的功能，必须同时提供 `LLM_MODE=replay` 或 `mock` 路径，并在该路径下验证一遍。
 
