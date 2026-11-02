@@ -14,12 +14,14 @@
 
 import {
   applyPatch,
+  ITEM_SCOPE_PATCH_OPS_SET,
   suggestPatchRequestSchema,
   validateForm,
   VERSION_CONFLICT_MESSAGE,
   type FormSchema,
   type PatchIssue,
   type SuggestPatchResponse,
+  type SuggestScope,
 } from "@intentform/schema";
 import { resolveLlmMode, resolveLlmRuntimeConfig, suggestPatch } from "@intentform/llm";
 import { requireTeacher } from "./auth.ts";
@@ -83,6 +85,14 @@ export async function handleSuggestPatch(ctx: RouteContext): Promise<void> {
   const schema = readSchema(ctx, form.id, parsed.data.baseVersionId);
   if (schema === undefined) return;
 
+  // 单题作用域的第一道闸：目标题必须在**这一版**里存在。不存在时给 422 而不是
+  // 让模型对着一份过期的题号猜。
+  const target = parsed.data.targetItemId;
+  if (target !== undefined && !schema.items.some((item) => item.id === target)) {
+    sendApiError(ctx.res, "unprocessable", "要改的那道题在当前草稿里不存在，请刷新后重试");
+    return;
+  }
+
   // 上游配置按请求解析：`LLM_MODE` 是进程级事实，解析一次很便宜，换来的好处是
   // 这条路由不需要在启动期就配 Key（`mock` 模式的测试与演示完全离线）。
   const rawEnv = ctx.env.rawEnv;
@@ -90,7 +100,12 @@ export async function handleSuggestPatch(ctx: RouteContext): Promise<void> {
 
   let result;
   try {
-    result = await suggestPatch({ config, schema, instruction: parsed.data.instruction });
+    result = await suggestPatch({
+      config,
+      schema,
+      instruction: parsed.data.instruction,
+      ...(target === undefined ? {} : { targetItemId: target }),
+    });
   } catch (error) {
     // 上游/模型的问题：配置类归 400（使用者能改），其余归 500（不是请求的错）。
     // message 只来自 `LlmError`，它已过滤 Key 与内网 URL，不回显上游报文。
@@ -100,13 +115,32 @@ export async function handleSuggestPatch(ctx: RouteContext): Promise<void> {
     return;
   }
 
+  // 第二道闸：服务端不信 `suggestPatch` 内部的拦截结果也仍然再验一次——
+  // 越界改动整体拒绝（不是过滤），界面上能看见「这句会改到别的题」。
+  if (target !== undefined) {
+    const stray = result.ops.filter(
+      (op) => !("itemId" in op) || op.itemId !== target || !ITEM_SCOPE_PATCH_OPS_SET.has(op.op),
+    );
+    if (stray.length > 0) {
+      const index = schema.items.findIndex((item) => item.id === target);
+      sendApiError(
+        ctx.res,
+        "unprocessable",
+        `这句要求会改到别的题，已拦下（当前只允许改第 ${String(index + 1)} 题）`,
+      );
+      return;
+    }
+  }
+
   // 套用后的表单只用于算 issues，不落库。
   const applied = applyPatch(schema, result.ops);
   const source = result.source === "mock" ? "mock" : result.source === "record" ? "record" : "live";
+  const scope: SuggestScope = target === undefined ? { kind: "form" } : { kind: "item", itemId: target };
   const response: SuggestPatchResponse = {
     ok: true,
     ops: result.ops,
     changes: result.changes,
+    scope,
     // 建议为空时也要回 issues：使用者点开面板就能看到「这份草稿现在还不能发布」。
     issues: applied.ok ? issuesOf(applied.schema) : [],
     source,

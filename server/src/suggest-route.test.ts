@@ -95,6 +95,61 @@ describe("POST /api/forms/:id/suggest", () => {
     expect(String((response.json as { message?: string }).message)).toContain("回放");
   });
 
+  it("整表建议的 scope 是 form（旧行为不变）", async () => {
+    const { app, cookie } = await boot("mock");
+    const created = await createForm(app, cookie);
+    const response = await call<SuggestPatchResponse>(app, "POST", `/api/forms/${created.form.id}/suggest`, {
+      body: { baseVersionId: created.version.id, instruction: "改一下" },
+      cookie,
+    });
+    expect(response.status).toBe(200);
+    expect(response.json.scope).toEqual({ kind: "form" });
+  });
+
+  it("单题建议只改这一题：scope、ops 与 changes 都指向目标题", async () => {
+    const { app, cookie } = await boot("mock");
+    const created = await createForm(app, cookie);
+    const detail = await call<FormDetailResponse>(app, "GET", `/api/forms/${created.form.id}`, { cookie });
+    const target = detail.json.schema.items[1];
+    if (target === undefined) throw new Error("测试表单至少要有两道题");
+
+    const response = await call<SuggestPatchResponse>(app, "POST", `/api/forms/${created.form.id}/suggest`, {
+      body: {
+        baseVersionId: created.version.id,
+        instruction: "把这题改简单点",
+        targetItemId: target.id,
+      },
+      cookie,
+    });
+    expect(response.status).toBe(200);
+    expect(response.json.scope).toEqual({ kind: "item", itemId: target.id });
+    for (const op of response.json.ops) {
+      expect(op.op === "addItem" ? "" : op.itemId).toBe(target.id);
+    }
+    for (const change of response.json.changes) {
+      expect(change.where.startsWith("第 2 题")).toBe(true);
+    }
+    // 建议仍不写库。
+    expect(countVersions(app, created.form.id)).toBe(1);
+  });
+
+  it("目标题不存在 → 422，版本数不变", async () => {
+    const { app, cookie } = await boot("mock");
+    const created = await createForm(app, cookie);
+    const before = countVersions(app, created.form.id);
+    const response = await call(app, "POST", `/api/forms/${created.form.id}/suggest`, {
+      body: {
+        baseVersionId: created.version.id,
+        instruction: "把这题改简单点",
+        targetItemId: "q_missing",
+      },
+      cookie,
+    });
+    expect(response.status).toBe(422);
+    expect(String((response.json as { message?: string }).message)).toContain("不存在");
+    expect(countVersions(app, created.form.id)).toBe(before);
+  });
+
   it("未登录 401", async () => {
     const { app, cookie } = await boot("mock");
     const created = await createForm(app, cookie);

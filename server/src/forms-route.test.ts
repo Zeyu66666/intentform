@@ -288,6 +288,29 @@ describe("PATCH /api/forms/:id", () => {
     expect(detail.json.form.draftVersionId).toBe(created.version.id);
   });
 
+  it("PATCH setAnswer 落成新版本，总分不变（改答案不是改分值）", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    const formId = created.form.id;
+    const patched = await call<PatchFormResponse>(app, "PATCH", `/api/forms/${formId}`, {
+      body: {
+        baseVersionId: created.version.id,
+        ops: [{ op: "setAnswer", itemId: "q-single", answer: { type: "single", answer: "op2" } }],
+      },
+      cookie,
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.json.version.n).toBe(2);
+    expect(patched.json.schema.meta.totalScore).toBe(20);
+    const item = patched.json.schema.items.find((candidate) => candidate.id === "q-single");
+    expect(item?.type).toBe("single");
+    if (item?.type !== "single") return;
+    expect(item.answer).toBe("op2");
+    expect(patched.json.changes).toEqual([
+      { op: "setAnswer", itemId: "q-single", where: "第 2 题 · 答案", before: "选项一", after: "选项二" },
+    ]);
+  });
+
   it("把答案指的选项删掉：草稿照存，但 issues 当场说明「还不能发布」", async () => {
     const { app, cookie } = await boot();
     const created = await createForm(app, cookie);
