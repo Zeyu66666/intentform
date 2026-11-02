@@ -58,6 +58,7 @@
 | 受限修改 | 六种操作（改题干/选项/分值，加、删、移题）+ 单步撤销；一句话改题先给建议、确认后才落库 |
 | 作答与收集 | 学生手机端零登录作答；问卷（survey）走收集页闭环，测验（quiz）走自动判分 |
 | 判分与统计 | 客观题服务端判分；简答题人工批改；每题正确率、得分分布、覆盖矩阵；CSV 导出 |
+| 出卷与回看 | 打印版考卷（可含答案）；教师可开启「提交后展示答案解析」，答案只随那次提交返回 |
 | 可复现 | `live` / `record` / `replay` / `mock` 四种模式；默认回放，无需 API Key 即可跑通完整闭环 |
 
 ## 技术栈与架构
@@ -178,7 +179,7 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | `pnpm typecheck` | 四个包全量类型检查 |
 | `pnpm test` | 71 个测试文件 / 815 条用例（oxlint `--deny-warnings`、Vitest） |
 | `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC12；自起临时服务与临时库，不碰 `data/intentform.db` |
-| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十三步（含打印版 PDF、答案解析、暗色模式）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
+| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十四步（含打印版 PDF、答案解析、暗色模式、跳过蓝图直生成）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
 | `pnpm eval` | 30 条需求集的整份达标率，报告写入 `eval/runs/<runId>/` 并更新 `eval/runs/latest.json` |
 
 浏览器闭环需要本机 Chrome（`CHROME_PATH` 可指定；找不到会 `exit 2` 而不是静默跳过）。
