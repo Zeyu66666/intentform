@@ -4,7 +4,7 @@
  * 为什么不让模型直接改整份 schema：
  * - 整份重发时，只要模型少写一个字段，整卷就退化成"生成失败"；改一份已有表单的
  *   代价必须小于重生成，否则使用者宁可自己手改。
- * - 受限操作集只有六种 op，每一种都是可枚举、可校验、可撤销的。撤销能成立，前提
+ * - 受限操作集只有十一种 op（P18 从六种扩到十一种），每一种都是可枚举、可校验、可撤销的。撤销能成立，前提
  *   正是"每一步改动都是一个有限集合里的元素"，而不是一坨自由文本。
  *
  * 与 `generate.ts` 的关系：两者都不信任模型，但**信任的方式不同**。
@@ -15,8 +15,8 @@
  * 会显式报错而不是静默返回空改动——`patch.v1` 需要单独录，见 `docs/prompt-log/P08`。
  */
 
-import { formSchema, patchOpsSchema, applyPatch } from "@intentform/schema";
-import type { FormSchema, PatchChange, PatchOp } from "@intentform/schema";
+import { formSchema, patchOpsSchema, applyPatch, ITEM_SCOPE_PATCH_OPS_SET } from "@intentform/schema";
+import type { FormItem, FormSchema, PatchChange, PatchOp } from "@intentform/schema";
 
 import { LlmError } from "./errors.ts";
 import type { LlmRuntimeConfig } from "./config.ts";
@@ -25,7 +25,7 @@ import type { SourceLabel } from "./sources.ts";
 import type { ChatMessage } from "./provider.ts";
 import { streamChatCompletion } from "./provider.ts";
 /** 提示词版本进日志与响应，不进回放键（patch 还没有回放）。 */
-export const PATCH_PROMPT_VERSION = "patch.v1";
+export const PATCH_PROMPT_VERSION = "patch.v2";
 
 /** 一次建议最多接受多少条 op：防止模型把「重排整卷」写成几十条细碎移动。 */
 export const MAX_SUGGESTED_OPS = 24;
@@ -34,6 +34,8 @@ export interface PatchSuggestInput {
   readonly config: LlmRuntimeConfig;
   readonly schema: FormSchema;
   readonly instruction: string;
+  /** 单题作用域（P18）：给了就只允许改这道题；省略 = 整表。 */
+  readonly targetItemId?: string;
   readonly signal?: AbortSignal;
   readonly fetchImpl?: FetchLike;
 }
@@ -62,15 +64,22 @@ export function buildPatchSystemPrompt(): string {
     "输出协议（必须严格遵守）：",
     '1. 只输出一个 JSON 对象：{"ops": [...]}。不要代码围栏、不要解释文字、不要注释。',
     `2. ops 最多 ${String(MAX_SUGGESTED_OPS)} 条；能一条改完的不要拆成多条。`,
-    "3. 只能用下面六种 op，字段名一个都不能造：",
+    "3. 只能用下面十一种 op，字段名一个都不能造：",
     '   - {"op":"setStem","itemId":"…","title":"新题干"}',
     '   - {"op":"setOptions","itemId":"…","options":[{"id":"a","text":"…"}]}（整组替换，不是追加）',
     '   - {"op":"setScore","itemId":"…","score":5}（整数；简答题也可以带分值，表示人工批改额度）',
     '   - {"op":"addItem","index":0,"item":{…完整的 FormItem…}}（index 从 0 开始，0 表示插到最前）',
     '   - {"op":"removeItem","itemId":"…"}',
     '   - {"op":"moveItem","itemId":"…","toIndex":2}',
-    "4. 不许改 section 的题干以外的任何东西；不许给 survey 加 answer/score；不许编造不存在的 itemId。",
-    "5. 如果用户的这句话用这六种 op 表达不了（比如「把整卷改成英语」），就输出 {\"ops\": []}，不要硬凑。",
+    '   - {"op":"setAnswer","itemId":"…","answer":{"type":"single","answer":"a"}}（multi/fill 的 answer 是字符串数组；number 是 {"value":3,"tolerance":0.01}）',
+    '   - {"op":"setExplanation","itemId":"…","explanation":"解析文字"}（null 表示清空）',
+    '   - {"op":"setRequired","itemId":"…","required":false}',
+    '   - {"op":"setMeta","itemId":"…","bloom":"apply","knowledgePoint":"kp2"}（两个字段都必须给，null 表示清空）',
+    '   - {"op":"setMaxLength","itemId":"…","maxLength":300}（只对简答题有效）',
+    "4. 不许改 section 的题干以外的任何东西；不许给 short/scale/section 写 answer；不许给 survey 加 answer/score；不许编造不存在的 itemId。",
+    "5. setMeta 必须两个字段都给，不许只给 bloom 或只给 knowledgePoint。",
+    "6. 单题模式下 ops 的 itemId 只能是目标题，不许引用其它题。",
+    "7. 如果用户的这句话用这十一种 op 表达不了（比如「把整卷改成英语」），就输出 {\"ops\": []}，不要硬凑。",
     "",
     "样例（把第 2 题分值改成 8 分、并把它的题干换成新说法）：",
     '{"ops":[{"op":"setScore","itemId":"q_2","score":8},{"op":"setStem","itemId":"q_2","title":"下列哪个是质数？"}]}',
@@ -90,12 +99,90 @@ export function describeForm(schema: FormSchema): string {
   return [`卷名：${schema.meta.title}`, `满分：${String(schema.meta.totalScore)}`, ...lines].join("\n");
 }
 
-export function buildPatchMessages(schema: FormSchema, instruction: string): readonly ChatMessage[] {
+/** 答案的人话版本，给单题事实块用：显示选项文字，不显示 id。 */
+function stateAnswerOf(item: FormItem): string {
+  switch (item.type) {
+    case "single":
+      return item.answer ?? "—";
+    case "multi":
+      return item.answer === undefined ? "—" : item.answer.join(",");
+    case "fill":
+      return item.answer === undefined ? "—" : item.answer.join("／");
+    case "number":
+      return item.answer === undefined
+        ? "—"
+        : `${String(item.answer.value)}±${String(item.answer.tolerance)}`;
+    default:
+      return "—";
+  }
+}
+
+/**
+ * 单题模式的事实块：给全目标题的一切，其余题只留一行。
+ *
+ * 给全目标题是因为模型本来就能拿到整卷；**其余题压成一行**是为了防止模型
+ * 顺手撞别的 id 或把别的题的知识点重复引用——作用域在服务端是硬拦，但在提示词里
+ * 先缩小它的注意力范围，能少一轮无效建议。
+ */
+export function describeItem(schema: FormSchema, item: FormItem): string {
+  const index = schema.items.findIndex((candidate) => candidate.id === item.id);
+  const head = [
+    `#${String(index)}`,
+    `id=${item.id}`,
+    `type=${item.type}`,
+  ];
+  if ("required" in item) head.push(`required=${String(item.required)}`);
+  if ("score" in item && item.score !== undefined) head.push(`score=${String(item.score)}`);
+  if ("bloom" in item && item.bloom !== undefined) head.push(`bloom=${item.bloom}`);
+  if ("knowledgePoint" in item && item.knowledgePoint !== undefined) head.push(`kp=${item.knowledgePoint}`);
+
+  const details = [`  title=${item.title}`];
+  if (item.type === "single" || item.type === "multi") {
+    details.push(`  options=${item.options.map((option) => `${option.id}:${option.text}`).join(" | ")}`);
+  }
+  const explanation = "explanation" in item && item.explanation !== undefined ? item.explanation : "（空）";
+  const maxLength = item.type === "short" ? String(item.maxLength) : "—";
+  details.push(`  answer=${stateAnswerOf(item)}  explanation=${explanation}  maxLength=${maxLength}`);
+  if (item.type === "section" && item.description !== undefined) {
+    details.push(`  description=${item.description}`);
+  }
+
+  const others = schema.items
+    .filter((candidate) => candidate.id !== item.id)
+    .map((candidate, at) => {
+      const original = schema.items.findIndex((entry) => entry.id === candidate.id);
+      return `#${String(original < 0 ? at : original)} ${candidate.type}「${candidate.title}」`;
+    })
+    .join(" / ");
+  const objectives =
+    schema.meta.objectives.length === 0
+      ? "（无）"
+      : schema.meta.objectives.map((objective) => `${objective.id} ${objective.name}`).join(" / ");
+
+  return [
+    `目标题（唯一可改）：${head.join(" ")}`,
+    ...details,
+    `本卷其它题（只读，不可改）：${others === "" ? "（无）" : others}`,
+    `可选知识点：${objectives}`,
+  ].join("\n");
+}
+
+export function buildPatchMessages(
+  schema: FormSchema,
+  instruction: string,
+  targetItemId?: string,
+): readonly ChatMessage[] {
+  const target =
+    targetItemId === undefined ? undefined : schema.items.find((item) => item.id === targetItemId);
+  const facts =
+    target === undefined
+      ? describeForm(schema)
+      : `${describeItem(schema, target)}\nSCOPE: 只允许修改 id=${target.id}`;
   return [
     { role: "system", content: buildPatchSystemPrompt() },
     {
       role: "user",
-      content: `${describeForm(schema)}\n\n${INSTRUCTION_OPEN}\n${instruction}\n${INSTRUCTION_CLOSE}`,
+      content: `${facts}\n\n${INSTRUCTION_OPEN}\n${instruction}\n${INSTRUCTION_CLOSE}`,
     },
   ];
 }
@@ -127,7 +214,16 @@ export function extractOpsJson(text: string): unknown {
  * 只做两件可验证的事——把第 1 题题干加一个后缀、把一个判分题的分值 +1（封顶 10）。
  * 它证明的是「链路能产出合法 ops 并算出差异」，不证明任何语义理解。
  */
-export function mockPatchOps(schema: FormSchema): readonly PatchOp[] {
+export function mockPatchOps(schema: FormSchema, targetItemId?: string): readonly PatchOp[] {
+  // 单题模式：只产目标题的两条固定改动，保证 mock 也能走通"只改这题"的链路。
+  if (targetItemId !== undefined) {
+    const target = schema.items.find((item) => item.id === targetItemId);
+    if (target === undefined) return [];
+    return [
+      { op: "setStem", itemId: target.id, title: `${target.title}（mock 改写）` },
+      { op: "setExplanation", itemId: target.id, explanation: "mock：这道题的解析由演示脚本写入" },
+    ];
+  }
   const ops: PatchOp[] = [];
   const first = schema.items[0];
   if (first !== undefined) {
@@ -146,8 +242,24 @@ export function mockPatchOps(schema: FormSchema): readonly PatchOp[] {
 export function applySuggestedOps(
   schema: FormSchema,
   ops: readonly PatchOp[],
+  targetItemId?: string,
 ): readonly PatchChange[] {
   if (ops.length === 0) return [];
+  if (targetItemId !== undefined) {
+    // 作用域在提示词里说了，但这里必须再验一次：模型不听提示词是常态，
+    // 服务端与纯函数两层都拦，才谈得上"不信模型"。
+    const stray = ops.find(
+      (op) =>
+        !("itemId" in op) ||
+        op.itemId !== targetItemId ||
+        !ITEM_SCOPE_PATCH_OPS_SET.has(op.op),
+    );
+    if (stray !== undefined) {
+      throw new LlmError("llm_invalid_output", "建议改到了目标题之外，已拦下", {
+        detail: `stray op=${stray.op}`,
+      });
+    }
+  }
   const applied = applyPatch(schema, ops);
   if (applied.ok === false) {
     const first = applied.errors[0];
@@ -187,10 +299,10 @@ export async function suggestPatch(input: PatchSuggestInput): Promise<PatchSugge
   }
 
   if (config.mode === "mock") {
-    const ops = mockPatchOps(schema);
+    const ops = mockPatchOps(schema, input.targetItemId);
     return {
       ops,
-      changes: applySuggestedOps(schema, ops),
+      changes: applySuggestedOps(schema, ops, input.targetItemId),
       source: "mock",
       promptVersion: PATCH_PROMPT_VERSION,
     };
@@ -201,7 +313,7 @@ export async function suggestPatch(input: PatchSuggestInput): Promise<PatchSugge
     throw new LlmError("llm_config", "受限修改建议还没有回放录像（patch.v1），请用 live 或 mock");
   }
 
-  const messages = buildPatchMessages(schema, instruction);
+  const messages = buildPatchMessages(schema, instruction, input.targetItemId);
   let text = "";
   for await (const event of streamChatCompletion(
     {
@@ -223,7 +335,7 @@ export async function suggestPatch(input: PatchSuggestInput): Promise<PatchSugge
   const ops = parseOpsPayload(extractOpsJson(text));
   return {
     ops,
-    changes: applySuggestedOps(schema, ops),
+    changes: applySuggestedOps(schema, ops, input.targetItemId),
     source: config.mode === "record" ? "record" : "live",
     promptVersion: PATCH_PROMPT_VERSION,
   };

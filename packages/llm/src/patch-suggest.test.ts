@@ -13,8 +13,12 @@ import { formSchema } from "@intentform/schema";
 import type { FetchLike } from "./provider.ts";
 import { resolveLlmRuntimeConfig } from "./config.ts";
 import {
+  PATCH_PROMPT_VERSION,
   applySuggestedOps,
+  buildPatchMessages,
+  buildPatchSystemPrompt,
   describeForm,
+  describeItem,
   extractOpsJson,
   mockPatchOps,
   parseOpsPayload,
@@ -77,6 +81,20 @@ describe("mock 的 ops", () => {
       expect(["setStem", "setScore"]).toContain(op.op);
     }
   });
+
+  it("单题模式只产目标题的 op（mock 也能走通作用域链路）", () => {
+    const ops = mockPatchOps(sampleSchema(), "q_two");
+    expect(ops.length).toBeGreaterThan(0);
+    for (const op of ops) {
+      expect(op.op === "addItem" ? "" : op.itemId).toBe("q_two");
+    }
+    const changes = applySuggestedOps(sampleSchema(), ops, "q_two");
+    expect(changes.every((change) => change.where.startsWith("第 2 题"))).toBe(true);
+  });
+
+  it("目标题不存在时返回空 op，不凭空造一道题", () => {
+    expect(mockPatchOps(sampleSchema(), "q_nope")).toEqual([]);
+  });
 });
 
 describe("extractOpsJson", () => {
@@ -106,8 +124,20 @@ describe("parseOpsPayload", () => {
     expect(() => parseOpsPayload({ changes: [] })).toThrowError(/没有 ops/);
   });
 
-  it("op 名不在六种之内 → 报错", () => {
+  it("op 名不在十种之内 → 报错", () => {
     expect(() => parseOpsPayload({ ops: [{ op: "renameForm", title: "x" }] })).toThrowError(/不合法/);
+  });
+
+  it("P18 的四种新 op 是合法 JSON 形状", () => {
+    const ops = parseOpsPayload({
+      ops: [
+        { op: "setAnswer", itemId: "q_one", answer: { type: "single", answer: "b" } },
+        { op: "setExplanation", itemId: "q_one", explanation: "因为通分" },
+        { op: "setRequired", itemId: "q_one", required: false },
+        { op: "setMeta", itemId: "q_one", bloom: "apply", knowledgePoint: null },
+      ],
+    });
+    expect(ops).toHaveLength(4);
   });
 
   it("合法 ops 原样返回", () => {
@@ -124,6 +154,59 @@ describe("describeForm", () => {
     expect(text).toContain("score=10");
     expect(text).toContain("options=a");
     expect(text).toContain("满分：15");
+  });
+});
+
+describe("单题作用域（P18）", () => {
+  it("提示词升到 patch.v2，四种新 op 的完整形状都在", () => {
+    expect(PATCH_PROMPT_VERSION).toBe("patch.v2");
+    const prompt = buildPatchSystemPrompt();
+    for (const op of ["setAnswer", "setExplanation", "setRequired", "setMeta"]) {
+      expect(prompt).toContain(`"${op}"`);
+    }
+  });
+
+  it("describeItem 给全目标题：题干、选项文字、答案、解析、其它题只留一行", () => {
+    const schema = sampleSchema();
+    const target = schema.items[0];
+    if (target === undefined) throw new Error("sample schema 缺第一题");
+    const text = describeItem(schema, target);
+    expect(text).toContain("目标题（唯一可改）");
+    expect(text).toContain("id=q_one");
+    expect(text).toContain("a:5/6");
+    expect(text).toContain("answer=a");
+    expect(text).toContain("本卷其它题（只读，不可改）：#1 short「说说你的思路」");
+  });
+
+  it("单题消息带硬约束 SCOPE，整表消息不带", () => {
+    const single = buildPatchMessages(sampleSchema(), "改简单点", "q_two");
+    const user = single[1]?.content ?? "";
+    expect(user).toContain("SCOPE: 只允许修改 id=q_two");
+    expect(user).toContain("目标题（唯一可改）");
+
+    const whole = buildPatchMessages(sampleSchema(), "改简单点");
+    expect(whole[1]?.content ?? "").not.toContain("SCOPE:");
+    expect(whole[1]?.content ?? "").toContain("卷名：");
+  });
+
+  it("模型跨题 → applySuggestedOps 抛 llm_invalid_output（不静默过滤）", () => {
+    expect(() =>
+      applySuggestedOps(
+        sampleSchema(),
+        [{ op: "setStem", itemId: "q_two", title: "改到别的题" }],
+        "q_one",
+      ),
+    ).toThrowError(/目标题之外/);
+  });
+
+  it("模型给结构性 op → 单题作用域拒绝", () => {
+    expect(() =>
+      applySuggestedOps(
+        sampleSchema(),
+        [{ op: "removeItem", itemId: "q_one" }],
+        "q_one",
+      ),
+    ).toThrowError(/目标题之外/);
   });
 });
 
