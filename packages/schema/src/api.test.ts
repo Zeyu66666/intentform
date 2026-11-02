@@ -9,6 +9,8 @@ import {
   createFormRequestSchema,
   isApiErrorBody,
   loginRequestSchema,
+  patchFormPayloadOf,
+  patchFormRequestSchema,
   publishRequestSchema,
   submitRequestSchema,
   suggestPatchRequestSchema,
@@ -136,6 +138,59 @@ describe("submitRequestSchema", () => {
 describe("CSV 表头", () => {
   it("前四列固定，顺序就是表头顺序", () => {
     expect(CSV_BASE_COLUMNS).toEqual(["submission_id", "created_at", "score", "max_score"]);
+  });
+});
+
+describe("通用 JSON Patch 请求（2026-11-02）", () => {
+  it("ops 与 jsonPatch 二选一，两个都带或都不带都拒", () => {
+    const base = { baseVersionId: "v1" };
+    expect(
+      patchFormRequestSchema.safeParse({
+        ...base,
+        ops: [{ op: "setStem", itemId: "q_one", title: "新题干" }],
+      }).success,
+    ).toBe(true);
+    expect(
+      patchFormRequestSchema.safeParse({
+        ...base,
+        jsonPatch: [{ op: "replace", path: "/items/0/title", value: "新题干" }],
+      }).success,
+    ).toBe(true);
+    expect(patchFormRequestSchema.safeParse(base).success).toBe(false);
+    expect(
+      patchFormRequestSchema.safeParse({
+        ...base,
+        ops: [{ op: "setStem", itemId: "q_one", title: "新题干" }],
+        jsonPatch: [{ op: "test", path: "/items/0/title", value: "x" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("payload 归一后仍能区分两条路径", () => {
+    const ops = [{ op: "setStem", itemId: "q_one", title: "新题干" }] as const;
+    const opRequest = patchFormRequestSchema.parse({ baseVersionId: "v1", ops });
+    expect(patchFormPayloadOf(opRequest)).toEqual({ kind: "ops", ops });
+
+    const jsonRequest = patchFormRequestSchema.parse({
+      baseVersionId: "v1",
+      jsonPatch: [{ op: "test", path: "/items/0/title", value: "x" }],
+    });
+    expect(patchFormPayloadOf(jsonRequest).kind).toBe("json-patch");
+  });
+
+  it("RFC 6902 操作形状不对时在契约层就拒", () => {
+    expect(
+      patchFormRequestSchema.safeParse({
+        baseVersionId: "v1",
+        jsonPatch: [{ op: "add", path: "/items/0/title" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      patchFormRequestSchema.safeParse({
+        baseVersionId: "v1",
+        jsonPatch: [{ op: "remove", path: "/items/0/title", value: "多余" }],
+      }).success,
+    ).toBe(false);
   });
 });
 

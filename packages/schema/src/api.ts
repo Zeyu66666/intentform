@@ -31,6 +31,7 @@ import { formSchema, type FormSchema } from "./types.ts";
 import type { FormBlueprint } from "./blueprint.ts";
 import type { CoverageMatrix } from "./coverage.ts";
 import { patchOpsSchema, type PatchChange, type PatchError, type PatchOp } from "./patch.ts";
+import { jsonPatchOpsSchema, type JsonPatchOp } from "./json-patch.ts";
 
 /** 路由表：前后端都从这里取路径，避免 "/api/forms/:id/publish" 手写成两种拼法。 */
 export const API_PATHS = {
@@ -54,6 +55,7 @@ export const API_PATHS = {
   patchForm: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   /** 撤销一步：把草稿指针退回当前草稿的父版本。 */
   undoDraft: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/undo`,
+  redoDraft: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/redo`,
   suggestPatch: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/suggest`,
   submissions: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions`,
   submissionsCsv: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions.csv`,
@@ -204,6 +206,8 @@ export interface FormDetailResponse {
   readonly form: FormSummary;
   readonly version: FormVersionSummary;
   readonly schema: FormSchema;
+  /** 撤销栈里是否还有可重做的一步（2026-11-02 重做栈）。 */
+  readonly redoAvailable: boolean;
 }
 
 /**
@@ -253,15 +257,47 @@ export interface FormSettingsResponse {
  * 后者会让两个人的改动互相吞掉，且没有任何一方看到发生了这件事。
  *
  * 标题与 Schema 分开传：改标题不动题目，也不该让题目的版本号蹭一个不必要的增量。
+ *
+ * 两种载荷二选一：`ops` 是界面用的十一个受限 op；`jsonPatch` 是 2026-11-02
+ * 拉进来的 RFC 6902 通用语法。后者落库前会被翻译回前者，**不是**直接改 Schema。
  */
-export const patchFormRequestSchema = z.object({
-  baseVersionId: z.string().min(1).max(64),
-  ops: patchOpsSchema,
-  /** 可选：一并改表单标题。不传表示只改题目。 */
-  title: z.string().trim().min(1).max(LIMITS.formTitleMax).optional(),
-});
+export const patchFormRequestSchema = z.union([
+  z
+    .object({
+      baseVersionId: z.string().min(1).max(64),
+      ops: patchOpsSchema,
+      /** 可选：一并改表单标题。不传表示只改题目。 */
+      title: z.string().trim().min(1).max(LIMITS.formTitleMax).optional(),
+    })
+    .strict(),
+  /**
+   * 通用 JSON Patch（RFC 6902 形状，2026-11-02 负责人拉入范围）。
+   *
+   * 语法通用、落库仍受限：服务端先把它翻译回十一个 op，再过 `applyPatch`。
+   * 与 `ops` 二选一，两个都带或都不带都会被 `.strict()` 拒掉。
+   */
+  z
+    .object({
+      baseVersionId: z.string().min(1).max(64),
+      jsonPatch: jsonPatchOpsSchema,
+      title: z.string().trim().min(1).max(LIMITS.formTitleMax).optional(),
+    })
+    .strict(),
+]);
 
 export type PatchFormRequest = z.infer<typeof patchFormRequestSchema>;
+
+/** 请求实际走哪条路径：界面用受限 op，通用 JSON Patch 供脚本/高级调用。 */
+export type PatchFormPayload =
+  | { readonly kind: "ops"; readonly ops: readonly PatchOp[] }
+  | { readonly kind: "json-patch"; readonly ops: readonly JsonPatchOp[] };
+
+/** 把两种请求形状归一成「待翻译的载荷」，调用方不必到处写 `in` 判断。 */
+export function patchFormPayloadOf(request: PatchFormRequest): PatchFormPayload {
+  return "ops" in request
+    ? { kind: "ops", ops: request.ops }
+    : { kind: "json-patch", ops: request.jsonPatch };
+}
 
 /**
  * `POST /api/forms/:id/suggest` 的请求：一句中文修改要求（R-03）。
@@ -333,6 +369,13 @@ export const undoDraftRequestSchema = z.object({
 
 export type UndoDraftRequest = z.infer<typeof undoDraftRequestSchema>;
 
+/** 重做：把撤销时压栈的版本重新设为草稿。请求形状与撤销一致（同样带乐观锁）。 */
+export const redoDraftRequestSchema = z.object({
+  fromVersionId: z.string().min(1).max(64),
+});
+
+export type RedoDraftRequest = z.infer<typeof redoDraftRequestSchema>;
+
 export interface PatchFormResponse {
   readonly ok: true;
   readonly form: FormSummary;
@@ -366,6 +409,21 @@ export interface UndoDraftResponse {
   readonly version: FormVersionSummary;
   readonly schema: FormSchema;
   readonly undone: boolean;
+  /** 这次撤销之后，重做栈里是否还有一步。界面据此点亮「重做」。 */
+  readonly redoAvailable: boolean;
+}
+
+/**
+ * 重做的响应。`redone === false` 不是错误：栈空或栈顶与当前草稿对不上
+ * （撤销后又改过）时，表示「没有可重做的步骤」。
+ */
+export interface RedoDraftResponse {
+  readonly ok: true;
+  readonly form: FormSummary;
+  readonly version: FormVersionSummary;
+  readonly schema: FormSchema;
+  readonly redone: boolean;
+  readonly redoAvailable: boolean;
 }
 
 /** Patch 被拒时的明细（400 响应的 `error.detail` 里带 `errors`）。 */

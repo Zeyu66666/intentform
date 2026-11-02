@@ -34,6 +34,7 @@ export * from "./blueprint.ts";
 export * from "./coverage.ts";
 export * from "./api.ts";
 export * from "./patch.ts";
+export * from "./json-patch.ts";
 
 /**
  * 生产装配：R7 使用真实的 KaTeX 校验。
