@@ -1327,6 +1327,84 @@ function parseSse(text) {
   return events;
 }
 
+/**
+ * VC14：通用 JSON Patch + 重做栈（2026-11-02）。
+ *
+ * 三段：
+ * 1. RFC 6902 的 replace 能改题目字段，响应里的 `changes` 仍是受限 op 的人话 diff；
+ * 2. 越界路径（删题）整包 400，版本号不动；
+ * 3. 撤销 → 重做回到同一版本；撤销后再改，重做栈清空（不会把旧分支拨回来）。
+ */
+async function vc14JsonPatchAndRedo(request, ctx) {
+  const schema = JSON.parse(JSON.stringify(QUIZ_SCHEMA));
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: schema.meta.title, kind: "quiz", schema, source: "generate" },
+  });
+  must(created.status === 201, `VC14 建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const formId = created.json.form.id;
+  const v1 = created.json.version.id;
+
+  const patched = await request("PATCH", `/api/forms/${formId}`, {
+    cookie: ctx.cookie,
+    json: {
+      baseVersionId: v1,
+      jsonPatch: [
+        { op: "replace", path: "/items/0/title", value: "JSON Patch 改过的题干" },
+        { op: "replace", path: "/items/0/score", value: 7 },
+      ],
+    },
+  });
+  must(patched.status === 200, `VC14 通用 Patch 失败（${String(patched.status)}）：${firstLine(patched.text)}`);
+  must(patched.json.version.n === 2, `VC14 通用 Patch 应产生 v2，实际 n=${String(patched.json.version.n)}`);
+  const itemChanges = patched.json.changes.filter((change) => change.itemId === "v-single");
+  must(
+    itemChanges.map((change) => change.op).join(",") === "setStem,setScore",
+    `VC14 changes 应翻译回 setStem,setScore：${JSON.stringify(patched.json.changes)}`,
+  );
+  must(patched.json.schema.meta.totalScore === 22, `VC14 总分应为 22，实际 ${String(patched.json.schema.meta.totalScore)}`);
+
+  const structural = await request("PATCH", `/api/forms/${formId}`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: patched.json.version.id, jsonPatch: [{ op: "remove", path: "/items/1" }] },
+  });
+  must(structural.status === 400, `VC14 删题应 400，实际 ${String(structural.status)}：${firstLine(structural.text)}`);
+  const afterReject = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(afterReject.json.version.n === 2, `VC14 被拒的 Patch 不应写库，实际 n=${String(afterReject.json.version.n)}`);
+
+  const undo = await request("POST", `/api/forms/${formId}/undo`, {
+    cookie: ctx.cookie,
+    json: { fromVersionId: patched.json.version.id },
+  });
+  must(undo.status === 200 && undo.json.undone === true, `VC14 撤销失败：${firstLine(undo.text)}`);
+  must(undo.json.redoAvailable === true, "VC14 撤销后 redoAvailable 应为 true");
+
+  const redo = await request("POST", `/api/forms/${formId}/redo`, {
+    cookie: ctx.cookie,
+    json: { fromVersionId: undo.json.version.id },
+  });
+  must(redo.status === 200 && redo.json.redone === true, `VC14 重做失败：${firstLine(redo.text)}`);
+  must(redo.json.version.id === patched.json.version.id, "VC14 重做应回到被撤销的那一版");
+  must(redo.json.redoAvailable === false, "VC14 重做到底后 redoAvailable 应为 false");
+
+  // 再撤销一次，然后从父版本改出新版本：旧的重做分支必须作废。
+  const undoAgain = await request("POST", `/api/forms/${formId}/undo`, {
+    cookie: ctx.cookie,
+    json: { fromVersionId: redo.json.version.id },
+  });
+  must(undoAgain.json.redoAvailable === true, "VC14 第二次撤销后应有可重做项");
+  const branched = await request("PATCH", `/api/forms/${formId}`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: undoAgain.json.version.id, ops: [{ op: "setStem", itemId: "v-single", title: "另一条分支" }] },
+  });
+  must(branched.status === 200, `VC14 撤销后再改失败：${firstLine(branched.text)}`);
+  const staleRedo = await request("POST", `/api/forms/${formId}/redo`, {
+    cookie: ctx.cookie,
+    json: { fromVersionId: branched.json.version.id },
+  });
+  must(staleRedo.json.redone === false, "VC14 撤销后再改，旧分支不应还能重做");
+}
+
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const CHECKS = [
   ["VC1 发布快照：改草稿不影响已发布版本的收集页", vc1Snapshot],
@@ -1342,6 +1420,7 @@ const CHECKS = [
   ["VC11 收集页闭环：survey 填写、回收看板与 CSV", vc11SurveyCollection],
   ["VC12 答案解析开关：默认关闭、开启后随提交返回、公开视图不变", vc12AnswerReview],
   ["VC13 单题修改：建议作用域、答案改动进判分、越界 422 不写库", vc13SingleItemEdit],
+  ["VC14 通用 Patch 与重做：RFC 6902 翻译、越界不写库、撤销可重做", vc14JsonPatchAndRedo],
 ];
 
 async function main() {

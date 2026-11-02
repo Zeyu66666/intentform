@@ -1038,7 +1038,7 @@ async function main() {
     // VC6/VC7 验的是 PATCH/撤销的 HTTP 语义；这里验「教师点得到、看得见 diff」。
     // mock 模式的建议是内置脚本（改写第一题题干），所以断言的是"建议被采用并落成 v2"，
     // 不是"模型读懂了这句话"——两者不能混为一谈。
-    const edited = await step("编辑器里用一句话改一版再撤销", async () => {
+    const edited = await step("编辑器里用一句话改一版，撤销再重做", async () => {
       await page.goto(`${webBase}/forms/${publish.formId}/edit`);
       await waitFor(
         async () => (await page.evaluate("return byTestId('edit-save') !== null")),
@@ -1090,7 +1090,19 @@ async function main() {
         "var el = byTestId('edit-notice'); return el === null ? '' : el.textContent.trim();",
       );
       artifacts.push(await page.screenshot("11-editor-undone.png"));
-      return { before, proposal: proposal.slice(0, 80), notice };
+
+      // 重做：撤销后服务端栈里有一步，按钮应可点；点完版本回到 v2。
+      const redo = await page.tap('[data-testid="edit-redo"]');
+      must(redo.ok === true, `点不到「重做」：${JSON.stringify(redo)}`);
+      await waitFor(
+        async () => (await page.evaluate("var el = byTestId('edit-form-meta'); return el !== null && el.textContent.indexOf('v2') >= 0;")),
+        "重做后回到 v2",
+        20_000,
+      );
+      const redoNotice = await page.evaluate(
+        "var el = byTestId('edit-notice'); return el === null ? '' : el.textContent.trim();",
+      );
+      return { before, proposal: proposal.slice(0, 80), notice, redoNotice };
     });
 
     // 9) 意图澄清（省赛 R-05）：含糊需求先问 1–3 条，不答也能生成
