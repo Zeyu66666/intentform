@@ -161,10 +161,16 @@ export function rateBarWidth(stat: ItemStat): number {
   return Math.round(stat.rate * 100);
 }
 
-export function collectionRateText(stat: CollectionStat): string {
-  if (stat.rate === null) return NO_RATE_TEXT;
-  const percent = Math.round(stat.rate * 1000) / 10;
+/** 比率 → `66.7%`；`null`（没有提交）→ `—`。字段统计与选项分布共用一份口径。 */
+export function ratePercentText(rate: number | null): string {
+  if (rate === null) return NO_RATE_TEXT;
+  // 先乘再取一位小数：0.6667 → 66.7，1 → 100（不拖 `.0`），0 → 0。
+  const percent = Math.round(rate * 1000) / 10;
   return `${String(percent)}%`;
+}
+
+export function collectionRateText(stat: CollectionStat): string {
+  return ratePercentText(stat.rate);
 }
 
 export function collectionRateBarWidth(stat: CollectionStat): number {

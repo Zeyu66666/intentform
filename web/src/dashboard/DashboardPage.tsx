@@ -14,7 +14,7 @@
  * 用 fetch 取 blob 再触发下载要多写一遍错误处理，拿不到 200 时用户只会看到"没动静"。
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { BLOOM_LEVELS, type FormSummary, type SubmissionsResponse } from "@intentform/schema";
 
@@ -31,6 +31,7 @@ import {
   collectionRateBarWidth,
   collectionRateText,
   correctRateText,
+  ratePercentText,
   formOptionLabel,
   needsGrading,
   pickInitialForm,
@@ -425,24 +426,46 @@ function SubmissionsSection({
               </thead>
               <tbody>
                 {state.data.collectionStats.map((stat) => (
-                  <tr key={stat.itemId} className="border-b border-line last:border-0" data-testid="dash-collection-stat">
-                    <td className="py-1 pr-2 text-ink">{stat.title}</td>
-                    <td className="py-1 pr-2 text-right tabular-nums text-ink">
-                      {`${String(stat.answered)}/${String(stat.total)}`}
-                    </td>
-                    <td className="py-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-12 text-right tabular-nums ${stat.rate === null ? "text-muted" : "text-ink"}`}>
-                          {collectionRateText(stat)}
-                        </span>
-                        {stat.rate === null ? null : (
-                          <span aria-hidden="true" className="h-2 w-16 overflow-hidden rounded-sm bg-line">
-                            <span className="block h-full bg-accent" style={{ width: `${String(collectionRateBarWidth(stat))}%` }} />
+                  <Fragment key={stat.itemId}>
+                    <tr className="border-b border-line last:border-0" data-testid="dash-collection-stat">
+                      <td className="py-1 pr-2 text-ink">{stat.title}</td>
+                      <td className="py-1 pr-2 text-right tabular-nums text-ink">
+                        {`${String(stat.answered)}/${String(stat.total)}`}
+                      </td>
+                      <td className="py-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-12 text-right tabular-nums ${stat.rate === null ? "text-muted" : "text-ink"}`}>
+                            {collectionRateText(stat)}
                           </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                          {stat.rate === null ? null : (
+                            <span aria-hidden="true" className="h-2 w-16 overflow-hidden rounded-sm bg-line">
+                              <span className="block h-full bg-accent" style={{ width: `${String(collectionRateBarWidth(stat))}%` }} />
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {stat.options === undefined ? null : (
+                      <tr className="border-b border-line last:border-0">
+                        <td colSpan={3} className="pb-1 pl-2">
+                          {/* 各选项分布（A-09）：分母与上一行一致；多选的占比之和可能超过 100%。 */}
+                          <ul className="m-0 flex list-none flex-wrap gap-x-3 gap-y-1 p-0 text-xs">
+                            {stat.options.map((option) => (
+                              <li
+                                key={option.optionId}
+                                data-testid="dash-collection-option"
+                                className="flex items-center gap-1"
+                              >
+                                <span className="text-muted">{option.label}</span>
+                                <span className="tabular-nums text-ink">{String(option.count)}</span>
+                                <span className="text-muted">{`（${ratePercentText(option.rate)}）`}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

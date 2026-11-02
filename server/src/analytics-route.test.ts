@@ -8,7 +8,12 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { CSV_BASE_COLUMNS, type SubmissionsResponse, type SubmitResponse } from "@intentform/schema";
+import {
+  CSV_BASE_COLUMNS,
+  formSchema,
+  type SubmissionsResponse,
+  type SubmitResponse,
+} from "@intentform/schema";
 import { appendVersion, publishVersion } from "./db/forms.ts";
 import { quizSchema } from "./testing/fixtures.ts";
 import {
@@ -254,7 +259,20 @@ describe("GET /api/forms/:id/submissions.csv", () => {
     expect(before.json.summary.count).toBe(0);
     expect(before.json.collectionStats).toEqual([
       { itemId: "s-short", title: "收获", type: "short", total: 0, answered: 0, rate: null },
-      { itemId: "s-scale", title: "作业量", type: "scale", total: 0, answered: 0, rate: null },
+      {
+        itemId: "s-scale",
+        title: "作业量",
+        type: "scale",
+        total: 0,
+        answered: 0,
+        rate: null,
+        options: [1, 2, 3, 4, 5].map((value) => ({
+          optionId: String(value),
+          label: String(value),
+          count: 0,
+          rate: null,
+        })),
+      },
     ]);
     expect(before.json.itemStats).toEqual([]);
 
@@ -274,7 +292,77 @@ describe("GET /api/forms/:id/submissions.csv", () => {
     expect(after.json.summary).toMatchObject({ kind: "survey", count: 1, avgScore: 0, maxScore: 0 });
     expect(after.json.collectionStats).toEqual([
       { itemId: "s-short", title: "收获", type: "short", total: 1, answered: 1, rate: 1 },
-      { itemId: "s-scale", title: "作业量", type: "scale", total: 1, answered: 1, rate: 1 },
+      {
+        itemId: "s-scale",
+        title: "作业量",
+        type: "scale",
+        total: 1,
+        answered: 1,
+        rate: 1,
+        options: [1, 2, 3, 4, 5].map((value) => ({
+          optionId: String(value),
+          label: String(value),
+          count: value === 3 ? 1 : 0,
+          rate: value === 3 ? 1 : 0,
+        })),
+      },
+    ]);
+  });
+
+  it("单选/多选给出各选项分布：多选占比之和可超过 100%，分母仍是提交份数", async () => {
+    const { app, cookie } = await boot();
+    const schema = formSchema.parse({
+      meta: { version: 1, kind: "survey", title: "分布", objectives: [] },
+      items: [
+        {
+          id: "q-single",
+          type: "single",
+          title: "单选",
+          required: true,
+          options: [
+            { id: "a", text: "甲" },
+            { id: "b", text: "乙" },
+          ],
+        },
+        {
+          id: "q-multi",
+          type: "multi",
+          title: "多选",
+          required: false,
+          options: [
+            { id: "a", text: "甲" },
+            { id: "b", text: "乙" },
+            { id: "c", text: "丙" },
+          ],
+        },
+      ],
+    });
+    const survey = await createPublishedQuiz(app, cookie, "survey", schema);
+    for (const answers of [
+      { "q-single": "a", "q-multi": ["a", "b"] },
+      { "q-single": "a", "q-multi": ["a"] },
+    ]) {
+      const submitted = await call(app, "POST", "/api/submissions", {
+        body: { slug: survey.slug, formVersionId: survey.versionId, answers },
+      });
+      expect(submitted.status).toBe(201);
+    }
+    const response = await call<SubmissionsResponse>(
+      app,
+      "GET",
+      `/api/forms/${survey.formId}/submissions`,
+      { cookie },
+    );
+    const [single, multi] = response.json.collectionStats;
+    expect(single?.options).toEqual([
+      { optionId: "a", label: "甲", count: 2, rate: 1 },
+      { optionId: "b", label: "乙", count: 0, rate: 0 },
+    ]);
+    // 多选：a 被两份都选了（100%），b 只被一份选（50%）——合计 150% 是多选语义。
+    expect(multi?.options).toEqual([
+      { optionId: "a", label: "甲", count: 2, rate: 1 },
+      { optionId: "b", label: "乙", count: 1, rate: 0.5 },
+      { optionId: "c", label: "丙", count: 0, rate: 0 },
     ]);
   });
 });

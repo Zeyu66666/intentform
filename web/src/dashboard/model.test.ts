@@ -9,6 +9,7 @@ import {
   collectionRateBarWidth,
   collectionRateText,
   correctRateText,
+  ratePercentText,
   rateBarWidth,
   UNPUBLISHED_TEXT,
   formOptionLabel,
@@ -101,6 +102,13 @@ describe("survey 回收率", () => {
     const stat = collection({ total: 3, answered: 2, rate: 0.6667 });
     expect(collectionRateText(stat)).toBe("66.7%");
     expect(collectionRateBarWidth(stat)).toBe(67);
+  });
+
+  it("选项分布与字段统计共用同一个百分比口径", () => {
+    expect(ratePercentText(null)).toBe(NO_RATE_TEXT);
+    expect(ratePercentText(1)).toBe("100%");
+    expect(ratePercentText(0.5)).toBe("50%");
+    expect(ratePercentText(0)).toBe("0%");
   });
 });
 

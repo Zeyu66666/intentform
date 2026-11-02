@@ -470,6 +470,21 @@ export interface SubmissionSummary {
   readonly pendingCount: number;
 }
 
+/**
+ * 选项/量表取值的分布（A-09 的「各选项分布」）。
+ *
+ * 分母与 `CollectionStat.total` 一致（提交份数）。多选一题可选多个选项，
+ * 因此各选项占比之和可能超过 100%——这是多选的语义，不是算错。
+ */
+export interface CollectionOptionStat {
+  /** 选项 id；量表字段用取值的字符串形式（`"4"`）。 */
+  readonly optionId: string;
+  /** 选项文字；量表没有文字时是取值本身。 */
+  readonly label: string;
+  readonly count: number;
+  readonly rate: number | null;
+}
+
 /** 收集型表单的逐字段回收统计。 */
 export interface CollectionStat {
   readonly itemId: string;
@@ -478,6 +493,11 @@ export interface CollectionStat {
   readonly total: number;
   readonly answered: number;
   readonly rate: number | null;
+  /**
+   * 选择型（单选/多选）与量表的取值分布；简答/填空/数值没有固定取值，不出现这个键。
+   * 量表跨度超过 10 档时也不出现——一屏几十根条不是统计，是噪音。
+   */
+  readonly options?: readonly CollectionOptionStat[];
 }
 
 /**

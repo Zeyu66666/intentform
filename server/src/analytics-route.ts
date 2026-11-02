@@ -14,8 +14,10 @@ import {
   CSV_BASE_COLUMNS,
   CSV_CONTENT_TYPE,
   formSchema,
+  type FormItem,
   type FormSchema,
   type ItemStat,
+  type CollectionOptionStat,
   type CollectionStat,
   type SubmissionRow as SubmissionRowDto,
   type SubmissionSummary,
@@ -156,6 +158,56 @@ function itemStatsOf(
   });
 }
 
+/** 量表的可展示档位数上限：超过这个跨度就不画分布（一屏几十根条不是统计）。 */
+const SCALE_DISTRIBUTION_MAX = 10;
+
+function rateOf(count: number, total: number): number | null {
+  return total === 0 ? null : Math.round((count / total) * 10000) / 10000;
+}
+
+/**
+ * 选择型与量表的取值分布（A-09 的「各选项分布」）。
+ *
+ * 三个口径与字段统计一致：
+ * 1. **分母是提交份数**（不是「作答份数」）——把跳过的人从分母里剔掉，会把
+ *    「一半人没填」显示成「所有人都选了这个」；
+ * 2. **多选按选项分别计数**，各选项占比之和可能超过 100%（一题可选多个）；
+ * 3. 零提交时 `rate` 是 `null`，不伪填 0。
+ */
+function optionStatsOf(
+  item: FormItem,
+  answersByRow: readonly Readonly<Record<string, AnswerValue>>[],
+): readonly CollectionOptionStat[] | undefined {
+  if (item.type === "single" || item.type === "multi") {
+    return item.options.map((option) => {
+      const count = answersByRow.filter((answers) => {
+        const value = answers[item.id];
+        if (value === undefined) return false;
+        const segments = typeof value === "string" ? [value] : value;
+        return segments.includes(option.id);
+      }).length;
+      return {
+        optionId: option.id,
+        label: option.text,
+        count,
+        rate: rateOf(count, answersByRow.length),
+      };
+    });
+  }
+  if (item.type === "scale") {
+    const span = item.max - item.min + 1;
+    if (span <= 0 || span > SCALE_DISTRIBUTION_MAX) return undefined;
+    return Array.from({ length: span }, (_, index) => String(item.min + index)).map((value) => {
+      const count = answersByRow.filter((answers) => {
+        const answer = answers[item.id];
+        return typeof answer === "string" && answer.trim() === value;
+      }).length;
+      return { optionId: value, label: value, count, rate: rateOf(count, answersByRow.length) };
+    });
+  }
+  return undefined;
+}
+
 function collectionStatsOf(
   schema: FormSchema,
   rows: readonly SubmissionRow[],
@@ -169,13 +221,15 @@ function collectionStatsOf(
       const value = answers[item.id];
       if (value !== undefined && isAnswered(value)) answered += 1;
     }
+    const options = optionStatsOf(item, answersByRow);
     return [{
       itemId: item.id,
       title: item.title,
       type: item.type,
       total: rows.length,
       answered,
-      rate: rows.length === 0 ? null : Math.round((answered / rows.length) * 10000) / 10000,
+      rate: rateOf(answered, rows.length),
+      ...(options === undefined ? {} : { options }),
     }];
   });
 }
