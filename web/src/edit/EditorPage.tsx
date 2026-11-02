@@ -82,6 +82,8 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 重做栈是否有一步可退。服务端是唯一事实源，这里只缓存详情/撤销/重做的返回值。 */
+  const [redoAvailable, setRedoAvailable] = useState(false);
   /** 点「刷新」或换表单时 +1，驱动重新取数；保存/撤销成功后不走这里（就地更新）。 */
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -101,6 +103,7 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
     let cancelled = false;
     setLoad({ status: "loading" });
     setNotice(null);
+    setRedoAvailable(false);
     void api.getForm(formId).then((outcome) => {
       if (cancelled) return;
       if (!outcome.ok) {
@@ -108,6 +111,7 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
         return;
       }
       // `version.id` 是乐观锁基准：从这里之后的所有 op 都声明"我是基于这一版改的"。
+      setRedoAvailable(outcome.data.redoAvailable);
       setLoad({
         status: "ready",
         detail: outcome.data,
@@ -168,9 +172,11 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
         return;
       }
       // 服务端已经落好新版本：就地换成它返回的 schema/version，不再多发一次 GET。
+      // 新版本产生 = 旧的撤销分支作废，服务端已清空重做栈。
+      setRedoAvailable(false);
       setLoad({
         status: "ready",
-        detail: outcome.data,
+        detail: { ...outcome.data, redoAvailable: false },
         // 保存后停在同一题：连续打磨一道题时，回到第一题等于每保存一次就打断一次。
         edit: withSelection(initialEditState(outcome.data.schema, outcome.data.version.id), selected?.id ?? null),
       });
@@ -191,7 +197,38 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
       }
       if (!outcome.data.undone) {
         // 指针已经指向第一个版本：这不是失败，只是没有上一步可退。
+        setRedoAvailable(outcome.data.redoAvailable);
         setNotice({ tone: "info", text: FIRST_VERSION_TEXT, needsReload: false });
+        return;
+      }
+      setRedoAvailable(outcome.data.redoAvailable);
+      setLoad({
+        status: "ready",
+        detail: outcome.data,
+        edit: withSelection(initialEditState(outcome.data.schema, outcome.data.version.id), selected?.id ?? null),
+      });
+      setNotice({
+        tone: "success",
+        text: `已撤销，当前草稿 v${String(outcome.data.version.n)}`,
+        needsReload: false,
+      });
+    });
+  };
+
+  const handleRedo = (): void => {
+    if (busy || !redoAvailable) return;
+    setBusy(true);
+    setNotice(null);
+    void api.redoDraft(formId, { fromVersionId: edit.baseVersionId }).then((outcome) => {
+      if (!alive.current) return;
+      setBusy(false);
+      if (!outcome.ok) {
+        setNotice(noticeForFailure(outcome.failure));
+        return;
+      }
+      setRedoAvailable(outcome.data.redoAvailable);
+      if (!outcome.data.redone) {
+        setNotice({ tone: "info", text: "没有可重做的步骤", needsReload: false });
         return;
       }
       setLoad({
@@ -201,7 +238,7 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
       });
       setNotice({
         tone: "success",
-        text: `已撤销，当前草稿 v${String(outcome.data.version.n)}`,
+        text: `已重做，当前草稿 v${String(outcome.data.version.n)}`,
         needsReload: false,
       });
     });
@@ -225,6 +262,15 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
             >
               撤销上一步
             </button>
+            <button
+              type="button"
+              data-testid="edit-redo"
+              className="min-h-[44px] rounded-sm border border-line px-2 text-sm text-ink disabled:opacity-50"
+              disabled={busy || !redoAvailable}
+              onClick={handleRedo}
+            >
+              重做
+            </button>
             <Link href={routeToPath({ name: "dashboard", formId })} className="text-sm text-muted underline">
               回看板
             </Link>
@@ -241,6 +287,8 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
           setNotice({ tone, text, needsReload });
         }}
         onApplied={(applied) => {
+          // 采用建议会生成新版本，旧撤销分支作废。
+          setRedoAvailable(false);
           setLoad({
             status: "ready",
             detail: {
@@ -320,6 +368,7 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
                   setNotice({ tone, text, needsReload });
                 }}
                 onApplied={(applied) => {
+                  setRedoAvailable(false);
                   setLoad({
                     status: "ready",
                     detail: {

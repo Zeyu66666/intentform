@@ -22,6 +22,8 @@ import {
   type PatchFormResponse,
   type PublishRequest,
   type PublishResponse,
+  type RedoDraftRequest,
+  type RedoDraftResponse,
   type SubmissionsResponse,
   type SuggestPatchRequest,
   type SuggestPatchResponse,
@@ -81,6 +83,8 @@ export interface TeacherApi {
    * 不要当成失败弹红。
    */
   readonly undoDraft: (formId: string, request: UndoDraftRequest) => Promise<ApiResult<UndoDraftResponse>>;
+  /** 重做一步：把撤销时压栈的版本拨回草稿；栈空时 `redone === false`，不是错误。 */
+  readonly redoDraft: (formId: string, request: RedoDraftRequest) => Promise<ApiResult<RedoDraftResponse>>;
   /**
    * 一句话改成操作集（建议半步）。
    *
@@ -140,6 +144,12 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
       }),
     undoDraft: (formId, request) =>
       client.request<UndoDraftResponse>(API_PATHS.undoDraft(formId), {
+        method: "POST",
+        body: request,
+        csrf: true,
+      }),
+    redoDraft: (formId, request) =>
+      client.request<RedoDraftResponse>(API_PATHS.redoDraft(formId), {
         method: "POST",
         body: request,
         csrf: true,
