@@ -4,12 +4,14 @@ import {
   API_ERROR_STATUS,
   API_PATHS,
   CSV_BASE_COLUMNS,
+  ITEM_SCOPE_PATCH_OPS_SET,
   VERSION_CONFLICT_MESSAGE,
   createFormRequestSchema,
   isApiErrorBody,
   loginRequestSchema,
   publishRequestSchema,
   submitRequestSchema,
+  suggestPatchRequestSchema,
 } from "./api.ts";
 import { formSchema } from "./types.ts";
 
@@ -134,5 +136,43 @@ describe("submitRequestSchema", () => {
 describe("CSV 表头", () => {
   it("前四列固定，顺序就是表头顺序", () => {
     expect(CSV_BASE_COLUMNS).toEqual(["submission_id", "created_at", "score", "max_score"]);
+  });
+});
+
+describe("单题建议作用域（P18）", () => {
+  it("targetItemId 可选：不给 = 整表，给了必须是合法字段 id", () => {
+    expect(
+      suggestPatchRequestSchema.safeParse({ baseVersionId: "v1", instruction: "改简单点" }).success,
+    ).toBe(true);
+    expect(
+      suggestPatchRequestSchema.safeParse({
+        baseVersionId: "v1",
+        instruction: "改简单点",
+        targetItemId: "q_2",
+      }).success,
+    ).toBe(true);
+    expect(
+      suggestPatchRequestSchema.safeParse({
+        baseVersionId: "v1",
+        instruction: "改简单点",
+        targetItemId: "",
+      }).success,
+    ).toBe(false);
+    expect(
+      suggestPatchRequestSchema.safeParse({
+        baseVersionId: "v1",
+        instruction: "改简单点",
+        targetItemId: "Q2",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("单题白名单不含结构性改动（加/删/移动只能由面板按钮发起）", () => {
+    for (const structural of ["addItem", "removeItem", "moveItem"]) {
+      expect(ITEM_SCOPE_PATCH_OPS_SET.has(structural)).toBe(false);
+    }
+    for (const fieldOp of ["setStem", "setOptions", "setAnswer", "setExplanation", "setScore", "setRequired", "setMeta"]) {
+      expect(ITEM_SCOPE_PATCH_OPS_SET.has(fieldOp)).toBe(true);
+    }
   });
 });

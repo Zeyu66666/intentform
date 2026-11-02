@@ -272,9 +272,39 @@ export type PatchFormRequest = z.infer<typeof patchFormRequestSchema>;
 export const suggestPatchRequestSchema = z.object({
   baseVersionId: z.string().min(1).max(64),
   instruction: z.string().trim().min(1).max(LIMITS.requirementMaxChars),
+  /**
+   * 单题作用域（P18）：给了就只允许改这道题；省略 = 整表（与旧行为一致）。
+   *
+   * 用 `targetItemId` 而不是「让模型自己从中文里找第 2 题」：作用域是服务端
+   * 强制的事实，不是提示词里的请求。模型越界时整体拒绝，不静默过滤。
+   */
+  targetItemId: z.string().regex(LIMITS.idPattern, "题目 id 需匹配 ^[a-z0-9_-]{3,32}$").optional(),
 });
 
 export type SuggestPatchRequest = z.infer<typeof suggestPatchRequestSchema>;
+
+/** 建议的作用域：整表或单题；响应里带出来，界面据此写「仅第 2 题」。 */
+export type SuggestScope = { readonly kind: "form" } | { readonly kind: "item"; readonly itemId: string };
+
+/**
+ * 单题作用域允许的 op 集合（P18）：结构性改动（加/删/移动）不走一句话，走面板按钮。
+ *
+ * 「删掉这题」之所以不在白名单：删除是结构性、不可逆感知最强的动作，必须由教师
+ * **在面板上点**并看见题目消失；被一句「这题不好」隐式删掉是事故。
+ */
+export const ITEM_SCOPE_PATCH_OPS = [
+  "setStem",
+  "setOptions",
+  "setAnswer",
+  "setExplanation",
+  "setScore",
+  "setRequired",
+  "setMeta",
+  "setMaxLength",
+] as const;
+
+/** `includes` 的实参是 `PatchOp["op"]` 时元组元素集合更窄，用 Set 判定，不做类型断言。 */
+export const ITEM_SCOPE_PATCH_OPS_SET: ReadonlySet<string> = new Set<string>(ITEM_SCOPE_PATCH_OPS);
 
 /**
  * 建议的响应：**只回操作集与差异，不写库**。
@@ -287,6 +317,8 @@ export interface SuggestPatchResponse {
   readonly ok: true;
   readonly ops: readonly PatchOp[];
   readonly changes: readonly PatchChange[];
+  /** 本次建议的作用域；`form` 是整表，`item` 带目标题 id（P18）。 */
+  readonly scope: SuggestScope;
   /** 套用之后的可发布状态；与 PATCH 返回的 issues 同源同义。 */
   readonly issues: readonly PatchIssue[];
   /** 产生这条建议的来源；界面据此标注「本次由 mock 脚本产生」。 */

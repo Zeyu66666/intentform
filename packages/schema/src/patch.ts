@@ -1,5 +1,8 @@
 /**
- * 受限修改（省赛 R-03 / I7 收缩版）：**六种操作**，不是任意改写。
+ * 受限修改（省赛 R-03 / I7 收缩版）：**十一种操作**，不是任意改写。
+ *
+ * P18 从六种扩到十一种（答案 / 解析 / 必答 / 教学标注 / 字数上限），扩的是「一道题上的一个面」，
+ * 不是「任意字段」：每种 op 仍然对应界面上一个能单独指出、单独撤销的改动。
  *
  * 为什么不做通用 Patch（整份 Schema 覆盖）：
  * 1. 整份覆盖等于把「生成」重放一遍，行级校验、整表门禁、prompt 溯源全部失去意义；
@@ -7,7 +10,8 @@
  *    接口比界面能表达的多，多出来的部分就是没人测过的攻击面；
  * 3. 差异要能回显给教师确认（Diff 预览），任意改写算不出人话级的差异。
  *
- * 因此这里只有六个 op：改题干 / 改选项 / 改分值 / 加题 / 删题 / 调顺序。
+ * 因此这里只有十一个 op：改题干 / 改选项 / 改分值 / 加题 / 删题 / 调顺序 /
+ * 改答案 / 改解析 / 改必答 / 改教学标注 / 改字数上限。
  * `applyPatch` 是纯函数：入参是旧 Schema 与 ops，出参是新 Schema 与**可读的变更列表**，
  * 不碰数据库、不碰 HTTP——服务端拿它落版本，前端拿它做预览，两边跑的是同一份规则。
  *
@@ -18,7 +22,7 @@
 
 import { z } from "zod";
 
-import { LIMITS } from "./constants.ts";
+import { BLOOM_LEVELS, LIMITS } from "./constants.ts";
 import { choiceOptionSchema, formItemSchema, formSchema, type FormItem, type FormSchema } from "./types.ts";
 
 /** 字段 id 在 Patch 里是寻址键，规则与 Schema 里一致。 */
@@ -29,8 +33,30 @@ const fieldId = z
 const nonNegativeInt = z.number().int().min(0);
 
 /**
- * 六个 op。判别键是 `op`，与 `formItemSchema` 用 `type` 判别同理：
- * 一个字段只描述一种改动，读代码时不用在十个可选字段里挑。
+ * 四种可判分题型的答案载荷。
+ *
+ * 载荷自带 `type`，而不是「借题目的类型推断」：`applyPatch` 拿到一条 `setAnswer`
+ * 时，先要能判断「这载荷与题目是不是同一种考法」，载荷不带类型就只能猜字段形状。
+ */
+export const answerPayloadSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("single"), answer: z.string().min(1) }),
+  z.object({ type: z.literal("multi"), answer: z.array(z.string().min(1)).min(1) }),
+  z.object({ type: z.literal("fill"), answer: z.array(z.string().min(1)).min(1) }),
+  z.object({
+    type: z.literal("number"),
+    answer: z.object({ value: z.number().finite(), tolerance: z.number().min(0) }),
+  }),
+]);
+
+export type AnswerPayload = z.infer<typeof answerPayloadSchema>;
+
+/**
+ * 十一个 op。判别键是 `op`，与 `formItemSchema` 用 `type` 判别同理：
+ * 一个字段只描述一种改动，读代码时不用在十一个可选字段里挑。
+ *
+ * P18 追加的四个 op 都只改**一道题上的一个面**（答案 / 解析 / 必答 / 教学标注），
+ * 不合成万能 op：撤销、差异回显与越界拦截的粒度都是 op，一个
+ * `setItem: Partial<FormItem>` 会让「这条改动改的是答案还是必答」变得不可判。
  */
 export const patchOpSchema = z.discriminatedUnion("op", [
   z.object({
@@ -50,6 +76,45 @@ export const patchOpSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("removeItem"), itemId: fieldId }),
   /** 移动到 `toIndex`（移动后该题的下标）。 */
   z.object({ op: z.literal("moveItem"), itemId: fieldId, toIndex: nonNegativeInt }),
+
+  /* ------------------------- P18：单题编辑的四个 op ------------------------- */
+
+  /** 改标准答案。载荷自带 `type`，`applyPatch` 校验它与题目类型是否一致。 */
+  z.object({ op: z.literal("setAnswer"), itemId: fieldId, answer: answerPayloadSchema }),
+  /**
+   * 改解析。`section` 写它的 `description`（同一概念：这段说明文字）；
+   * `null` 表示清空——落库时删键，不写空串。
+   */
+  z.object({
+    op: z.literal("setExplanation"),
+    itemId: fieldId,
+    explanation: z.string().max(LIMITS.explanationMax).nullable(),
+  }),
+  /** 改必答。`section` 结构上没有 `required`，会回 `patch_required_unsupported`。 */
+  z.object({ op: z.literal("setRequired"), itemId: fieldId, required: z.boolean() }),
+  /**
+   * 改教学标注。**两个字段都必填**（`null` 表示清空），不做稀疏：
+   * 只传 `bloom` 会把 `knowledgePoint` 静默抹掉，而"静默抹掉"正是这次要消灭的东西。
+   */
+  z.object({
+    op: z.literal("setMeta"),
+    itemId: fieldId,
+    bloom: z.enum(BLOOM_LEVELS).nullable(),
+    // 与 `types.ts` 的 `shortIdSchema` 同一份字符集（那里未导出，按常量重写）。
+    knowledgePoint: z.string().regex(LIMITS.shortIdPattern, "知识点 id 需匹配 ^[a-z0-9_-]{1,32}$").max(32).nullable(),
+  }),
+  /**
+   * 改简答的字数上限（P18 追加）。
+   *
+   * 计划 D1 要求「简答可改 maxLength」，但原定的四个 op 里没有承载它的位置；
+   * 与其让面板上的输入框只改内存不落库，不如补第五个 op——界面能改的每一项，
+   * 契约里都必须有对应的、可撤销的一步。
+   */
+  z.object({
+    op: z.literal("setMaxLength"),
+    itemId: fieldId,
+    maxLength: z.number().int().min(1).max(LIMITS.shortMaxLengthCap),
+  }),
 ]);
 
 export type PatchOp = z.infer<typeof patchOpSchema>;
@@ -78,6 +143,12 @@ export const PATCH_ERROR_CODES = [
   "patch_score_unsupported",
   "patch_options_unsupported",
   "patch_schema_invalid",
+  // P18：单题编辑
+  "patch_answer_unsupported",
+  "patch_required_unsupported",
+  "patch_meta_unsupported",
+  "patch_explanation_unsupported",
+  "patch_maxlength_unsupported",
 ] as const;
 
 export type PatchErrorCode = (typeof PATCH_ERROR_CODES)[number];
@@ -101,6 +172,25 @@ const OP_LABELS: Record<PatchOp["op"], string> = {
   addItem: "加题",
   removeItem: "删题",
   moveItem: "调顺序",
+  setAnswer: "改答案",
+  setExplanation: "改解析",
+  setRequired: "改必答",
+  setMeta: "改教学标注",
+  setMaxLength: "改字数上限",
+};
+
+/**
+ * 单题 op 的「哪一栏」后缀，拼在 `第 3 题` 后面。
+ *
+ * 不带后缀时，教师看到「第 3 题：A → C」根本分不清改的是答案还是选项文字——
+ * 这两件事在界面上长得像，在库里完全不同。
+ */
+const FIELD_LABELS: Partial<Record<PatchOp["op"], string>> = {
+  setAnswer: "答案",
+  setExplanation: "解析",
+  setRequired: "必答",
+  setMeta: "标注",
+  setMaxLength: "字数上限",
 };
 
 function whereOf(items: readonly FormItem[], itemId: string): string {
@@ -133,6 +223,129 @@ function scoreOf(item: FormItem): number | null {
 
 function supportsOptions(item: FormItem): boolean {
   return item.type === "single" || item.type === "multi";
+}
+
+/** 选项 id → 选项文字；找不到时退回 id（让差异条至少能显示"改到了哪一项"）。 */
+function optionTextOf(item: FormItem, optionId: string): string {
+  if (item.type === "single" || item.type === "multi") {
+    return item.options.find((option) => option.id === optionId)?.text ?? optionId;
+  }
+  return optionId;
+}
+
+/** 答案载荷的人话版本：**一律用选项文字**，显示 id 对教师没有意义。 */
+function answerPayloadText(item: FormItem, payload: AnswerPayload): string {
+  switch (payload.type) {
+    case "single":
+      return optionTextOf(item, payload.answer);
+    case "multi":
+      return payload.answer.map((id) => optionTextOf(item, id)).join("、");
+    case "fill":
+      return payload.answer.join("／");
+    case "number": {
+      const { value, tolerance } = payload.answer;
+      return tolerance === 0 ? String(value) : `${String(value)} ± ${String(tolerance)}`;
+    }
+  }
+}
+
+/** 当前答案的人话版本（差异条的 `before`）；没有答案时显示「（未设）」。 */
+function currentAnswerText(item: FormItem): string {
+  switch (item.type) {
+    case "single":
+      return item.answer === undefined ? "（未设）" : optionTextOf(item, item.answer);
+    case "multi":
+      return item.answer === undefined ? "（未设）" : item.answer.map((id) => optionTextOf(item, id)).join("、");
+    case "fill":
+      return item.answer === undefined ? "（未设）" : item.answer.join("／");
+    case "number":
+      return item.answer === undefined
+        ? "（未设）"
+        : item.answer.tolerance === 0
+          ? String(item.answer.value)
+          : `${String(item.answer.value)} ± ${String(item.answer.tolerance)}`;
+    default:
+      return "（无）";
+  }
+}
+
+function answerEquals(item: FormItem, payload: AnswerPayload): boolean {
+  switch (payload.type) {
+    case "single":
+      return item.type === "single" && item.answer === payload.answer;
+    case "multi":
+      return (
+        item.type === "multi" &&
+        item.answer !== undefined &&
+        item.answer.length === payload.answer.length &&
+        item.answer.every((id, index) => id === payload.answer[index])
+      );
+    case "fill":
+      return (
+        item.type === "fill" &&
+        item.answer !== undefined &&
+        item.answer.length === payload.answer.length &&
+        item.answer.every((blank, index) => blank === payload.answer[index])
+      );
+    case "number":
+      return (
+        item.type === "number" &&
+        item.answer !== undefined &&
+        item.answer.value === payload.answer.value &&
+        item.answer.tolerance === payload.answer.tolerance
+      );
+  }
+}
+
+/** 教学标注的人话版本：`apply · kp2`；两个都空时是「（无标注）」。 */
+function metaText(bloom: string | null, knowledgePoint: string | null): string {
+  if (bloom === null && knowledgePoint === null) return "（无标注）";
+  return `${bloom ?? "—"} · ${knowledgePoint ?? "—"}`;
+}
+
+/** 删掉一个可选键（`null` 的落库方式：删键，不写空串/`null`）。 */
+function omitKey<T extends object, K extends keyof T>(value: T, key: K): Omit<T, K> {
+  const copy = { ...value };
+  delete copy[key];
+  return copy;
+}
+
+/**
+ * 删掉解析键。
+ *
+ * 不能对联合类型直接 `Omit`：`Omit<Union, "explanation">` 会塌成公共字段，
+ * 简答的 `maxLength` 这类成员私有字段就丢了。按成员分别 spread 再 delete，
+ * 判别联合的结构才保得住。
+ */
+function withoutExplanation(item: FormItem): FormItem {
+  switch (item.type) {
+    case "single":
+    case "multi":
+    case "fill":
+    case "number":
+    case "short": {
+      const copy = { ...item };
+      delete copy.explanation;
+      return copy;
+    }
+    case "scale":
+    case "section":
+      return item;
+  }
+}
+
+/** 把答案载荷落到题目上；载荷与题型不符时返回 `null`。 */
+function withAnswer(item: FormItem, payload: AnswerPayload): FormItem | null {
+  switch (payload.type) {
+    case "single":
+      return item.type === "single" ? { ...item, answer: payload.answer } : null;
+    case "multi":
+      return item.type === "multi" ? { ...item, answer: payload.answer } : null;
+    case "fill":
+      return item.type === "fill" ? { ...item, answer: payload.answer } : null;
+    case "number":
+      return item.type === "number" ? { ...item, answer: payload.answer } : null;
+  }
 }
 
 /** 自动重算 quiz 的总分。返回值可能是原值（无需变更），调用方据此决定是否记一条变更。 */
@@ -223,6 +436,121 @@ export function applyPatch(input: FormSchema, ops: readonly PatchOp[]): PatchRes
       if (before === after) continue;
       items = items.map((item, at) => (at === index ? { ...item, options: op.options } : item));
       changes.push({ op: op.op, itemId: op.itemId, where, before, after });
+      continue;
+    }
+
+    if (op.op === "setAnswer") {
+      const nextItem = withAnswer(target, op.answer);
+      if (nextItem === null) {
+        return fail(
+          i,
+          "patch_answer_unsupported",
+          `${label}：${where}是 ${target.type} 题，不能写成 ${op.answer.type} 的答案`,
+        );
+      }
+      if (answerEquals(target, op.answer)) continue;
+      items = items.map((item, at) => (at === index ? nextItem : item));
+      changes.push({
+        op: op.op,
+        itemId: op.itemId,
+        where: `${where} · ${FIELD_LABELS[op.op] ?? ""}`,
+        before: currentAnswerText(target),
+        after: answerPayloadText(target, op.answer),
+      });
+      continue;
+    }
+
+    if (op.op === "setExplanation") {
+      if (target.type === "section") {
+        const before = target.description ?? null;
+        if (before === op.explanation) continue;
+        const nextItem: FormItem =
+          op.explanation === null ? omitKey(target, "description") : { ...target, description: op.explanation };
+        items = items.map((item, at) => (at === index ? nextItem : item));
+        changes.push({
+          op: op.op,
+          itemId: op.itemId,
+          where: `${where} · ${FIELD_LABELS[op.op] ?? ""}`,
+          before: before ?? "（无）",
+          after: op.explanation ?? "（无）",
+        });
+        continue;
+      }
+      if (target.type === "scale") {
+        return fail(i, "patch_explanation_unsupported", `${label}：${where}是量表，没有解析栏`);
+      }
+      const before = target.explanation ?? null;
+      if (before === op.explanation) continue;
+      const nextItem: FormItem =
+        op.explanation === null ? withoutExplanation(target) : { ...target, explanation: op.explanation };
+      items = items.map((item, at) => (at === index ? nextItem : item));
+      changes.push({
+        op: op.op,
+        itemId: op.itemId,
+        where: `${where} · ${FIELD_LABELS[op.op] ?? ""}`,
+        before: before ?? "（无）",
+        after: op.explanation ?? "（无）",
+      });
+      continue;
+    }
+
+    if (op.op === "setRequired") {
+      if (target.type === "section") {
+        return fail(i, "patch_required_unsupported", `${label}：${where}是分节，没有必答设置`);
+      }
+      if (target.required === op.required) continue;
+      const nextItem: FormItem = { ...target, required: op.required };
+      items = items.map((item, at) => (at === index ? nextItem : item));
+      changes.push({
+        op: op.op,
+        itemId: op.itemId,
+        where: `${where} · ${FIELD_LABELS[op.op] ?? ""}`,
+        before: target.required ? "必答" : "选答",
+        after: op.required ? "必答" : "选答",
+      });
+      continue;
+    }
+
+    if (op.op === "setMeta") {
+      if (target.type === "scale" || target.type === "section") {
+        return fail(i, "patch_meta_unsupported", `${label}：${where}是量表/分节，没有教学标注`);
+      }
+      const beforeBloom = target.bloom ?? null;
+      const beforeKp = target.knowledgePoint ?? null;
+      if (beforeBloom === op.bloom && beforeKp === op.knowledgePoint) continue;
+
+      // `{...target}` 的副本上删键：`null` 的落库方式是删键，不是写 `null`/`""`。
+      const nextItem = { ...target };
+      if (op.bloom === null) delete nextItem.bloom;
+      else nextItem.bloom = op.bloom;
+      if (op.knowledgePoint === null) delete nextItem.knowledgePoint;
+      else nextItem.knowledgePoint = op.knowledgePoint;
+
+      items = items.map((item, at) => (at === index ? nextItem : item));
+      changes.push({
+        op: op.op,
+        itemId: op.itemId,
+        where: `${where} · ${FIELD_LABELS[op.op] ?? ""}`,
+        before: metaText(beforeBloom, beforeKp),
+        after: metaText(op.bloom, op.knowledgePoint),
+      });
+      continue;
+    }
+
+    if (op.op === "setMaxLength") {
+      if (target.type !== "short") {
+        return fail(i, "patch_maxlength_unsupported", `${label}：${where}不是简答题，没有字数上限`);
+      }
+      if (target.maxLength === op.maxLength) continue;
+      const nextItem: FormItem = { ...target, maxLength: op.maxLength };
+      items = items.map((item, at) => (at === index ? nextItem : item));
+      changes.push({
+        op: op.op,
+        itemId: op.itemId,
+        where: `${where} · ${FIELD_LABELS[op.op] ?? ""}`,
+        before: `${String(target.maxLength)} 字`,
+        after: `${String(op.maxLength)} 字`,
+      });
       continue;
     }
 
