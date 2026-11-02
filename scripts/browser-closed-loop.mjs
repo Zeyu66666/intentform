@@ -1295,6 +1295,8 @@ async function main() {
       must(toolbarDisplay === "none", `打印媒体下界面外壳应隐藏，实际 display=${String(toolbarDisplay)}`);
       artifacts.push(await page.screenshot("16-print-preview.png"));
       const pdf = await page.printToPdf("16-print-sheet.pdf");
+      // PDF 也算产物：它是"打印版真的印得出来"的唯一可打开证据。
+      artifacts.push(pdf);
       await page.emulateMedia({});
       return { pdf, questionCount: (plainText.match(/\n\d+\./g) ?? []).length };
     });
