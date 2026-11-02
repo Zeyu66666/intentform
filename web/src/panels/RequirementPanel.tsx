@@ -28,6 +28,12 @@ export interface RequirementPanelProps {
    * 按钮的位置：此刻下一步动作在块里，再摆一个同名主按钮只会让人多点一次。
    */
   readonly preStepSlot?: JSX.Element | null;
+  /**
+   * 「先看蓝图再生成」开关（A-02 文档里的入口）。默认开：走两阶段。
+   * 关掉时跳过规划，直接逐字段生成——两阶段对照因此不会出现，界面如实说明。
+   */
+  readonly planFirst: boolean;
+  readonly onPlanFirstChange: (value: boolean) => void;
 }
 
 const STATUS_TEXT: Record<RunStatus, string> = {
@@ -57,6 +63,8 @@ export function RequirementPanel({
   onReset,
   demoNotice,
   preStepSlot = null,
+  planFirst,
+  onPlanFirstChange,
 }: RequirementPanelProps): JSX.Element {
   const length = requirement.length;
   const overLimit = length > LIMITS.requirementMaxChars;
@@ -143,6 +151,26 @@ export function RequirementPanel({
         {kind === "survey" ? (
           <p className="m-0 text-xs text-muted">问卷不判分，题目不带答案</p>
         ) : null}
+      </section>
+
+      <section className="flex flex-col gap-1">
+        <h3 className="m-0 text-xs font-semibold text-muted">生成方式</h3>
+        <label className="flex min-h-[44px] items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            data-testid="plan-first"
+            className="size-4 accent-accent"
+            checked={planFirst}
+            disabled={streaming}
+            onChange={(event) => {
+              onPlanFirstChange(event.target.checked);
+            }}
+          />
+          先看蓝图再生成
+        </label>
+        <p className="m-0 text-xs text-muted">
+          {planFirst ? "先规划结构，确认后逐字段生成" : "跳过蓝图，直接逐字段生成（不会出现蓝图对照）"}
+        </p>
       </section>
 
       <div className="mt-auto flex flex-col gap-1">

@@ -124,6 +124,11 @@ export function App(): JSX.Element {
   const [requirement, setRequirement] = useState("");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("edit");
   const [kind, setKind] = useState<FormKind>("quiz");
+  /**
+   * 「先看蓝图再生成」开关（A-02）：默认开，走两阶段；关掉时跳过规划直接生成。
+   * 关掉之后两阶段对照不会出现——界面上如实写明，而不是让时间线"少一段"。
+   */
+  const [planFirst, setPlanFirst] = useState(true);
 
   // 发布结果留在 App：`PublishPanel` 只在 done 之后挂载，把结果存在它自己里面的化，
   // 下面任何一次重渲染（预览视角切换、时间线更新）都可能把刚拿到的短链弄丢。
@@ -223,13 +228,15 @@ export function App(): JSX.Element {
         return;
       }
       if (outcome.data.questions.length === 0) {
-        requestPlan(requirementText, []);
+        // 需求已经够完整：看「先看蓝图」开关决定是规划还是直接生成。
+        if (planFirst) requestPlan(requirementText, []);
+        else beginGeneration(requirementText, []);
         return;
       }
       setDrafts(EMPTY_DRAFTS);
       setClarify({ status: "ready", questions: outcome.data.questions });
     });
-  }, [requirement, mode, clarifyApi, kind, requestPlan, beginGeneration]);
+  }, [requirement, mode, clarifyApi, kind, requestPlan, beginGeneration, planFirst]);
 
   const fields = selectPreviewFields(state);
   const fieldNodes = useMemo(() => fields.map((entry) => entry.node), [fields]);
@@ -247,10 +254,13 @@ export function App(): JSX.Element {
           setDrafts((previous) => setCustom(previous, slot, text));
         }}
         onConfirm={() => {
-          requestPlan(requirement.trim(), buildClarifications(clarify.questions, drafts));
+          const answers = buildClarifications(clarify.questions, drafts);
+          if (planFirst) requestPlan(requirement.trim(), answers);
+          else beginGeneration(requirement.trim(), answers);
         }}
         onSkip={() => {
-          requestPlan(requirement.trim(), []);
+          if (planFirst) requestPlan(requirement.trim(), []);
+          else beginGeneration(requirement.trim(), []);
         }}
       />
     ) : clarify.status === "loading" ? (
@@ -374,6 +384,8 @@ export function App(): JSX.Element {
               }}
               demoNotice={mode === "fixture" ? DEMO_NOTICE : null}
               preStepSlot={preStepSlot}
+              planFirst={planFirst}
+              onPlanFirstChange={setPlanFirst}
             />
           </div>
           {state.status === "done" ? (

@@ -63,6 +63,14 @@ const REQUIREMENT = "出一份二次函数随堂测：单选、填空、数值�
  */
 const SURVEY_REQUIREMENT = "做一份课程反馈问卷，3 道题：2 道简答题收集收获与建议、1 道量表题打分，不判分";
 
+/**
+ * 第 14 步（A-02「先看蓝图」开关关掉时）用的需求。
+ *
+ * 槽位写全（场景 / 题量 / 题型 / 分值 / 知识点）：澄清因此 0 追问，关掉开关后
+ * 点「生成表单」会直接进入字段流——这一步要证明的就是"不出现蓝图卡"。
+ */
+const DIRECT_REQUIREMENT = "出一份二次函数随堂测：5 道单选，共 25 分，覆盖顶点坐标";
+
 /** 桌面视口（教师侧）与学生手机视口（学生侧）。 */
 const DESKTOP_VIEWPORT = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false };
 const MOBILE_VIEWPORT = { width: 390, height: 844, deviceScaleFactor: 2, mobile: true };
@@ -1412,6 +1420,45 @@ async function main() {
       return { darkBg, lightBg };
     });
 
+    // 14) 跳过蓝图直生成（A-02 的「先看蓝图」开关）：
+    // 关掉开关后点「生成表单」应**直接出字段流**，不出现蓝图卡、时间线也不演 plan。
+    const directGenerate = await step("跳过蓝图直生成：关掉开关后不出现蓝图卡", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/`);
+      await waitFor(
+        async () => (await page.evaluate("return bySelector('#requirement-input') !== null")),
+        "生成页需求输入框渲染",
+      );
+      const initial = await page.evaluate(
+        "var el = byTestId('plan-first'); return el === null ? null : el.checked;",
+      );
+      must(initial === true, `「先看蓝图再生成」默认应为开，实际 ${JSON.stringify(initial)}`);
+
+      const toggled = await page.tap('[data-testid="plan-first"]');
+      must(toggled.ok === true, `点不到「先看蓝图」开关：${JSON.stringify(toggled)}`);
+      const off = await page.evaluate("var el = byTestId('plan-first'); return el === null ? null : el.checked;");
+      must(off === false, `开关没有关掉：${JSON.stringify(off)}`);
+
+      const typed = await page.evaluate(
+        `return setValue('#requirement-input', ${JSON.stringify(DIRECT_REQUIREMENT)});`,
+      );
+      must(typed.ok === true, `需求没填进去：${JSON.stringify(typed)}`);
+      must(await page.evaluate("return clickButtonByText('^生成表单$')"), "没找到「生成表单」按钮");
+
+      await waitFor(async () => (await page.text()).includes("生成完成"), "跳过蓝图后直接生成走完", 30_000);
+      const text = await page.text();
+      must(
+        (await page.evaluate("return byTestId('plan-card')")) === null,
+        "关掉「先看蓝图」后不应出现蓝图卡",
+      );
+      must(!text.includes("蓝图已确认"), "关掉「先看蓝图」后时间线不应出现蓝图确认（未发生不许演出）");
+      // 注意用带冒号的那一句：开关的说明文字里也写着「不会出现蓝图对照」，
+      // 只搜四个字会把说明文案误当成事件。
+      must(!text.includes("蓝图对照："), "关掉「先看蓝图」后不应出现蓝图对照事件");
+      artifacts.push(await page.screenshot("19-skip-plan.png"));
+      return { planFirst: false, sawPlanCard: false };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -1427,6 +1474,7 @@ async function main() {
       printed,
       answerReview,
       darkMode,
+      directGenerate,
       dashboard,
       graded,
       steps,
