@@ -169,7 +169,7 @@ pnpm install --frozen-lockfile
 pnpm check                      # = lint + typecheck + test
 node scripts/secret-scan.mjs    # 工作区密钥扫描
 node scripts/secret-scan.mjs --history   # 全历史扫描
-pnpm verify                     # = node scripts/verify.mjs，VC1–VC13
+pnpm verify                     # = node scripts/verify.mjs，VC1–VC14
 node scripts/browser-closed-loop.mjs     # 生产构建 + 真浏览器闭环
 pnpm eval                       # 整份需求达标率（默认 replay，不用 Key）
 ```
@@ -177,9 +177,9 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | 命令 | 覆盖范围 |
 |---|---|
 | `pnpm typecheck` | 四个包全量类型检查 |
-| `pnpm test` | 72 个测试文件 / 869 条用例（oxlint `--deny-warnings`、Vitest） |
-| `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC13；自起临时服务与临时库，不碰 `data/intentform.db` |
-| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十五步（含打印版 PDF、答案解析、暗色模式、跳过蓝图直生成、单题编辑与作用域建议）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
+| `pnpm test` | 73 个测试文件 / 893 条用例（oxlint `--deny-warnings`、Vitest） |
+| `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC14；自起临时服务与临时库，不碰 `data/intentform.db` |
+| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十五步（含打印版 PDF、答案解析、暗色模式、跳过蓝图直生成、单题编辑与撤销/重做）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
 | `pnpm eval` | 30 条需求集的整份达标率，报告写入 `eval/runs/<runId>/` 并更新 `eval/runs/latest.json` |
 
 浏览器闭环需要本机 Chrome（`CHROME_PATH` 可指定；找不到会 `exit 2` 而不是静默跳过）。
@@ -200,7 +200,8 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 [verify] VC11 收集页闭环：survey 填写、回收看板与 CSV … 通过
 [verify] VC12 答案解析开关：默认关闭、开启后随提交返回、公开视图不变 … 通过
 [verify] VC13 单题修改：建议作用域、答案改动进判分、越界 422 不写库 … 通过
-[verify] 全部通过（13/13）
+[verify] VC14 通用 Patch 与重做：RFC 6902 翻译、越界不写库、撤销可重做 … 通过
+[verify] 全部通过（14/14）
 ```
 
 `pnpm verify` 证明的是 HTTP 语义闭环，不是浏览器里的真实操作；后者归 `browser-closed-loop.mjs`。两条证据链互不替代。
@@ -222,8 +223,9 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | `GET` | `/api/forms/:id` | 表单详情（含版本信息） |
 | `POST` | `/api/forms/:id/publish` | 发布指定版本快照 |
 | `GET` / `POST` | `/api/forms/:id/settings` | 表单展示设置（提交后是否展示答案解析；默认关闭） |
-| `PATCH` | `/api/forms/:id` | 受限修改：十一种 op，追加草稿版本；旧 `baseVersionId` 返回 409 |
-| `POST` | `/api/forms/:id/undo` | 撤销一步（草稿指针退回父版本） |
+| `PATCH` | `/api/forms/:id` | 受限修改：十一种 op，或 RFC 6902 `jsonPatch`（翻译回受限 op 后落库）；追加草稿版本，旧 `baseVersionId` 返回 409 |
+| `POST` | `/api/forms/:id/undo` | 撤销一步（当前版本压入重做栈，草稿指针退回父版本） |
+| `POST` | `/api/forms/:id/redo` | 重做一步（按 LIFO 弹栈；撤销后又改则栈清空） |
 | `POST` | `/api/forms/:id/suggest` | 一句话改题 → 操作集建议；可带 `targetItemId` 限定单题；不写库，限流 |
 | `GET` | `/api/forms/:id/submissions` | 提交列表与统计（得分分布、每题正确率、覆盖矩阵） |
 | `GET` | `/api/forms/:id/submissions.csv` | 导出 CSV |
