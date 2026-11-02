@@ -22,8 +22,15 @@ import {
   planPatch,
   resolveSelection,
   withAddItem,
+  withAnswer,
+  withClearItemDraft,
+  withExplanation,
+  withMaxLength,
+  withMeta,
   withMoveItem,
+  withOptions,
   withRemoveItem,
+  withRequired,
   withScore,
   withSelection,
   withStem,
@@ -207,6 +214,183 @@ describe("planPatch", () => {
     const state = withStem(base(), "q-short", "只改了题干");
     const draft = draftOf(state, itemById(QUIZ_SCHEMA, "q-short"));
 
-    expect(draft).toEqual({ stem: "只改了题干", score: 10 });
+    expect(draft).toStrictEqual({
+      stem: "只改了题干",
+      score: 10,
+      options: null,
+      answer: null,
+      explanation: "",
+      required: true,
+      bloom: null,
+      knowledgePoint: null,
+      maxLength: 200,
+    });
+  });
+
+  it("改选项文字：只出一条 setOptions，答案 op 不跟着冒出来", () => {
+    const plan = expectOk(
+      planPatch(
+        withOptions(base(), "q-single", [
+          { id: "a", text: "9（合数）" },
+          { id: "b", text: "11（质数）" },
+        ]),
+      ),
+    );
+
+    expect(plan.ops).toEqual([
+      {
+        op: "setOptions",
+        itemId: "q-single",
+        options: [
+          { id: "a", text: "9（合数）" },
+          { id: "b", text: "11（质数）" },
+        ],
+      },
+    ]);
+    expect(itemById(plan.preview, "q-single")).toMatchObject({
+      options: [
+        { id: "a", text: "9（合数）" },
+        { id: "b", text: "11（质数）" },
+      ],
+      answer: "b",
+    });
+  });
+
+  it("勾正确项：出一条 setAnswer，changes 用选项文字而不是 id", () => {
+    const plan = expectOk(planPatch(withAnswer(base(), "q-single", { type: "single", answer: "a" })));
+
+    expect(plan.ops).toEqual([
+      { op: "setAnswer", itemId: "q-single", answer: { type: "single", answer: "a" } },
+    ]);
+    expect(plan.changes[0]).toMatchObject({
+      where: "第 1 题 · 答案",
+      before: "11",
+      after: "9",
+    });
+    expect(itemById(plan.preview, "q-single")).toMatchObject({ answer: "a" });
+  });
+
+  it("删掉正确项：答案引用了不存在的选项，本地就拦住", () => {
+    const plan = planPatch(
+      withOptions(base(), "q-single", [
+        { id: "a", text: "9" },
+        { id: "c", text: "13" },
+      ]),
+    );
+
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.kind).toBe("invalid-input");
+    expect(plan.message).toContain("正确答案不在选项里");
+  });
+
+  it("改解析：空串落成 null（删键），不是写空字符串", () => {
+    const withText = expectOk(planPatch(withExplanation(base(), "q-short", "因为 11 只有 1 和它本身两个因数")));
+    expect(withText.ops).toEqual([
+      {
+        op: "setExplanation",
+        itemId: "q-short",
+        explanation: "因为 11 只有 1 和它本身两个因数",
+      },
+    ]);
+    expect(itemById(withText.preview, "q-short")).toMatchObject({
+      explanation: "因为 11 只有 1 和它本身两个因数",
+    });
+
+    // 清空要有东西可清：Schema 里本来就有解析，才谈得上"删键"。
+    const withExisting: FormSchema = {
+      meta: QUIZ_SCHEMA.meta,
+      items: QUIZ_SCHEMA.items.map((item) =>
+        item.id === "q-short" && item.type === "short" ? { ...item, explanation: "原有解析" } : item,
+      ),
+    };
+    const cleared = expectOk(
+      planPatch(withExplanation(initialEditState(withExisting, BASE_VERSION_ID), "q-short", "   ")),
+    );
+    expect(cleared.ops).toEqual([{ op: "setExplanation", itemId: "q-short", explanation: null }]);
+    expect("explanation" in itemById(cleared.preview, "q-short")).toBe(false);
+  });
+
+  it("分节的说明走 setExplanation，预览写到 description", () => {
+    const plan = expectOk(planPatch(withExplanation(base(), "sec-mid", "这一部分考推理")));
+
+    expect(plan.ops).toEqual([
+      { op: "setExplanation", itemId: "sec-mid", explanation: "这一部分考推理" },
+    ]);
+    expect(itemById(plan.preview, "sec-mid")).toMatchObject({ description: "这一部分考推理" });
+  });
+
+  it("必答与教学标注：各出一条 op，标注两个字段同时给", () => {
+    const required = expectOk(planPatch(withRequired(base(), "q-single", false)));
+    expect(required.ops).toEqual([{ op: "setRequired", itemId: "q-single", required: false }]);
+    expect(required.changes[0]).toMatchObject({ where: "第 1 题 · 必答", before: "必答", after: "选答" });
+
+    const meta = expectOk(
+      planPatch(withMeta(base(), "q-single", { bloom: "apply", knowledgePoint: "obj-prime" })),
+    );
+    expect(meta.ops).toEqual([
+      { op: "setMeta", itemId: "q-single", bloom: "apply", knowledgePoint: "obj-prime" },
+    ]);
+    expect(itemById(meta.preview, "q-single")).toMatchObject({
+      bloom: "apply",
+      knowledgePoint: "obj-prime",
+    });
+  });
+
+  it("简答改字数上限：一条 setMaxLength；越界在本地拦", () => {
+    const plan = expectOk(planPatch(withMaxLength(base(), "q-short", 300)));
+    expect(plan.ops).toEqual([{ op: "setMaxLength", itemId: "q-short", maxLength: 300 }]);
+    expect(itemById(plan.preview, "q-short")).toMatchObject({ maxLength: 300 });
+
+    const tooBig = planPatch(withMaxLength(base(), "q-short", LIMITS.shortMaxLengthCap + 1));
+    expect(tooBig.ok).toBe(false);
+    if (tooBig.ok) return;
+    expect(tooBig.message).toContain("字数上限");
+  });
+
+  it("解析超长在本地拦：不发一个注定 400 的请求", () => {
+    const plan = planPatch(withExplanation(base(), "q-short", "长".repeat(LIMITS.explanationMax + 1)));
+
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.kind).toBe("invalid-input");
+    expect(plan.message).toContain("解析最多");
+  });
+
+  it("survey 不产答案与分值 op（R5）", () => {
+    const survey: FormSchema = {
+      meta: { ...SURVEY_SCHEMA.meta },
+      items: [
+        {
+          id: "s-single",
+          type: "single",
+          title: "今天听懂了吗？",
+          required: true,
+          options: [
+            { id: "a", text: "听懂了" },
+            { id: "b", text: "没听懂" },
+          ],
+          answer: "a",
+        },
+      ],
+    };
+    const state = withScore(withAnswer(initialEditState(survey, BASE_VERSION_ID), "s-single", { type: "single", answer: "b" }), "s-single", 5);
+    const plan = expectOk(planPatch(state));
+
+    expect(plan.ops).toEqual([]);
+    expect(plan.hasChanges).toBe(false);
+  });
+
+  it("这题改回原样：只删草稿，不产生任何 op", () => {
+    const dirty = withAnswer(withExplanation(base(), "q-single", "改过的解析"), "q-single", {
+      type: "single",
+      answer: "a",
+    });
+    expect(planPatch(dirty).ok).toBe(true);
+
+    const cleared = expectOk(planPatch(withClearItemDraft(dirty, "q-single")));
+    expect(cleared.ops).toEqual([]);
+    expect(cleared.hasChanges).toBe(false);
+    expect(cleared.preview).toBe(QUIZ_SCHEMA);
   });
 });

@@ -24,24 +24,31 @@ import { describeFailure, isUnauthorized, isVersionConflict } from "../api/failu
 import { createHttpClient, type ApiFailure } from "../api/http";
 import { createTeacherApi } from "../api/teacher";
 import { Link } from "../Link";
+import { ItemEditor } from "./ItemEditor";
 import { SuggestBox } from "./SuggestBox";
 import { TYPE_LABELS } from "../render/FieldRegistry";
 import { DASHBOARD_PATH, LOGIN_PATH, routeToPath } from "../router";
+import { toAnswerPayload } from "./answer-input";
 import {
   draftOf,
   initialEditState,
   moveTargets,
   planPatch,
   resolveSelection,
-  scoreOfItem,
   withAddItem,
+  withAnswer,
+  withClearItemDraft,
+  withExplanation,
+  withMaxLength,
+  withMeta,
   withMoveItem,
+  withOptions,
   withRemoveItem,
+  withRequired,
   withScore,
   withSelection,
   withStem,
   type EditState,
-  type ItemDraft,
   type PatchPlan,
 } from "./patch-plan";
 
@@ -143,6 +150,7 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
   const selected = resolveSelection(preview, edit.selectedItemId);
   // 上移/下移的落点在这里算一次，面板只负责按 null 禁用按钮。
   const targets = selected === null ? { up: null, down: null } : moveTargets(preview.items, selected.id);
+  const selectedIndex = selected === null ? -1 : preview.items.findIndex((item) => item.id === selected.id);
 
   const handleReload = (): void => {
     setReloadToken((token) => token + 1);
@@ -163,7 +171,8 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
       setLoad({
         status: "ready",
         detail: outcome.data,
-        edit: initialEditState(outcome.data.schema, outcome.data.version.id),
+        // 保存后停在同一题：连续打磨一道题时，回到第一题等于每保存一次就打断一次。
+        edit: withSelection(initialEditState(outcome.data.schema, outcome.data.version.id), selected?.id ?? null),
       });
       setNotice({ tone: "success", text: `已生成 v${String(outcome.data.version.n)}`, needsReload: false });
     });
@@ -188,7 +197,7 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
       setLoad({
         status: "ready",
         detail: outcome.data,
-        edit: initialEditState(outcome.data.schema, outcome.data.version.id),
+        edit: withSelection(initialEditState(outcome.data.schema, outcome.data.version.id), selected?.id ?? null),
       });
       setNotice({
         tone: "success",
@@ -240,7 +249,8 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
               version: { ...detail.version, id: applied.versionId, n: applied.versionN },
               form: { ...detail.form, draftVersionId: applied.versionId },
             },
-            edit: initialEditState(applied.schema, applied.versionId),
+            // 整表建议采用后也尽量停在原题：改同一题的连贯动作不该被打断。
+            edit: withSelection(initialEditState(applied.schema, applied.versionId), edit.selectedItemId),
           });
         }}
       />
@@ -298,28 +308,76 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
           {selected === null ? (
             <p className="m-0 text-sm text-muted">这份表单还没有题目，点左侧「加题」开始。</p>
           ) : (
-            <FieldEditor
-              key={selected.id}
-              itemId={selected.id}
-              title={selected.title}
-              score={scoreOfItem(selected)}
-              draft={draftOf(edit, selected)}
-              upTarget={targets.up}
-              downTarget={targets.down}
-              canDelete={preview.items.length > 1}
-              onStem={(stem) => {
-                update((state) => withStem(state, selected.id, stem));
-              }}
-              onScore={(score) => {
-                update((state) => withScore(state, selected.id, score));
-              }}
-              onMove={(toIndex) => {
-                update((state) => withMoveItem(state, selected.id, toIndex));
-              }}
-              onDelete={() => {
-                update((state) => withRemoveItem(state, selected.id));
-              }}
-            />
+            <>
+              {/* 单题建议条属于"正在编辑的这题"：它在面板顶部，作用域写着这题的 id。 */}
+              <SuggestBox
+                key={`item-suggest-${selected.id}`}
+                formId={formId}
+                baseVersionId={edit.baseVersionId}
+                scopeItemId={selected.id}
+                scopeLabel={`第 ${String(selectedIndex + 1)} 题`}
+                onNotice={(text, tone, needsReload) => {
+                  setNotice({ tone, text, needsReload });
+                }}
+                onApplied={(applied) => {
+                  setLoad({
+                    status: "ready",
+                    detail: {
+                      ...detail,
+                      schema: applied.schema,
+                      version: { ...detail.version, id: applied.versionId, n: applied.versionN },
+                      form: { ...detail.form, draftVersionId: applied.versionId },
+                    },
+                    // 采用后停在同一题：连续打磨一道题是常见动作。
+                    edit: withSelection(initialEditState(applied.schema, applied.versionId), selected.id),
+                  });
+                }}
+              />
+              <ItemEditor
+                key={selected.id}
+                item={selected}
+                draft={draftOf(edit, selected)}
+                hasDraft={edit.drafts[selected.id] !== undefined}
+                index={selectedIndex < 0 ? 0 : selectedIndex}
+                objectives={detail.schema.meta.objectives}
+                upTarget={targets.up}
+                downTarget={targets.down}
+                canDelete={preview.items.length > 1}
+                onStem={(stem) => {
+                  update((state) => withStem(state, selected.id, stem));
+                }}
+                onScore={(score) => {
+                  update((state) => withScore(state, selected.id, score));
+                }}
+                onOptions={(options) => {
+                  update((state) => withOptions(state, selected.id, options));
+                }}
+                onAnswer={(answer) => {
+                  update((state) => withAnswer(state, selected.id, toAnswerPayload(answer)));
+                }}
+                onExplanation={(explanation) => {
+                  update((state) => withExplanation(state, selected.id, explanation));
+                }}
+                onRequired={(required) => {
+                  update((state) => withRequired(state, selected.id, required));
+                }}
+                onMeta={(meta) => {
+                  update((state) => withMeta(state, selected.id, meta));
+                }}
+                onMaxLength={(maxLength) => {
+                  update((state) => withMaxLength(state, selected.id, maxLength));
+                }}
+                onClear={() => {
+                  update((state) => withClearItemDraft(state, selected.id));
+                }}
+                onMove={(toIndex) => {
+                  update((state) => withMoveItem(state, selected.id, toIndex));
+                }}
+                onDelete={() => {
+                  update((state) => withRemoveItem(state, selected.id));
+                }}
+              />
+            </>
           )}
         </section>
       </main>
@@ -405,122 +463,6 @@ function ErrorBlock({ failure }: { readonly failure: ApiFailure }): JSX.Element 
         )}
       </p>
     </section>
-  );
-}
-
-/**
- * 单题编辑面板。
- *
- * `key={itemId}` 在父组件上：换题时整个面板重建，输入框的浏览器内部状态（比如
- * number 框的中间态）跟着重置，不会把上一题的半截输入带到下一题。
- */
-function FieldEditor({
-  itemId,
-  title,
-  score,
-  draft,
-  upTarget,
-  downTarget,
-  canDelete,
-  onStem,
-  onScore,
-  onMove,
-  onDelete,
-}: {
-  readonly itemId: string;
-  /** 预览里的当前题干，只用于占位提示，不改写用户正在敲的内容。 */
-  readonly title: string;
-  /** `null` 表示这题没有分值（分节/量表），分值输入框不渲染。 */
-  readonly score: number | null;
-  readonly draft: ItemDraft;
-  /** 上移/下移的**绝对**目标下标；`null` 表示到头了。 */
-  readonly upTarget: number | null;
-  readonly downTarget: number | null;
-  readonly canDelete: boolean;
-  readonly onStem: (stem: string) => void;
-  readonly onScore: (score: number) => void;
-  readonly onMove: (toIndex: number) => void;
-  readonly onDelete: () => void;
-}): JSX.Element {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted" htmlFor={`edit-stem-${itemId}`}>
-          题干
-        </label>
-        <textarea
-          id={`edit-stem-${itemId}`}
-          data-testid="edit-stem"
-          rows={3}
-          value={draft.stem}
-          placeholder={title}
-          className="w-full rounded-sm border border-line bg-bg p-1 text-base text-ink"
-          onChange={(event) => {
-            onStem(event.target.value);
-          }}
-        />
-      </div>
-
-      {score === null ? (
-        <p className="m-0 text-xs text-muted">这题不计分（分节/量表），没有分值可改。</p>
-      ) : (
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted" htmlFor={`edit-score-${itemId}`}>
-            {`分值（0–${String(LIMITS.scoreMax)}）`}
-          </label>
-          <input
-            id={`edit-score-${itemId}`}
-            data-testid="edit-score"
-            type="number"
-            min={0}
-            max={LIMITS.scoreMax}
-            step={1}
-            // 空串交给 NaN：空分值不该被悄悄当成 0 分写进草稿。
-            value={Number.isNaN(draft.score) ? "" : draft.score}
-            className="min-h-[44px] w-32 rounded-sm border border-line bg-bg p-1 text-base tabular-nums text-ink"
-            onChange={(event) => {
-              const raw = event.target.value;
-              onScore(raw === "" ? Number.NaN : Number(raw));
-            }}
-          />
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          data-testid="edit-move-up"
-          className="min-h-[44px] rounded-sm border border-line px-2 text-sm text-ink disabled:opacity-50"
-          disabled={upTarget === null}
-          onClick={() => {
-            if (upTarget !== null) onMove(upTarget);
-          }}
-        >
-          上移
-        </button>
-        <button
-          type="button"
-          data-testid="edit-move-down"
-          className="min-h-[44px] rounded-sm border border-line px-2 text-sm text-ink disabled:opacity-50"
-          disabled={downTarget === null}
-          onClick={() => {
-            if (downTarget !== null) onMove(downTarget);
-          }}
-        >
-          下移
-        </button>
-        <button
-          type="button"
-          data-testid="edit-delete"
-          className="min-h-[44px] rounded-sm border border-danger px-2 text-sm text-danger disabled:opacity-50"
-          disabled={!canDelete}
-          onClick={onDelete}
-        >
-          删除
-        </button>
-        {canDelete ? null : <span className="text-xs text-muted">至少要留一道题</span>}
-      </div>
-    </div>
   );
 }
 

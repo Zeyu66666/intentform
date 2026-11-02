@@ -19,6 +19,9 @@
 import {
   LIMITS,
   applyPatch,
+  type AnswerPayload,
+  type BloomLevel,
+  type ChoiceOption,
   type FormItem,
   type FormKind,
   type FormSchema,
@@ -27,6 +30,8 @@ import {
   type PatchFormRequest,
   type PatchOp,
 } from "@intentform/schema";
+
+import { answerDraftOf, answerDraftOfPayload, supportsAnswer, toAnswerPayload, type AnswerDraft } from "./answer-input";
 
 /**
  * 结构性编辑意图。文本类改动（题干、分值）不走这里——它们是"草稿"，
@@ -39,12 +44,29 @@ export type EditIntent =
   /** `toIndex` 是**移动后**的下标，与 `moveItem` op 的口径一致，不做二次换算。 */
   | { readonly kind: "move"; readonly itemId: string; readonly toIndex: number };
 
-/** 界面用的题目草稿：已把 Schema 里的值回落进来，字段必定齐全，面板不用自己兜底。 */
+/**
+ * 界面用的题目草稿：已把 Schema 里的值回落进来，字段必定齐全，面板不用自己兜底。
+ *
+ * 不适用的字段用 `null` 表示（分节没有分值/答案/必答/标注，量表没有答案/标注），
+ * 而不是留空串——空串是"教师清空了"，`null` 是"这题结构上没有这一栏"。
+ */
 export interface ItemDraft {
   /** 题干输入框的原文（未 trim）：让教师能打出首尾空格而不被吞。 */
   readonly stem: string;
   /** 分值输入框的原文（已在界面层解析成 number，解析失败为 `NaN`）。 */
   readonly score: number;
+  /** 选择题的选项；其它题型为 `null`。 */
+  readonly options: readonly ChoiceOption[] | null;
+  /** 答案的可编辑形状；无答案题型为 `null`。 */
+  readonly answer: AnswerDraft | null;
+  /** 解析原文；空串 = 没有解析（落库时删键）。 */
+  readonly explanation: string;
+  /** 必答；分节为 `null`（结构上没有）。 */
+  readonly required: boolean | null;
+  readonly bloom: BloomLevel | null;
+  readonly knowledgePoint: string | null;
+  /** 简答的字数上限；其它题型为 `null`。 */
+  readonly maxLength: number | null;
 }
 
 /**
@@ -54,7 +76,20 @@ export interface ItemDraft {
  * 拿不到它的分值；若此时顺手把分值补成 0，教师只是改了题干、新题的分值却被
  * 静默清零。缺省 = "没碰过"，`planPatch()` 据此不出分值的 op。
  */
-type DraftPatch = { readonly stem?: string; readonly score?: number };
+type DraftPatch = {
+  readonly stem?: string;
+  readonly score?: number;
+  /** 整组替换，与 `setOptions` 同口径。 */
+  readonly options?: readonly ChoiceOption[];
+  /** 载荷自带 type，和 `setAnswer` 共用一份类型。 */
+  readonly answer?: AnswerPayload;
+  /** `null` / 空串都表示清空。 */
+  readonly explanation?: string | null;
+  readonly required?: boolean;
+  readonly bloom?: BloomLevel | null;
+  readonly knowledgePoint?: string | null;
+  readonly maxLength?: number;
+};
 
 export interface EditState {
   /** 乐观锁基准：本次编辑是从哪个草稿版本改出来的。 */
@@ -174,12 +209,39 @@ export function resolveSelection(schema: FormSchema, selectedItemId: string | nu
   return found ?? schema.items[0] ?? null;
 }
 
+/** Schema 里现有的答案；没有答案时 `null`（与"答案是空串"区分开）。 */
+export function answerPayloadOf(item: FormItem): AnswerPayload | null {
+  const draft = answerDraftOf(item);
+  return draft === null ? null : toAnswerPayload(draft);
+}
+
 /** 某道题的当前草稿：没碰过的字段用 Schema 里的值，省得界面自己写一遍回落逻辑。 */
 export function draftOf(state: EditState, item: FormItem): ItemDraft {
   const draft = state.drafts[item.id];
+
+  const rawAnswer = draft?.answer ?? answerPayloadOf(item);
+  const explanation = ((): string => {
+    if (draft?.explanation !== undefined) return draft.explanation ?? "";
+    if (item.type === "section") return item.description ?? "";
+    if ("explanation" in item) return item.explanation ?? "";
+    return "";
+  })();
+
   return {
     stem: draft?.stem ?? item.title,
     score: draft?.score ?? scoreOfItem(item) ?? 0,
+    options: draft?.options ?? ("options" in item ? item.options : null),
+    answer: rawAnswer === null ? null : answerDraftOfPayload(rawAnswer),
+    explanation,
+    required: "required" in item ? (draft?.required ?? item.required) : null,
+    bloom: "bloom" in item ? (draft?.bloom !== undefined ? draft.bloom : item.bloom ?? null) : null,
+    knowledgePoint:
+      "knowledgePoint" in item
+        ? draft?.knowledgePoint !== undefined
+          ? draft.knowledgePoint
+          : item.knowledgePoint ?? null
+        : null,
+    maxLength: item.type === "short" ? (draft?.maxLength ?? item.maxLength) : null,
   };
 }
 
@@ -204,6 +266,51 @@ export function withStem(state: EditState, itemId: string, stem: string): EditSt
 
 export function withScore(state: EditState, itemId: string, score: number): EditState {
   return { ...state, drafts: { ...state.drafts, [itemId]: { ...state.drafts[itemId], score } } };
+}
+
+/** 所有单字段写入共用一件正确的事：保留该题已有的其它草稿字段。 */
+function mergeDraft(state: EditState, itemId: string, patch: DraftPatch): EditState {
+  return { ...state, drafts: { ...state.drafts, [itemId]: { ...state.drafts[itemId], ...patch } } };
+}
+
+export function withOptions(state: EditState, itemId: string, options: readonly ChoiceOption[]): EditState {
+  return mergeDraft(state, itemId, { options });
+}
+
+export function withAnswer(state: EditState, itemId: string, answer: AnswerPayload): EditState {
+  return mergeDraft(state, itemId, { answer });
+}
+
+export function withExplanation(state: EditState, itemId: string, explanation: string): EditState {
+  return mergeDraft(state, itemId, { explanation });
+}
+
+export function withRequired(state: EditState, itemId: string, required: boolean): EditState {
+  return mergeDraft(state, itemId, { required });
+}
+
+export function withMeta(
+  state: EditState,
+  itemId: string,
+  meta: { readonly bloom: BloomLevel | null; readonly knowledgePoint: string | null },
+): EditState {
+  return mergeDraft(state, itemId, { bloom: meta.bloom, knowledgePoint: meta.knowledgePoint });
+}
+
+export function withMaxLength(state: EditState, itemId: string, maxLength: number): EditState {
+  return mergeDraft(state, itemId, { maxLength });
+}
+
+/**
+ * 「这题改回原样」：只删本地草稿，不产生任何 op、不产生版本。
+ *
+ * 删 key 而不是把字段写成 Schema 的当前值：后者在下一轮 Schema 变了之后会变成
+ * 一条"改回旧值"的真实改动，前者永远是"没碰过"。
+ */
+export function withClearItemDraft(state: EditState, itemId: string): EditState {
+  const rest = { ...state.drafts };
+  delete rest[itemId];
+  return { ...state, drafts: rest };
 }
 
 export function withAddItem(state: EditState): EditState {
@@ -297,14 +404,15 @@ export function planPatch(state: EditState): PatchPlan {
     // 没有草稿 = 没碰过这题；`setStem` 相同值时 `applyPatch` 本来也不会记变更，
     // 但在这里先挡掉，省一次无意义的 op。
     if (draft === undefined) continue;
+    const question = `第 ${String(index + 1)} 题`;
 
     if (draft.stem !== undefined) {
       const title = draft.stem.trim();
       if (title === "") {
-        return reject("invalid-input", `第 ${String(index + 1)} 题的题干不能为空`);
+        return reject("invalid-input", `${question}的题干不能为空`);
       }
       if (title.length > LIMITS.titleMax) {
-        return reject("invalid-input", `第 ${String(index + 1)} 题的题干最多 ${String(LIMITS.titleMax)} 字`);
+        return reject("invalid-input", `${question}的题干最多 ${String(LIMITS.titleMax)} 字`);
       }
       if (title !== item.title) {
         const failure = advance({ op: "setStem", itemId: item.id, title });
@@ -312,18 +420,160 @@ export function planPatch(state: EditState): PatchPlan {
       }
     }
 
-    // 分节/量表没有分值：输入框已被藏起来，草稿里的分值不该变成一条注定失败的 op。
-    const score = draft.score;
-    if (score === undefined || scoreOfItem(item) === null) continue;
-    if (!Number.isInteger(score) || score < 0 || score > LIMITS.scoreMax) {
-      return reject(
-        "invalid-input",
-        `第 ${String(index + 1)} 题的分值需是 0–${String(LIMITS.scoreMax)} 的整数`,
-      );
+    /* -------------------------------- 选项 -------------------------------- */
+    if (draft.options !== undefined && (item.type === "single" || item.type === "multi")) {
+      if (draft.options.length < LIMITS.optionsMin || draft.options.length > LIMITS.optionsMax) {
+        return reject(
+          "invalid-input",
+          `${question}的选项需 ${String(LIMITS.optionsMin)}–${String(LIMITS.optionsMax)} 条`,
+        );
+      }
+      const options = draft.options.map((option) => ({ id: option.id, text: option.text.trim() }));
+      const seen = new Set<string>();
+      for (const option of options) {
+        if (!LIMITS.shortIdPattern.test(option.id)) {
+          return reject("invalid-input", `${question}的选项 id「${option.id}」只能用小写字母/数字/下划线/连字符`);
+        }
+        if (seen.has(option.id)) {
+          return reject("invalid-input", `${question}的选项 id「${option.id}」重复`);
+        }
+        seen.add(option.id);
+        if (option.text === "") {
+          return reject("invalid-input", `${question}有选项文字为空`);
+        }
+        if (option.text.length > LIMITS.optionTextMax) {
+          return reject("invalid-input", `${question}的选项文字最多 ${String(LIMITS.optionTextMax)} 字`);
+        }
+      }
+      if (JSON.stringify(options) !== JSON.stringify("options" in item ? item.options : [])) {
+        const failure = advance({ op: "setOptions", itemId: item.id, options });
+        if (failure !== null) return { ok: false, ...failure };
+      }
     }
-    if (score !== scoreOfItem(item)) {
-      const failure = advance({ op: "setScore", itemId: item.id, score });
+
+    /* -------------------------------- 答案 -------------------------------- */
+    // survey 一律不产答案 op（R5）；面板也不会给它答案输入框，这里是第二道闸。
+    //
+    // 校验的触发条件比"产 op"宽一格：**只改了选项**也要校验现有答案。
+    // 否则删掉正确项后，答案仍指向一个不存在的 id，本地不报、保存也不报（草稿
+    // 允许不可发布），直到发布时才炸——那正是这次要提前挡掉的错。
+    const answerTouched = draft.answer !== undefined;
+    const optionsTouched =
+      draft.options !== undefined && (item.type === "single" || item.type === "multi");
+    const effectiveAnswer = draft.answer ?? answerPayloadOf(item);
+    if (
+      (answerTouched || optionsTouched) &&
+      effectiveAnswer !== null &&
+      state.schema.meta.kind !== "survey" &&
+      supportsAnswer(item)
+    ) {
+      const payload = effectiveAnswer;
+      if (payload.type !== item.type) {
+        return reject("invalid-input", `${question}的答案类型与题型不符`);
+      }
+      const optionIds = new Set(
+        (draft.options ?? ("options" in item ? item.options : [])).map((option) => option.id),
+      );
+      switch (payload.type) {
+        case "single":
+          if (payload.answer === "") return reject("invalid-input", `${question}还没选正确答案`);
+          if (!optionIds.has(payload.answer)) {
+            return reject("invalid-input", `${question}的正确答案不在选项里`);
+          }
+          break;
+        case "multi": {
+          const unique = new Set(payload.answer);
+          if (payload.answer.length === 0) return reject("invalid-input", `${question}至少要选一个正确答案`);
+          if (unique.size !== payload.answer.length) return reject("invalid-input", `${question}的正确答案重复`);
+          if (payload.answer.some((id) => !optionIds.has(id))) {
+            return reject("invalid-input", `${question}的正确答案不在选项里`);
+          }
+          break;
+        }
+        case "fill":
+          if (payload.answer.length === 0 || payload.answer.some((blank) => blank.trim() === "")) {
+            return reject("invalid-input", `${question}的填空答案不能有空`);
+          }
+          break;
+        case "number": {
+          const { value, tolerance } = payload.answer;
+          if (!Number.isFinite(value) || !Number.isFinite(tolerance) || tolerance < 0) {
+            return reject("invalid-input", `${question}的数值答案或容差不是有效数字`);
+          }
+          break;
+        }
+      }
+      if (answerTouched && JSON.stringify(answerPayloadOf(item)) !== JSON.stringify(payload)) {
+        const failure = advance({ op: "setAnswer", itemId: item.id, answer: payload });
+        if (failure !== null) return { ok: false, ...failure };
+      }
+    }
+
+    /* -------------------------------- 解析 -------------------------------- */
+    if (draft.explanation !== undefined && item.type !== "scale") {
+      const raw = draft.explanation ?? "";
+      const explanation = raw.trim() === "" ? null : raw;
+      if (explanation !== null && explanation.length > LIMITS.explanationMax) {
+        return reject("invalid-input", `${question}的解析最多 ${String(LIMITS.explanationMax)} 字`);
+      }
+      const current =
+        item.type === "section" ? item.description ?? null : "explanation" in item ? item.explanation ?? null : null;
+      if (explanation !== current) {
+        const failure = advance({ op: "setExplanation", itemId: item.id, explanation });
+        if (failure !== null) return { ok: false, ...failure };
+      }
+    }
+
+    /* -------------------------------- 分值 -------------------------------- */
+    // 分节/量表没有分值；survey 不允许带分值（R5）。输入框已藏，草稿不该变成注定失败的 op。
+    const score = draft.score;
+    if (score !== undefined && scoreOfItem(item) !== null && state.schema.meta.kind !== "survey") {
+      if (!Number.isInteger(score) || score < 0 || score > LIMITS.scoreMax) {
+        return reject("invalid-input", `${question}的分值需是 0–${String(LIMITS.scoreMax)} 的整数`);
+      }
+      if (score !== scoreOfItem(item)) {
+        const failure = advance({ op: "setScore", itemId: item.id, score });
+        if (failure !== null) return { ok: false, ...failure };
+      }
+    }
+
+    /* -------------------------------- 必答 -------------------------------- */
+    if (draft.required !== undefined && "required" in item && item.required !== draft.required) {
+      const failure = advance({ op: "setRequired", itemId: item.id, required: draft.required });
       if (failure !== null) return { ok: false, ...failure };
+    }
+
+    /* ------------------------------ 教学标注 ------------------------------ */
+    if (
+      (draft.bloom !== undefined || draft.knowledgePoint !== undefined) &&
+      item.type !== "scale" &&
+      item.type !== "section"
+    ) {
+      const bloom = draft.bloom !== undefined ? draft.bloom : item.bloom ?? null;
+      const knowledgePoint =
+        draft.knowledgePoint !== undefined ? draft.knowledgePoint : item.knowledgePoint ?? null;
+      if (bloom !== (item.bloom ?? null) || knowledgePoint !== (item.knowledgePoint ?? null)) {
+        const failure = advance({ op: "setMeta", itemId: item.id, bloom, knowledgePoint });
+        if (failure !== null) return { ok: false, ...failure };
+      }
+    }
+
+    /* ------------------------------ 字数上限 ------------------------------ */
+    if (draft.maxLength !== undefined && item.type === "short") {
+      if (
+        !Number.isInteger(draft.maxLength) ||
+        draft.maxLength < 1 ||
+        draft.maxLength > LIMITS.shortMaxLengthCap
+      ) {
+        return reject(
+          "invalid-input",
+          `${question}的字数上限需是 1–${String(LIMITS.shortMaxLengthCap)} 的整数`,
+        );
+      }
+      if (draft.maxLength !== item.maxLength) {
+        const failure = advance({ op: "setMaxLength", itemId: item.id, maxLength: draft.maxLength });
+        if (failure !== null) return { ok: false, ...failure };
+      }
     }
   }
 

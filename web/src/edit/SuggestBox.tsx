@@ -32,6 +32,15 @@ export interface SuggestBoxProps {
   /** 乐观锁基准：建议与保存都声明"我是基于这一版"。 */
   readonly baseVersionId: string;
   /**
+   * 单题作用域（P18）：给了就只允许改这道题。
+   *
+   * 作用域是**服务端**的硬约束（越界 422 且不写库），前端传它只是把意图说清楚；
+   * 界面不因为"传了 id"就相信模型只改了这题——卡片仍按服务端回来的 `changes` 渲染。
+   */
+  readonly scopeItemId?: string;
+  /** 单题模式的题号文案，例：`第 2 题`。仅用于卡片标题。 */
+  readonly scopeLabel?: string;
+  /**
    * 采用后的回调：给的是新一版的三件事（schema / 版本 id / 版本号），
    * 而不是整份 `FormDetailResponse`——`PATCH` 返回的本来就没有 `form` 之外的字段，
    * 让组件顺手拼一个假的详情，会掩盖"少发了一次请求"这件事。
@@ -40,17 +49,34 @@ export interface SuggestBoxProps {
   readonly onNotice: (text: string, tone: "success" | "info" | "error", needsReload: boolean) => void;
 }
 
-export function SuggestBox({ formId, baseVersionId, onApplied, onNotice }: SuggestBoxProps): JSX.Element {
+export function SuggestBox({
+  formId,
+  baseVersionId,
+  scopeItemId,
+  scopeLabel,
+  onApplied,
+  onNotice,
+}: SuggestBoxProps): JSX.Element {
   const api = createTeacherApi(createHttpClient());
   const [instruction, setInstruction] = useState("");
   const [phase, setPhase] = useState<Phase>({ status: "idle" });
   const busy = phase.status === "loading";
+  const scoped = scopeItemId !== undefined;
+  // 同一页会有两条输入条（整表一条、单题一条）：测试 id 必须能分开，
+  // 否则浏览器里 `querySelector` 永远只拿到页头那条。
+  const prefix = scoped ? "edit-item-suggest" : "edit-suggest";
 
   const request = (): void => {
     const trimmed = instruction.trim();
     if (trimmed === "" || busy) return;
     setPhase({ status: "loading" });
-    void api.suggestPatch(formId, { baseVersionId, instruction: trimmed }).then((outcome) => {
+    void api
+      .suggestPatch(formId, {
+        baseVersionId,
+        instruction: trimmed,
+        ...(scopeItemId === undefined ? {} : { targetItemId: scopeItemId }),
+      })
+      .then((outcome) => {
       if (!outcome.ok) {
         setPhase({
           status: "error",
@@ -60,10 +86,12 @@ export function SuggestBox({ formId, baseVersionId, onApplied, onNotice }: Sugge
         return;
       }
       if (outcome.data.ops.length === 0) {
-        // 空建议不是失败：模型认为这六种 op 表达不了，如实说出来比硬凑一条改动好。
+        // 空建议不是失败：模型认为受限 op 表达不了，如实说出来比硬凑一条改动好。
         setPhase({
           status: "error",
-          text: "这句要求用受限改动表达不了（只能改题干/选项/分值，或加、删、移动题目）",
+          text: scoped
+            ? "这句要求用这题的受限改动表达不了（可改题干/选项/答案/解析/分值/必答/标注/字数上限）"
+            : "这句要求用受限改动表达不了（可改题干/选项/答案/解析/分值/必答/标注/字数上限，或加、删、移动题目）",
           needsReload: false,
         });
         return;
@@ -100,18 +128,23 @@ export function SuggestBox({ formId, baseVersionId, onApplied, onNotice }: Sugge
 
   return (
     <section
-      aria-label="一句话改这份表单"
-      className="border-b border-line bg-bg"
-      data-testid="edit-suggest"
+      aria-label={scoped ? `只改${scopeLabel ?? "这道题"}` : "一句话改这份表单"}
+      className={scoped ? "rounded-sm border border-line bg-surface p-1" : "border-b border-line bg-bg"}
+      data-testid={prefix}
     >
-      <div className="flex flex-wrap items-center gap-2 px-2 py-2">
+      {scoped ? (
+        <p className="m-0 px-1 pb-1 text-xs text-muted" data-testid={`${prefix}-scope`}>
+          {`只改这道题${scopeLabel === undefined ? "" : ` · ${scopeLabel}`}`}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2 px-1 py-1">
         <label className="min-w-0 flex-1">
           <span className="sr-only">修改要求</span>
           <input
             type="text"
-            data-testid="edit-suggest-input"
+            data-testid={`${prefix}-input`}
             className="min-h-[44px] w-full rounded-sm border border-line bg-surface px-2 text-sm text-ink"
-            placeholder={PLACEHOLDER}
+            placeholder={scoped ? "只改这题，例如：把正确项改成第三个选项" : PLACEHOLDER}
             maxLength={MAX_INSTRUCTION}
             value={instruction}
             disabled={busy}
@@ -129,7 +162,7 @@ export function SuggestBox({ formId, baseVersionId, onApplied, onNotice }: Sugge
         </label>
         <button
           type="button"
-          data-testid="edit-suggest-run"
+          data-testid={`${prefix}-run`}
           className="min-h-[44px] rounded-sm border border-accent px-3 text-sm text-accent disabled:opacity-50"
           disabled={busy || instruction.trim() === ""}
           onClick={request}
@@ -139,10 +172,17 @@ export function SuggestBox({ formId, baseVersionId, onApplied, onNotice }: Sugge
       </div>
 
       {phase.status === "proposed" ? (
-        <ProposalCard suggestion={phase.suggestion} busy={busy} onAdopt={adopt} onDiscard={() => setPhase({ status: "idle" })} />
+        <ProposalCard
+          suggestion={phase.suggestion}
+          busy={busy}
+          prefix={prefix}
+          {...(scopeLabel === undefined ? {} : { scopeLabel })}
+          onAdopt={adopt}
+          onDiscard={() => setPhase({ status: "idle" })}
+        />
       ) : null}
       {phase.status === "error" ? (
-        <p className="m-0 px-2 pb-2 text-sm text-danger" role="alert" data-testid="edit-suggest-error">
+        <p className="m-0 px-1 pb-1 text-sm text-danger" role="alert" data-testid={`${prefix}-error`}>
           {phase.text}
         </p>
       ) : null}
@@ -154,33 +194,42 @@ export function SuggestBox({ formId, baseVersionId, onApplied, onNotice }: Sugge
 function ProposalCard({
   suggestion,
   busy,
+  prefix,
+  scopeLabel,
   onAdopt,
   onDiscard,
 }: {
   readonly suggestion: SuggestPatchResponse;
   readonly busy: boolean;
+  readonly prefix: string;
+  readonly scopeLabel?: string;
   readonly onAdopt: (suggestion: SuggestPatchResponse) => void;
   readonly onDiscard: () => void;
 }): JSX.Element {
   return (
-    <div className="px-2 pb-2" data-testid="edit-suggest-proposal">
+    <div className="px-1 pb-1" data-testid={`${prefix}-proposal`}>
+      <p className="m-0 mb-1 text-xs text-muted" data-testid={`${prefix}-scope-title`}>
+        {scopeLabel === undefined
+          ? `整份表单 · ${String(suggestion.changes.length)} 条改动`
+          : `仅${scopeLabel} · ${String(suggestion.changes.length)} 条改动`}
+      </p>
       {suggestion.source === "mock" ? (
-        <p className="m-0 mb-1 text-xs text-muted" data-testid="edit-suggest-source">
+        <p className="m-0 mb-1 text-xs text-muted" data-testid={`${prefix}-source`}>
           {MOCK_HINT}
         </p>
       ) : null}
-      <ChangeList changes={suggestion.changes} />
+      <ChangeList changes={suggestion.changes} prefix={prefix} />
       {suggestion.issues.length === 0 ? (
         <p className="m-0 mt-1 text-xs text-muted">采用后这份表单可以直接发布。</p>
       ) : (
-        <p className="m-0 mt-1 text-xs text-danger" data-testid="edit-suggest-issues">
+        <p className="m-0 mt-1 text-xs text-danger" data-testid={`${prefix}-issues`}>
           {`采用后仍不能发布：${issueText(suggestion.issues[0])}${suggestion.issues.length > 1 ? ` 等 ${String(suggestion.issues.length)} 处` : ""}`}
         </p>
       )}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          data-testid="edit-suggest-adopt"
+          data-testid={`${prefix}-adopt`}
           className="min-h-[44px] rounded-sm border border-accent bg-accent px-3 text-sm text-white disabled:opacity-50"
           disabled={busy}
           onClick={() => {
@@ -191,7 +240,7 @@ function ProposalCard({
         </button>
         <button
           type="button"
-          data-testid="edit-suggest-discard"
+          data-testid={`${prefix}-discard`}
           className="min-h-[44px] rounded-sm border border-line px-3 text-sm text-muted"
           disabled={busy}
           onClick={onDiscard}
@@ -203,9 +252,15 @@ function ProposalCard({
   );
 }
 
-function ChangeList({ changes }: { readonly changes: readonly PatchChange[] }): JSX.Element {
+function ChangeList({
+  changes,
+  prefix,
+}: {
+  readonly changes: readonly PatchChange[];
+  readonly prefix: string;
+}): JSX.Element {
   return (
-    <ul className="m-0 flex list-none flex-wrap gap-x-3 gap-y-1 p-0" data-testid="edit-suggest-changes">
+    <ul className="m-0 flex list-none flex-wrap gap-x-3 gap-y-1 p-0" data-testid={`${prefix}-changes`}>
       {changes.map((change, index) => (
         <li key={`${String(index)}-${change.op}-${change.where}`} className="flex items-baseline gap-1 text-sm">
           <span className="text-muted">{change.where}</span>
