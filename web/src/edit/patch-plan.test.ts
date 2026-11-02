@@ -168,7 +168,7 @@ describe("planPatch", () => {
 
     expect(plan.ops.map((op) => op.op)).toEqual(["setStem", "setScore"]);
     expect(plan.request.baseVersionId).toBe(BASE_VERSION_ID);
-    expect(plan.request.ops).toEqual(plan.ops);
+    expect("ops" in plan.request ? plan.request.ops : null).toEqual(plan.ops);
   });
 
   it("草稿跨题保留：切走再改另一题，前一题的改动还在预览里", () => {
