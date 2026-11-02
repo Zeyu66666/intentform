@@ -142,10 +142,10 @@ LLM_MODE=live LLM_API_KEY=sk-... pnpm dev:server
 | 只看生成效果 | 打开首页 → 点一个预置需求（初二数学 / 高一英语 / 高二生物）→ 开始生成。中栏逐字段出现，右栏时间线同步推进 |
 | 走完整的发布闭环 | 生成完成后点「保存并发布」→ 拿到 `/f/xxxxxxxx` 学生短链 → 手机视口打开作答 → 提交 → 回 `/dashboard` 看这条提交与 CSV |
 | 改一份已发布的表单 | `/dashboard` → 选中表单 →「编辑这份表单的题目与分值」→ 在顶部写一句话（例：把第一题题干改短一点）→「生成改动建议」→ 看人话差异 →「采用并保存」→ 需要时点「撤销上一步」 |
-| 看问卷收集页 | 首页把表单类型切到「问卷」→ 生成 → 发布 → 学生端填写 → 看板按字段回收统计（不出现平均分、满分） |
+| 看问卷收集页 | 首页把表单类型切到「问卷」→ 生成 → 发布 → 学生端填写 → 看板按字段回收统计（不出现平均分、满分；单选/多选/量表附各选项计数与占比） |
 | 只玩数据（不看生成） | `pnpm seed` 后登录 → `/dashboard`，已有 2 份表单与 30 条提交 |
 
-前端路由共五条：`/`（生成页）、`/login`、`/dashboard`（可带表单 id）、`/forms/:id/edit`、`/f/:slug`（学生收集页）。
+前端路由共六条：`/`（生成页）、`/login`、`/dashboard`（可带表单 id）、`/forms/:id/edit`、`/forms/:id/print`（打印版考卷）、`/f/:slug`（学生收集页）。
 
 ## 生成模式
 
@@ -177,7 +177,7 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | 命令 | 覆盖范围 |
 |---|---|
 | `pnpm typecheck` | 四个包全量类型检查 |
-| `pnpm test` | 71 个测试文件 / 815 条用例（oxlint `--deny-warnings`、Vitest） |
+| `pnpm test` | 71 个测试文件 / 817 条用例（oxlint `--deny-warnings`、Vitest） |
 | `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC12；自起临时服务与临时库，不碰 `data/intentform.db` |
 | `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十四步（含打印版 PDF、答案解析、暗色模式、跳过蓝图直生成）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
 | `pnpm eval` | 30 条需求集的整份达标率，报告写入 `eval/runs/<runId>/` 并更新 `eval/runs/latest.json` |
