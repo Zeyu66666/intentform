@@ -1069,19 +1069,28 @@ async function vc11SurveyCollection(request, ctx) {
   must(empty.json.collectionStats.length === 3, `VC11 应返回 3 个可回收字段：${JSON.stringify(empty.json.collectionStats)}`);
   must(empty.json.collectionStats.every((stat) => stat.rate === null), `VC11 零提交填写率应为 null：${JSON.stringify(empty.json.collectionStats)}`);
 
-  const submitted = await request("POST", "/api/submissions", {
-    json: {
-      slug,
-      formVersionId: versionId,
-      answers: { "s-feedback": "很有收获", "s-confidence": "4" },
-    },
-  });
-  must(submitted.status === 201, `VC11 收集页提交失败（${String(submitted.status)}）：${firstLine(submitted.text)}`);
+  // 两份提交、量表分别取 4 与 2：既验填写率，也验「各选项分布」（A-09）。
+  for (const answers of [
+    { "s-feedback": "很有收获", "s-confidence": "4" },
+    { "s-feedback": "一般", "s-confidence": "2" },
+  ]) {
+    const submitted = await request("POST", "/api/submissions", {
+      json: { slug, formVersionId: versionId, answers },
+    });
+    must(submitted.status === 201, `VC11 收集页提交失败（${String(submitted.status)}）：${firstLine(submitted.text)}`);
+  }
   const dashboard = await request("GET", `/api/forms/${formId}/submissions`, { cookie: ctx.cookie });
   must(dashboard.status === 200, `VC11 回收看板失败（${String(dashboard.status)}）`);
   must(dashboard.json.summary.kind === "survey", "VC11 回收看板类型不是 survey");
-  must(dashboard.json.collectionStats.find((stat) => stat.itemId === "s-feedback")?.answered === 1, `VC11 简答回收数不对：${JSON.stringify(dashboard.json.collectionStats)}`);
-  must(dashboard.json.collectionStats.find((stat) => stat.itemId === "s-confidence")?.rate === 1, `VC11 量表填写率不对：${JSON.stringify(dashboard.json.collectionStats)}`);
+  const feedback = dashboard.json.collectionStats.find((stat) => stat.itemId === "s-feedback");
+  const confidence = dashboard.json.collectionStats.find((stat) => stat.itemId === "s-confidence");
+  must(feedback?.answered === 2 && feedback.rate === 1, `VC11 简答回收数不对：${JSON.stringify(feedback)}`);
+  must(confidence?.rate === 1, `VC11 量表填写率不对：${JSON.stringify(confidence)}`);
+  const confidenceOptions = confidence?.options ?? [];
+  must(confidenceOptions.length === 5, `VC11 量表应给出 5 档分布：${JSON.stringify(confidenceOptions)}`);
+  const byValue = Object.fromEntries(confidenceOptions.map((option) => [option.optionId, option.count]));
+  must(byValue["4"] === 1 && byValue["2"] === 1 && byValue["1"] === 0, `VC11 量表分布计数不对：${JSON.stringify(byValue)}`);
+  must(confidenceOptions.find((option) => option.optionId === "4")?.rate === 0.5, "VC11 量表选项占比应为 1/2");
   must(dashboard.json.itemStats.length === 0, `VC11 survey 不应出现正确率：${JSON.stringify(dashboard.json.itemStats)}`);
 
   const csv = await request("GET", `/api/forms/${formId}/submissions.csv`, { cookie: ctx.cookie });

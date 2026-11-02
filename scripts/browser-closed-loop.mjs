@@ -1251,6 +1251,16 @@ async function main() {
       );
       const collectionRows = await collectionStatRows(page);
       must(collectionRows.length > 0, "survey 看板没有逐字段回收统计");
+      // 各选项分布（A-09）：量表 1–5 应有 5 档，选中的 4 档计数为 1、占比 100%。
+      const optionRows = await page.evaluate(
+        "return Array.prototype.map.call(document.querySelectorAll('[data-testid=dash-collection-option]'), function (el) { var spans = el.querySelectorAll('span'); return { label: (spans[0] || {}).textContent || '', count: (spans[1] || {}).textContent || '', rate: (spans[2] || {}).textContent || '' }; });",
+      );
+      must(optionRows.length >= 5, `survey 看板应给出量表的各档分布，实际 ${JSON.stringify(optionRows)}`);
+      const chosen = optionRows.find((row) => row.label.trim() === "4");
+      must(
+        chosen !== undefined && chosen.count.trim() === "1" && chosen.rate.includes("100%"),
+        `量表第 4 档的分布应为 1（100%），实际 ${JSON.stringify(chosen)}`,
+      );
       const dashboardText = await page.text();
       must(!dashboardText.includes("平均分"), "survey 看板不应出现「平均分」");
       must(!dashboardText.includes("满分"), "survey 看板不应出现「满分」");
