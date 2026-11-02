@@ -28,6 +28,7 @@ import {
   handleListForms,
   handlePatchForm,
   handlePublishForm,
+  handleRedoDraft,
   handleUndoDraft,
 } from "./forms-route.ts";
 import {
@@ -69,10 +70,12 @@ export const ROUTES: readonly RouteDef[] = [
   { method: "GET", pattern: "/api/forms/:id/settings", handler: handleGetFormSettings },
   { method: "POST", pattern: "/api/forms/:id/settings", handler: handleUpdateFormSettings },
   { method: "POST", pattern: "/api/forms/:id/publish", handler: handlePublishForm },
-  // 省赛 R-03：受限修改与撤销。`PATCH` 是"部分改动"的语义，正好对上六种 op；
-  // 撤销用 `POST .../undo` 而不是 `DELETE /versions/:id`：版本行本来就不删。
+  // 省赛 R-03：受限修改与撤销/重做。`PATCH` 接受两种载荷：十一个受限 op，
+  // 或 RFC 6902 JSON Patch（落库前翻译回受限 op）；撤销/重做都只拨草稿指针，
+  // 不用 `DELETE /versions/:id`——版本行本来就不删。
   { method: "PATCH", pattern: "/api/forms/:id", handler: handlePatchForm },
   { method: "POST", pattern: "/api/forms/:id/undo", handler: handleUndoDraft },
+  { method: "POST", pattern: "/api/forms/:id/redo", handler: handleRedoDraft },
   // 省赛 R-03：一句话改成操作集。放在 `/undo` 之后、提交类接口之前——它不写库，
   // 但会调上游，所以和生成一样要限流。
   {

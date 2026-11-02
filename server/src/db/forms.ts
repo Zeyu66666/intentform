@@ -228,6 +228,56 @@ export function setDraftVersion(db: Db, formId: string, versionId: string, updat
   );
 }
 
+/* ------------------------------ 重做栈（2026-11-02） ------------------------------ */
+
+/**
+ * 压入撤销时退出的版本。`seq` 用 `MAX+1` 自增，弹栈只取最大的一条。
+ *
+ * 只存 id：版本行不可变，重做就是把草稿指针拨回去，不需要再存一份 Schema。
+ */
+export function pushRedo(db: Db, formId: string, versionId: string): void {
+  const run = db.transaction((): void => {
+    const row = db
+      .prepare<[string], { seq: number | null }>(
+        "SELECT MAX(seq) AS seq FROM form_redo_stack WHERE form_id = ?",
+      )
+      .get(formId);
+    db.prepare("INSERT INTO form_redo_stack (form_id, seq, version_id) VALUES (?, ?, ?)").run(
+      formId,
+      (row?.seq ?? 0) + 1,
+      versionId,
+    );
+  });
+  run();
+}
+
+/** 弹出栈顶（最近一次撤销掉的版本）；空栈返回 undefined。 */
+export function popRedo(db: Db, formId: string): string | undefined {
+  const run = db.transaction((): string | undefined => {
+    const top = db
+      .prepare<[string], { seq: number; version_id: string }>(
+        "SELECT seq, version_id FROM form_redo_stack WHERE form_id = ? ORDER BY seq DESC LIMIT 1",
+      )
+      .get(formId);
+    if (top === undefined) return undefined;
+    db.prepare("DELETE FROM form_redo_stack WHERE form_id = ? AND seq = ?").run(formId, top.seq);
+    return top.version_id;
+  });
+  return run();
+}
+
+/** 撤销后又产生了新的草稿版本：旧分支作废，清空重做栈。 */
+export function clearRedo(db: Db, formId: string): void {
+  db.prepare("DELETE FROM form_redo_stack WHERE form_id = ?").run(formId);
+}
+
+export function redoDepth(db: Db, formId: string): number {
+  const row = db
+    .prepare<[string], { c: number }>("SELECT COUNT(*) AS c FROM form_redo_stack WHERE form_id = ?")
+    .get(formId);
+  return row?.c ?? 0;
+}
+
 /* --------------------------- 表单展示设置（A-18） --------------------------- */
 
 /**

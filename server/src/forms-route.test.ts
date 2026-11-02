@@ -13,6 +13,7 @@ import type {
   ListFormsResponse,
   PatchFormResponse,
   PublishResponse,
+  RedoDraftResponse,
   UndoDraftResponse,
 } from "@intentform/schema";
 import { createFormBody } from "./testing/fixtures.ts";
@@ -356,6 +357,62 @@ describe("PATCH /api/forms/:id", () => {
   });
 });
 
+describe("PATCH /api/forms/:id · 通用 JSON Patch", () => {
+  it("RFC 6902 改题干与答案，落库仍生成受限 op 的 changes", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    const response = await call<PatchFormResponse>(app, "PATCH", `/api/forms/${created.form.id}`, {
+      body: {
+        baseVersionId: created.version.id,
+        jsonPatch: [
+          { op: "replace", path: "/items/1/title", value: "JSON Patch 改的题干" },
+          { op: "replace", path: "/items/1/answer", value: "b" },
+        ],
+      },
+      cookie,
+    });
+    expect(response.status).toBe(200);
+    expect(response.json.version.n).toBe(2);
+    expect(response.json.version.source).toBe("patch");
+    expect(response.json.changes.map((change) => change.op)).toEqual(["setStem", "setAnswer"]);
+    expect(response.json.schema.items[1]?.title).toBe("JSON Patch 改的题干");
+    const item = response.json.schema.items[1];
+    expect(item?.type === "single" ? item.answer : null).toBe("b");
+  });
+
+  it("越界路径（meta / 题目数量）整包拒绝，不产生版本", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    for (const jsonPatch of [
+      [{ op: "replace", path: "/meta/title", value: "改标题" }],
+      [{ op: "remove", path: "/items/1" }],
+    ]) {
+      const response = await call(app, "PATCH", `/api/forms/${created.form.id}`, {
+        body: { baseVersionId: created.version.id, jsonPatch },
+        cookie,
+      });
+      expect(response.status).toBe(400);
+      expect(response.json).toMatchObject({ error: "bad_request" });
+    }
+    const detail = await call<FormDetailResponse>(app, "GET", `/api/forms/${created.form.id}`, { cookie });
+    expect(detail.json.version.n).toBe(1);
+  });
+
+  it("test 失败时同样拒绝", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    const response = await call(app, "PATCH", `/api/forms/${created.form.id}`, {
+      body: {
+        baseVersionId: created.version.id,
+        jsonPatch: [{ op: "test", path: "/items/1/title", value: "不是这个" }],
+      },
+      cookie,
+    });
+    expect(response.status).toBe(400);
+    expect(response.text).toContain("test 不成立");
+  });
+});
+
 describe("POST /api/forms/:id/undo", () => {
   it("退回父版本；再退一步到 v1 后 undone=false 且不多造版本", async () => {
     const { app, cookie } = await boot();
@@ -406,5 +463,87 @@ describe("POST /api/forms/:id/undo", () => {
     // v1 → v2 → 撤销 → v3：版本行只增不改，n 不复用。
     expect(again.json.version.n).toBe(3);
     expect(again.json.version.parentId).toBe(created.version.id);
+  });
+});
+
+describe("POST /api/forms/:id/redo", () => {
+  it("撤销后能重做回同一版本；栈空后 redone=false", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    const formId = created.form.id;
+    const patched = await call<PatchFormResponse>(app, "PATCH", `/api/forms/${formId}`, {
+      body: { baseVersionId: created.version.id, ops: [{ op: "setStem", itemId: "q-single", title: "改过" }] },
+      cookie,
+    });
+    expect(patched.status).toBe(200);
+
+    const undo = await call<UndoDraftResponse>(app, "POST", `/api/forms/${formId}/undo`, {
+      body: { fromVersionId: patched.json.version.id },
+      cookie,
+    });
+    expect(undo.json.undone).toBe(true);
+    expect(undo.json.redoAvailable).toBe(true);
+    expect(undo.json.version.id).toBe(created.version.id);
+
+    const redo = await call<RedoDraftResponse>(app, "POST", `/api/forms/${formId}/redo`, {
+      body: { fromVersionId: created.version.id },
+      cookie,
+    });
+    expect(redo.status).toBe(200);
+    expect(redo.json.redone).toBe(true);
+    expect(redo.json.version.id).toBe(patched.json.version.id);
+    expect(redo.json.schema.items[1]?.title).toBe("改过");
+    expect(redo.json.redoAvailable).toBe(false);
+
+    const again = await call<RedoDraftResponse>(app, "POST", `/api/forms/${formId}/redo`, {
+      body: { fromVersionId: patched.json.version.id },
+      cookie,
+    });
+    expect(again.json.redone).toBe(false);
+    expect(again.json.version.id).toBe(patched.json.version.id);
+  });
+
+  it("撤销后又改：重做栈清空，旧分支不会被拨回来", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    const formId = created.form.id;
+    const first = await call<PatchFormResponse>(app, "PATCH", `/api/forms/${formId}`, {
+      body: { baseVersionId: created.version.id, ops: [{ op: "setStem", itemId: "q-single", title: "第一次" }] },
+      cookie,
+    });
+    await call(app, "POST", `/api/forms/${formId}/undo`, {
+      body: { fromVersionId: first.json.version.id },
+      cookie,
+    });
+    const second = await call<PatchFormResponse>(app, "PATCH", `/api/forms/${formId}`, {
+      body: { baseVersionId: created.version.id, ops: [{ op: "setStem", itemId: "q-single", title: "第二次" }] },
+      cookie,
+    });
+    expect(second.status).toBe(200);
+
+    const redo = await call<RedoDraftResponse>(app, "POST", `/api/forms/${formId}/redo`, {
+      body: { fromVersionId: second.json.version.id },
+      cookie,
+    });
+    expect(redo.json.redone).toBe(false);
+    expect(redo.json.version.id).toBe(second.json.version.id);
+    const detail = await call<FormDetailResponse>(app, "GET", `/api/forms/${formId}`, { cookie });
+    expect(detail.json.schema.items[1]?.title).toBe("第二次");
+  });
+
+  it("撤销后刷新详情，redoAvailable 仍为 true（栈在服务端）", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    const formId = created.form.id;
+    const patched = await call<PatchFormResponse>(app, "PATCH", `/api/forms/${formId}`, {
+      body: { baseVersionId: created.version.id, ops: [{ op: "setStem", itemId: "q-single", title: "改过" }] },
+      cookie,
+    });
+    await call(app, "POST", `/api/forms/${formId}/undo`, {
+      body: { fromVersionId: patched.json.version.id },
+      cookie,
+    });
+    const detail = await call<FormDetailResponse>(app, "GET", `/api/forms/${formId}`, { cookie });
+    expect(detail.json.redoAvailable).toBe(true);
   });
 });

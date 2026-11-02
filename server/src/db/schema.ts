@@ -54,6 +54,16 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
      UNIQUE (form_id, n)
    )`,
 
+  // 2026-11-02 重做栈：撤销时把退出的版本压栈，重做按 LIFO 弹回。
+  // 只存版本 id，不复制 Schema；版本行本身是追加式不可变的，指针回到哪一版就是哪一版。
+  // 新 Patch 落库前清空本表——撤销后又改，旧分支不能再被「重做」复活。
+  `CREATE TABLE IF NOT EXISTS form_redo_stack (
+     form_id    TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+     seq        INTEGER NOT NULL,
+     version_id TEXT NOT NULL,
+     PRIMARY KEY (form_id, seq)
+   )`,
+
   `CREATE TABLE IF NOT EXISTS submissions (
      id              TEXT PRIMARY KEY,
      form_id         TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
