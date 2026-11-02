@@ -1174,6 +1174,142 @@ async function vc12AnswerReview(request, ctx) {
   must(detail.json.version.n === 1, "VC12 展示设置不应产生新版本");
 }
 
+/**
+ * VC13：单题修改（省赛附加 A-20 / P18）。
+ *
+ * 三段：
+ * 1. **建议只改这一题**：mock 生成三题以上的卷子（第 2 题是 `q_single`），带
+ *    `targetItemId` 请求建议 → `scope` 是 item、ops/changes 全指向第 2 题、建议
+ *    本身不写库；采用后第 1/3 题字节不变。
+ * 2. **答案改动进判分口径**：发布改前版本并交一份老答案 → 再 PATCH `setAnswer`
+ *    （新版本 v3，**发布指针仍停在 v2**）→ 发布 v3 后用同一份老答案提交，该题判错；
+ *    再按 `?versionId=v2` 查历史看板，旧提交得分不变。
+ * 3. **作用域兜底**：不存在的 `targetItemId` 回 422，且不产生版本。
+ *
+ * 「模型越界被拦」在 HTTP 层构造不出来（mock 不越界），归
+ * `packages/llm/src/patch-suggest.test.ts` 与 `server/src/suggest-route.test.ts`
+ * 的单测覆盖——这里不假装验证过。
+ */
+async function vc13SingleItemEdit(request, ctx) {
+  const sse = await request("POST", "/api/generate", { json: { requirement: GEN_REQUIREMENT } });
+  must(sse.status === 200, `VC13 生成接口失败（${String(sse.status)}）：${firstLine(sse.text)}`);
+  const nodes = parseSse(sse.text)
+    .filter((event) => event.type === "field")
+    .map((event) => event.node);
+  const schema = buildGeneratedQuiz(nodes);
+  must(schema.items.length >= 3, `VC13 至少需要 3 道题，实际 ${String(schema.items.length)}`);
+
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: schema.meta.title, kind: "quiz", schema, source: "generate" },
+  });
+  must(created.status === 201, `VC13 建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const formId = created.json.form.id;
+  const v1 = created.json.version.id;
+  // 建表单的响应不带 schema（契约如此），从详情读回落库后的形状（已补默认值）。
+  const initial = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(initial.status === 200, `VC13 读详情失败（${String(initial.status)}）`);
+  const storedBefore = initial.json.schema.items.map((item) => JSON.stringify(item));
+  const targetIndex = 1;
+  const target = initial.json.schema.items[targetIndex];
+  must(target !== undefined && target.type === "single", `VC13 第 2 题应是单选题：${JSON.stringify(target)}`);
+
+  // ── 第 1 段：单题建议 ────────────────────────────────────────────────
+  const suggested = await request("POST", `/api/forms/${formId}/suggest`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: v1, instruction: "把这题改简单点", targetItemId: target.id },
+  });
+  must(suggested.status === 200, `VC13 单题建议失败（${String(suggested.status)}）：${firstLine(suggested.text)}`);
+  must(suggested.json.scope?.kind === "item" && suggested.json.scope.itemId === target.id,
+    `VC13 scope 应指向目标题：${JSON.stringify(suggested.json.scope)}`);
+  must(suggested.json.ops.length > 0, "VC13 单题建议不应为空");
+  must(suggested.json.ops.every((op) => op.itemId === target.id),
+    `VC13 建议越界：${JSON.stringify(suggested.json.ops)}`);
+  must(suggested.json.changes.length > 0 && suggested.json.changes.every((change) => change.where.startsWith(`第 ${String(targetIndex + 1)} 题`)),
+    `VC13 changes 应只含第 ${String(targetIndex + 1)} 题：${JSON.stringify(suggested.json.changes)}`);
+
+  // 建议本身不写库：版本号仍停在 v1。
+  const afterSuggest = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(afterSuggest.json.version.n === 1, `VC13 建议不应写库，实际 n=${String(afterSuggest.json.version.n)}`);
+
+  const adopted = await request("PATCH", `/api/forms/${formId}`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: v1, ops: suggested.json.ops },
+  });
+  must(adopted.status === 200, `VC13 采用建议失败（${String(adopted.status)}）：${firstLine(adopted.text)}`);
+  must(adopted.json.version.n === 2, `VC13 采用后应为 v2，实际 n=${String(adopted.json.version.n)}`);
+  const v2 = adopted.json.version.id;
+  const afterAdopt = adopted.json.schema.items.map((item) => JSON.stringify(item));
+  for (const [index, serialized] of storedBefore.entries()) {
+    if (index === targetIndex) continue;
+    must(afterAdopt[index] === serialized, `VC13 采用建议后第 ${String(index + 1)} 题被改动了`);
+  }
+  must(afterAdopt[targetIndex] !== storedBefore[targetIndex], "VC13 目标题应当发生变化");
+
+  // ── 第 2 段：改答案 → 新版本、发布指针不随草稿走 ─────────────────────
+  const publishedV2 = await request("POST", `/api/forms/${formId}/publish`, {
+    cookie: ctx.cookie,
+    json: { versionId: v2 },
+  });
+  must(publishedV2.status === 200, `VC13 发布 v2 失败（${String(publishedV2.status)}）`);
+  const slug = publishedV2.json.slug;
+  const oldAnswer = typeof target.answer === "string" ? target.answer : "b";
+  const baseline = await request("POST", "/api/submissions", {
+    json: { slug, formVersionId: v2, answers: { [target.id]: oldAnswer } },
+  });
+  must(baseline.status === 201, `VC13 基准提交失败（${String(baseline.status)}）`);
+  must(baseline.json.score === target.score, `VC13 基准得分应为 ${String(target.score)}，实际 ${String(baseline.json.score)}`);
+
+  const otherOption = target.options.find((option) => option.id !== oldAnswer);
+  must(otherOption !== undefined, "VC13 目标题没有第二个选项可改成");
+  const answerPatched = await request("PATCH", `/api/forms/${formId}`, {
+    cookie: ctx.cookie,
+    json: {
+      baseVersionId: v2,
+      ops: [{ op: "setAnswer", itemId: target.id, answer: { type: "single", answer: otherOption.id } }],
+    },
+  });
+  must(answerPatched.status === 200, `VC13 改答案失败（${String(answerPatched.status)}）：${firstLine(answerPatched.text)}`);
+  must(answerPatched.json.version.n === 3, `VC13 改答案应产生 v3，实际 n=${String(answerPatched.json.version.n)}`);
+  const v3 = answerPatched.json.version.id;
+
+  // D4：草稿前进到 v3，但发布指针仍停在 v2；收集页仍发 v2。
+  const afterAnswer = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(afterAnswer.json.form.draftVersionId === v3, `VC13 草稿指针应到 v3：${String(afterAnswer.json.form.draftVersionId)}`);
+  must(afterAnswer.json.form.publishedVersionId === v2, `VC13 改答案不应前移发布指针：${String(afterAnswer.json.form.publishedVersionId)}`);
+  const publicBeforePublish = await request("GET", `/f/${slug}`);
+  must(publicBeforePublish.json.versionId === v2, `VC13 收集页应仍指向 v2：${String(publicBeforePublish.json.versionId)}`);
+
+  const publishedV3 = await request("POST", `/api/forms/${formId}/publish`, {
+    cookie: ctx.cookie,
+    json: { versionId: v3 },
+  });
+  must(publishedV3.status === 200, `VC13 发布 v3 失败（${String(publishedV3.status)}）：${firstLine(publishedV3.text)}`);
+
+  const staleAnswer = await request("POST", "/api/submissions", {
+    json: { slug, formVersionId: v3, answers: { [target.id]: oldAnswer } },
+  });
+  must(staleAnswer.status === 201, `VC13 老答案提交失败（${String(staleAnswer.status)}）`);
+  must(staleAnswer.json.score === 0, `VC13 改答案后老答应判错得 0，实际 ${String(staleAnswer.json.score)}`);
+  must(staleAnswer.json.maxScore === schema.meta.totalScore,
+    `VC13 满分应为 ${String(schema.meta.totalScore)}，实际 ${String(staleAnswer.json.maxScore)}`);
+
+  // 历史提交按它自己的 v2 快照判分：发布 v3 之后，v2 的看板仍是 5 分。
+  const oldDashboard = await request("GET", `/api/forms/${formId}/submissions?versionId=${encodeURIComponent(v2)}`, { cookie: ctx.cookie });
+  must(oldDashboard.status === 200, `VC13 历史看板失败（${String(oldDashboard.status)}）`);
+  must(oldDashboard.json.rows.length === 1 && oldDashboard.json.rows[0].score === target.score,
+    `VC13 旧版提交得分被改答案影响：${JSON.stringify(oldDashboard.json.rows)}`);
+
+  // ── 第 3 段：不存在的目标题 → 422，且不产生版本 ─────────────────────
+  const missing = await request("POST", `/api/forms/${formId}/suggest`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: v3, instruction: "改一下这题", targetItemId: "q_missing" },
+  });
+  must(missing.status === 422, `VC13 不存在的目标题应 422，实际 ${String(missing.status)}：${firstLine(missing.text)}`);
+  const afterMissing = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(afterMissing.json.version.n === 3, `VC13 422 不应产生版本，实际 n=${String(afterMissing.json.version.n)}`);
+}
+
 /** 把 SSE 文本切成事件对象。注释帧（心跳 `: ping`）没有 data，自然被丢掉。 */
 function parseSse(text) {
   const events = [];
@@ -1205,6 +1341,7 @@ const CHECKS = [
   ["VC10 覆盖矩阵：实际 Schema 的知识点 × 布鲁姆计数与空单元格", vc10CoverageMatrix],
   ["VC11 收集页闭环：survey 填写、回收看板与 CSV", vc11SurveyCollection],
   ["VC12 答案解析开关：默认关闭、开启后随提交返回、公开视图不变", vc12AnswerReview],
+  ["VC13 单题修改：建议作用域、答案改动进判分、越界 422 不写库", vc13SingleItemEdit],
 ];
 
 async function main() {

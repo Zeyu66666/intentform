@@ -588,6 +588,18 @@ async function coverageMatrixRows(page) {
 const steps = [];
 const artifacts = [];
 
+/** 证据文件按本次运行的实际产物数连号，不把 01…19 写死在每一行里。 */
+function nextArtifactName(kind) {
+  return `${String(artifacts.length + 1).padStart(2, "0")}-${kind}.png`;
+}
+
+/** 当前草稿版本号（`edit-form-meta` 里的 `v3`），读不到给 null。 */
+async function draftVersionOf(page) {
+  return page.evaluate(
+    "var el = byTestId('edit-form-meta'); if (el === null) return null; var m = el.textContent.match(/v(\\d+)/); return m === null ? null : Number(m[1]);",
+  );
+}
+
 async function step(name, body) {
   const startedAt = Date.now();
   process.stdout.write(`[loop] ${name} …\n`);
@@ -1469,6 +1481,167 @@ async function main() {
       return { planFirst: false, sawPlanCard: false };
     });
 
+    // 15) 单题编辑（A-20 / P18）：
+    // 手改第 2 题的正确项 → diff 出现「第 2 题 · 答案」→ 保存 → 其它题字节不变；
+    // 再用右侧的「只改这道题」输入条跑一次建议，卡片标题写明「仅第 2 题」，采用后
+    // 其余题仍不变。答案改动的判分口径由 VC13 负责，这里只验"教师点得到、看得见"。
+    const singleItem = await step("单题编辑：改正确项看 diff，再只改这题跑建议", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/forms/${publish.formId}/edit`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-save') !== null")),
+        "编辑器渲染出保存按钮",
+        20_000,
+      );
+
+      // 左侧列表第 2 项 = Schema 下标 1（第 1 项是分节）。
+      const target = await page.evaluate(`
+        var list = document.querySelectorAll('section[aria-label="题目列表"] button[data-testid^="edit-item-"]');
+        if (list.length < 3) return { count: list.length };
+        var btn = list[1];
+        btn.setAttribute('data-loop-target', '1');
+        var testid = btn.getAttribute('data-testid') || '';
+        return { count: list.length, testid: testid, text: (btn.textContent || '').trim(), name: btn.textContent || '' };
+      `);
+      must(target.count >= 3, `题目列表应至少 3 项，实际 ${String(target.count)}`);
+      const itemId = target.testid.slice("edit-item-".length);
+      must(itemId.length > 0, `取不到第 2 题的 id：${JSON.stringify(target)}`);
+
+      const selected = await page.tap('[data-loop-target="1"]');
+      must(selected.ok === true, `点不到第 2 题：${JSON.stringify(selected)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-item-editor') !== null")),
+        "单题面板渲染",
+        10_000,
+      );
+      await waitFor(
+        async () => (await page.evaluate("return document.querySelectorAll('[data-testid$=\\\"-correct\\\"]').length > 1")),
+        "选项编辑器渲染出正确项勾选",
+        10_000,
+      );
+      artifacts.push(await page.screenshot(nextArtifactName("item-editor")));
+
+      const fetchDetail = `return fetch(${JSON.stringify(`/api/forms/${publish.formId}`)}, { credentials: 'include' }).then(function (r) { return r.json(); });`;
+      const before = await page.evaluate(fetchDetail);
+      const targetIndex = before.schema.items.findIndex((item) => item.id === itemId);
+      must(targetIndex === 1, `第 2 题的 Schema 下标应为 1，实际 ${String(targetIndex)}`);
+      must(Array.isArray(before.schema.items[targetIndex].options), "第 2 题应当是选择题");
+
+      const radios = await page.evaluate(`
+        var inputs = document.querySelectorAll('[data-testid$="-correct"]');
+        var checked = -1;
+        for (var i = 0; i < inputs.length; i += 1) if (inputs[i].checked) checked = i;
+        return { count: inputs.length, checked: checked };
+      `);
+      must(radios.count >= 2, `第 2 题应至少 2 个选项，实际 ${String(radios.count)}`);
+      const nextIndex = radios.checked === 0 ? 1 : 0;
+      const flipped = await page.tap(`[data-testid="edit-option-${String(nextIndex)}-correct"]`);
+      must(flipped.ok === true, `点不到正确项：${JSON.stringify(flipped)}`);
+
+      const expectedWhere = `第 ${String(targetIndex + 1)} 题 · 答案`;
+      const diffText = await waitFor(
+        async () => {
+          const text = await page.evaluate(
+            "var el = byTestId('edit-changes'); return el === null ? '' : el.textContent.trim();",
+          );
+          return text.includes(expectedWhere) ? text : null;
+        },
+        "diff 出现答案改动",
+        10_000,
+      );
+      artifacts.push(await page.screenshot(nextArtifactName("item-diff")));
+
+      const versionBeforeSave = await draftVersionOf(page);
+      must(typeof versionBeforeSave === "number", "读不到保存前的草稿版本号");
+      const saved = await page.tap('[data-testid="edit-save"]');
+      must(saved.ok === true, `点不到保存：${JSON.stringify(saved)}`);
+      const versionAfterSave = await waitFor(
+        async () => {
+          const n = await draftVersionOf(page);
+          return typeof n === "number" && n !== versionBeforeSave ? n : null;
+        },
+        "保存后版本号变化",
+        20_000,
+      );
+
+      const afterSave = await page.evaluate(fetchDetail);
+      for (const [index, item] of before.schema.items.entries()) {
+        if (index === targetIndex) continue;
+        must(
+          JSON.stringify(afterSave.schema.items[index]) === JSON.stringify(item),
+          `手改答案后第 ${String(index + 1)} 题被改动了`,
+        );
+      }
+      const patchedItem = afterSave.schema.items[targetIndex];
+      must(
+        patchedItem.answer === patchedItem.options[nextIndex].id,
+        `第 2 题答案应改成第 ${String(nextIndex + 1)} 个选项，实际 ${JSON.stringify(patchedItem.answer)}`,
+      );
+
+      // 单题建议条在右侧面板顶部（与页头的整表建议条是两条，测试 id 前缀不同）。
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-item-suggest-input') !== null")),
+        "单题建议输入条渲染",
+        10_000,
+      );
+      const typed = await page.evaluate(
+        "return setValue('[data-testid=\"edit-item-suggest-input\"]', '把这题的解析写清楚一点');",
+      );
+      must(typed.ok === true, `单题建议输入框没写进去：${JSON.stringify(typed)}`);
+      const asked = await page.tap('[data-testid="edit-item-suggest-run"]');
+      must(asked.ok === true, `点不到单题「生成改动建议」：${JSON.stringify(asked)}`);
+
+      const proposal = await waitFor(
+        async () => {
+          const value = await page.evaluate(`
+            var title = byTestId('edit-item-suggest-scope-title');
+            var changes = byTestId('edit-item-suggest-changes');
+            if (title === null || changes === null) return null;
+            return { title: title.textContent.trim(), changes: changes.textContent.trim() };
+          `);
+          return value !== null && value.changes.length > 0 ? value : null;
+        },
+        "单题建议卡片列出改动",
+        20_000,
+      );
+      must(proposal.title.startsWith("仅第 2 题"), `单题卡片标题应写明「仅第 2 题」，实际「${proposal.title}」`);
+      artifacts.push(await page.screenshot(nextArtifactName("item-suggest")));
+
+      const versionBeforeAdopt = await draftVersionOf(page);
+      const adopted = await page.tap('[data-testid="edit-item-suggest-adopt"]');
+      must(adopted.ok === true, `点不到单题建议「采用」：${JSON.stringify(adopted)}`);
+      await waitFor(
+        async () => {
+          const n = await draftVersionOf(page);
+          return typeof n === "number" && n !== versionBeforeAdopt ? n : null;
+        },
+        "采用单题建议后版本号变化",
+        20_000,
+      );
+
+      const afterAdopt = await page.evaluate(fetchDetail);
+      for (const [index, item] of afterSave.schema.items.entries()) {
+        if (index === targetIndex) continue;
+        must(
+          JSON.stringify(afterAdopt.schema.items[index]) === JSON.stringify(item),
+          `单题建议采用后第 ${String(index + 1)} 题被改动了`,
+        );
+      }
+      const stillSelected = await page.evaluate(
+        "var el = document.querySelector('section[aria-label=\\\"题目列表\\\"] button[aria-current=\\\"true\\\"]'); return el === null ? null : el.getAttribute('data-testid');",
+      );
+      must(stillSelected === `edit-item-${itemId}`, `采用建议后应仍选中第 2 题，实际 ${JSON.stringify(stillSelected)}`);
+
+      return {
+        itemId,
+        targetIndex,
+        changedOption: nextIndex,
+        diff: diffText.slice(0, 80),
+        proposal: proposal.title,
+        versions: { before: versionBeforeSave, afterSave: versionAfterSave },
+      };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -1485,6 +1658,7 @@ async function main() {
       answerReview,
       darkMode,
       directGenerate,
+      singleItem,
       dashboard,
       graded,
       steps,
