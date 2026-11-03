@@ -21,6 +21,7 @@ export const FILL_PATH_PREFIX = "/f" as const;
 
 export const DASHBOARD_PATH = "/dashboard" as const;
 export const LOGIN_PATH = "/login" as const;
+export const SETTINGS_PATH = "/settings" as const;
 /** 编辑页挂 `/forms/<id>/edit`：表单是资源、`edit` 是动作，读地址就能知道改了谁。 */
 export const FORMS_PATH_PREFIX = "/forms" as const;
 const EDIT_SUFFIX = "edit" as const;
@@ -33,6 +34,7 @@ export type Route =
   | { readonly name: "edit"; readonly formId: string }
   | { readonly name: "print"; readonly formId: string }
   | { readonly name: "login" }
+  | { readonly name: "settings" }
   | { readonly name: "notFound"; readonly path: string };
 
 function notFound(pathname: string): Route {
@@ -88,6 +90,10 @@ export function parseRoute(pathname: string): Route {
     return second === undefined ? { name: "login" } : notFound(pathname);
   }
 
+  if (head === SETTINGS_PATH.slice(1)) {
+    return second === undefined ? { name: "settings" } : notFound(pathname);
+  }
+
   if (head === FORMS_PATH_PREFIX.slice(1)) {
     // 两个合法形状：`/forms/<id>/edit` 与 `/forms/<id>/print`（A-17 打印版考卷）。
     // `/forms/<id>`、`/forms/<id>/edit/x` 都不猜，猜出来的地址会让人以为链接对、实际打开空页。
@@ -116,6 +122,8 @@ export function routeToPath(route: Route): string {
         : `${DASHBOARD_PATH}/${encodeURIComponent(route.formId)}`;
     case "login":
       return LOGIN_PATH;
+    case "settings":
+      return SETTINGS_PATH;
     case "edit":
       return `${FORMS_PATH_PREFIX}/${encodeURIComponent(route.formId)}/${EDIT_SUFFIX}`;
     case "print":

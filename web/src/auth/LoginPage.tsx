@@ -23,7 +23,13 @@ const MAX_WIDTH = "mx-auto w-full max-w-sm px-2 py-3";
 const INPUT_BASE =
   "mt-1 min-h-[44px] w-full rounded-sm border border-line bg-surface p-2 text-base text-ink focus:outline-none focus:ring-1 focus:ring-accent";
 
-export function LoginPage(): JSX.Element {
+export interface LoginPageProps {
+  /** 登录成功后去哪；缺省去「我的表单」。 */
+  readonly next?: string;
+  readonly onLoggedIn?: (teacher: import("@intentform/schema").TeacherIdentity) => void;
+}
+
+export function LoginPage({ next, onLoggedIn }: LoginPageProps = {}): JSX.Element {
   const api = useMemo(() => createTeacherApi(createHttpClient()), []);
 
   const [email, setEmail] = useState("");
@@ -33,14 +39,17 @@ export function LoginPage(): JSX.Element {
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const credentials = { email, password };
-    const next = beginLogin(credentials);
-    setState(next);
-    if (next.kind !== "submitting") return;
+    const started = beginLogin(credentials);
+    setState(started);
+    if (started.kind !== "submitting") return;
 
     void api.login(toLoginRequest(credentials)).then((outcome) => {
       const settled = mapLoginOutcome(outcome, credentials.email);
       setState(settled);
-      if (settled.kind === "success") navigate(DASHBOARD_PATH);
+      if (settled.kind === "success") {
+        onLoggedIn?.(settled.teacher);
+        navigate(next ?? DASHBOARD_PATH);
+      }
     });
   };
 
@@ -130,7 +139,7 @@ function loginMessage(state: LoginState): string | null {
     case "failed":
       return state.message;
     case "success":
-      return `已登录：${state.email}`;
+      return `已登录：${state.teacher.email}`;
     default:
       return assertNeverState(state);
   }

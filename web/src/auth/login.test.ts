@@ -57,7 +57,10 @@ describe("mapLoginOutcome", () => {
       { ok: true, data: { ok: true, teacher: { id: "t1", email: "teacher@example.com" } } },
       GOOD.email,
     );
-    expect(state).toEqual({ kind: "success", email: "teacher@example.com" });
+    expect(state).toEqual({
+      kind: "success",
+      teacher: { id: "t1", email: "teacher@example.com" },
+    });
     expect(canSubmitLogin(state)).toBe(false);
   });
 

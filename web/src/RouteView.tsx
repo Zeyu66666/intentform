@@ -1,50 +1,134 @@
 /**
- * 路由入口：`parseRoute()` 的结果在这里分派到五个页面。
+ * 路由入口：登录壳 + 页面分派。
  *
- * 为什么外壳这么薄：每条路径的实现（学生页 / 看板 / 编辑页 / 登录）都是独立组件，
- * 各自负责自己的取数与失败态。路由层不持有任何业务状态，
- * 这样"学生页匿名可填"就不会被塞进一个想做登录墙的外壳里。
+ * 教师端页面（生成 / 看板 / 编辑 / 打印）统一先过 `/api/auth/me`：
+ * - 未登录：直接显示登录页，并把当前地址作为登录后的去向；
+ * - 已登录：顶栏 + 页面内容；
+ * - 学生收集页 `/f/:slug` 与登录页不走这层，学生匿名可填。
  */
 
+import { useEffect, useMemo, useState } from "react";
+
+import type { TeacherIdentity } from "@intentform/schema";
+
 import { App } from "./App";
+import { createHttpClient } from "./api/http";
+import { createTeacherApi } from "./api/teacher";
 import { LoginPage } from "./auth/LoginPage";
 import { DashboardPage } from "./dashboard/DashboardPage";
 import { EditorPage } from "./edit/EditorPage";
 import { StudentPage } from "./fill/StudentPage";
 import { Link } from "./Link";
 import { PrintPage } from "./print/PrintPage";
-import { parseRoute, routeToPath } from "./router";
+import { SettingsPage } from "./settings/SettingsPage";
+import { LOGIN_PATH, parseRoute, routeToPath } from "./router";
+import { AppHeader } from "./shell/AppHeader";
 import { ThemeToggle } from "./theme/ThemeToggle";
-import { useRoutePath } from "./useRoute";
+import { useRoutePath, navigate } from "./useRoute";
+
+type AuthState =
+  | { readonly status: "loading" }
+  | { readonly status: "anonymous" }
+  | { readonly status: "authed"; readonly teacher: TeacherIdentity };
 
 export function RouteView(): JSX.Element {
   const pathname = useRoutePath();
   const route = parseRoute(pathname);
+  const api = useMemo(() => createTeacherApi(createHttpClient()), []);
+  const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+  const [loggingOut, setLoggingOut] = useState(false);
 
-  switch (route.name) {
-    case "generate":
-      return <PageShell><App /></PageShell>;
-    case "fill":
-      return <PageShell><StudentPage slug={route.slug} /></PageShell>;
-    case "dashboard":
-      return <PageShell><DashboardPage formId={route.formId} /></PageShell>;
-    case "edit":
-      return <PageShell><EditorPage formId={route.formId} /></PageShell>;
-    case "print":
-      return <PageShell><PrintPage formId={route.formId} /></PageShell>;
-    case "login":
-      return <PageShell><LoginPage /></PageShell>;
-    case "notFound":
-      return <PageShell><NotFound path={route.path} /></PageShell>;
-    default:
-      return assertNeverRoute(route);
+  useEffect(() => {
+    let cancelled = false;
+    void api.me().then((outcome) => {
+      if (cancelled) return;
+      setAuth(outcome.ok ? { status: "authed", teacher: outcome.data.teacher } : { status: "anonymous" });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const logout = (): void => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    void api.logout().finally(() => {
+      setLoggingOut(false);
+      setAuth({ status: "anonymous" });
+      navigate(LOGIN_PATH);
+    });
+  };
+
+  if (route.name === "fill") {
+    return (
+      <PageShell>
+        <StudentPage slug={route.slug} />
+      </PageShell>
+    );
   }
+
+  if (route.name === "notFound") {
+    return (
+      <PageShell>
+        <NotFound path={route.path} />
+      </PageShell>
+    );
+  }
+
+  if (auth.status === "loading") {
+    return (
+      <PageShell>
+        <p className="mx-auto w-full max-w-6xl px-2 py-3 text-sm text-muted">正在确认登录状态…</p>
+      </PageShell>
+    );
+  }
+
+  if (auth.status === "anonymous") {
+    if (route.name === "login") {
+      return (
+        <PageShell>
+          <LoginPage onLoggedIn={(teacher) => setAuth({ status: "authed", teacher })} />
+        </PageShell>
+      );
+    }
+    return (
+      <PageShell>
+        <LoginPage
+          next={pathname}
+          onLoggedIn={(teacher) => {
+            setAuth({ status: "authed", teacher });
+          }}
+        />
+      </PageShell>
+    );
+  }
+
+  const teacher = auth.teacher;
+  return (
+    <div className="flex min-h-screen flex-col">
+      <AppHeader teacher={teacher} pathname={pathname} busy={loggingOut} onLogout={logout} />
+      {route.name === "login" ? (
+        <main className="mx-auto w-full max-w-6xl px-2 py-3">
+          <p className="m-0 text-sm text-muted">
+            已登录为 {teacher.email}。
+            <Link href="/" className="ml-1 text-accent underline">
+              去生成表单
+            </Link>
+          </p>
+        </main>
+      ) : (
+        <div className="min-h-0 flex-1">
+          {route.name === "generate" ? <App /> : null}
+          {route.name === "dashboard" ? <DashboardPage formId={route.formId} /> : null}
+          {route.name === "edit" ? <EditorPage formId={route.formId} /> : null}
+          {route.name === "print" ? <PrintPage formId={route.formId} /> : null}
+          {route.name === "settings" ? <SettingsPage /> : null}
+        </div>
+      )}
+    </div>
+  );
 }
 
-/**
- * 全站外壳：主题开关挂在路由层，五个页面各自不用记得加。
- * 打印时它被 `.no-print` 隐藏，纸上不会出现这个按钮。
- */
 function PageShell({ children }: { readonly children: JSX.Element }): JSX.Element {
   return (
     <>
@@ -66,8 +150,4 @@ function NotFound({ path }: { readonly path: string }): JSX.Element {
       </p>
     </main>
   );
-}
-
-function assertNeverRoute(route: never): never {
-  throw new Error(`未处理的路由: ${JSON.stringify(route)}`);
 }

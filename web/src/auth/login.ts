@@ -9,7 +9,7 @@
  * 这里只把身份 email 交给界面显示（`AGENTS.md` §5：前端零 Key）。
  */
 
-import { LIMITS, type LoginRequest, type LoginResponse } from "@intentform/schema";
+import { LIMITS, type LoginRequest, type LoginResponse, type TeacherIdentity } from "@intentform/schema";
 
 import { describeFailure } from "../api/failures";
 import type { ApiResult } from "../api/http";
@@ -24,7 +24,7 @@ export type LoginState =
   /** 本地校验没过：不发请求。 */
   | { readonly kind: "invalid"; readonly message: string }
   | { readonly kind: "submitting" }
-  | { readonly kind: "success"; readonly email: string }
+  | { readonly kind: "success"; readonly teacher: TeacherIdentity }
   | { readonly kind: "failed"; readonly message: string };
 
 export function validateCredentials(credentials: Credentials): string | null {
@@ -58,7 +58,7 @@ export function mapLoginOutcome(
   outcome: ApiResult<LoginResponse>,
   attemptedEmail: string,
 ): LoginState {
-  if (outcome.ok) return { kind: "success", email: outcome.data.teacher.email };
+  if (outcome.ok) return { kind: "success", teacher: outcome.data.teacher };
   return {
     kind: "failed",
     message: describeFailure(outcome.failure, {

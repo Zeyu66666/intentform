@@ -10,7 +10,20 @@
 import { preferenceLabel } from "./model";
 import { useTheme } from "./useTheme";
 
-export function ThemeToggle(): JSX.Element {
+export interface ThemeToggleProps {
+  /**
+   * `fixed`：匿名页/学生页没有统一顶栏，固定在右上角；
+   * `inline`：教师端已登录顶栏，按钮跟着身份区排，避免压在退出按钮上。
+   */
+  readonly variant?: "fixed" | "inline";
+}
+
+const FIXED_CLASS =
+  "no-print fixed right-2 top-2 z-10 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-sm border border-line bg-surface px-2 text-sm text-muted shadow-sm hover:border-accent hover:text-accent";
+const INLINE_CLASS =
+  "no-print flex min-h-[44px] min-w-[44px] items-center justify-center rounded-sm border border-line bg-surface px-2 text-sm text-muted hover:border-accent hover:text-accent";
+
+export function ThemeToggle({ variant = "fixed" }: ThemeToggleProps = {}): JSX.Element {
   const { preference, resolved, cycle } = useTheme();
   const label = preferenceLabel(preference);
 
@@ -23,7 +36,7 @@ export function ThemeToggle(): JSX.Element {
       aria-label={label}
       title={label}
       onClick={cycle}
-      className="no-print fixed right-2 top-2 z-10 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-sm border border-line bg-surface px-2 text-sm text-muted shadow-sm hover:border-accent hover:text-accent"
+      className={variant === "fixed" ? FIXED_CLASS : INLINE_CLASS}
     >
       {/* 图标与文字都随偏好变化：只给图标会让「现在是什么主题」靠猜。 */}
       <span aria-hidden="true" className="text-base">

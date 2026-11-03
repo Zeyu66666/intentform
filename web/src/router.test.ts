@@ -5,6 +5,7 @@ import {
   DASHBOARD_PATH,
   FILL_PATH_PREFIX,
   LOGIN_PATH,
+  SETTINGS_PATH,
   createBrowserHost,
   editorAddItemPath,
   parseRoute,
@@ -55,6 +56,12 @@ describe("parseRoute", () => {
   it("登录页只有一层", () => {
     expect(parseRoute(LOGIN_PATH)).toEqual({ name: "login" });
     expect(parseRoute("/login/x")).toEqual({ name: "notFound", path: "/login/x" });
+  });
+
+  it("模型设置页只有一层，且不与其它前缀互相误认", () => {
+    expect(parseRoute(SETTINGS_PATH)).toEqual({ name: "settings" });
+    expect(parseRoute("/settings/")).toEqual({ name: "settings" });
+    expect(parseRoute("/settings/llm")).toEqual({ name: "notFound", path: "/settings/llm" });
   });
 
   it("/forms/:id/edit 解出编辑页，形状只有一种", () => {
@@ -128,6 +135,7 @@ describe("routeToPath", () => {
       { name: "edit", formId: "a b" } as const,
       { name: "print", formId: "form-1" } as const,
       { name: "login" } as const,
+      { name: "settings" } as const,
     ];
     for (const route of cases) {
       expect(parseRoute(routeToPath(route))).toEqual(route);

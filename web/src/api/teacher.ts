@@ -17,6 +17,8 @@ import {
   type GradeRequest,
   type GradeResponse,
   type ListFormsResponse,
+  type LlmSettingsRequest,
+  type LlmSettingsResponse,
   type LoginRequest,
   type LoginResponse,
   type MeResponse,
@@ -41,6 +43,9 @@ export interface TeacherApi {
   readonly login: (request: LoginRequest) => Promise<ApiResult<LoginResponse>>;
   readonly logout: () => Promise<ApiResult<{ readonly ok: true }>>;
   readonly me: () => Promise<ApiResult<MeResponse>>;
+  /** 全局模型设置（A-24）：读到的是当前运行值，Key 只以 hasApiKey 形式回显。 */
+  readonly getLlmSettings: () => Promise<ApiResult<LlmSettingsResponse>>;
+  readonly updateLlmSettings: (request: LlmSettingsRequest) => Promise<ApiResult<LlmSettingsResponse>>;
   readonly listForms: () => Promise<ApiResult<ListFormsResponse>>;
   readonly submissions: (formId: string) => Promise<ApiResult<SubmissionsResponse>>;
   /**
@@ -123,6 +128,13 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
     logout: () =>
       client.request<{ readonly ok: true }>(API_PATHS.logout, { method: "POST", csrf: true }),
     me: () => client.request<MeResponse>(API_PATHS.me),
+    getLlmSettings: () => client.request<LlmSettingsResponse>(API_PATHS.llmSettings),
+    updateLlmSettings: (request) =>
+      client.request<LlmSettingsResponse>(API_PATHS.llmSettings, {
+        method: "POST",
+        body: request,
+        csrf: true,
+      }),
     listForms: () => client.request<ListFormsResponse>(API_PATHS.forms),
     submissions: (formId) => client.request<SubmissionsResponse>(API_PATHS.submissions(formId)),
     createForm: (request) =>
