@@ -1761,6 +1761,59 @@ async function main() {
       return { knowledgePoint, bloom, diff: diffText.slice(0, 80), generated: true, manual: true };
     });
 
+    // 17) AI 辅助评分（A-23）：教师逐表单开启 → 批改面板出现按钮 →
+    // 点一下只拿到建议分与理由，**不会自动保存**。
+    const aiGrading = await step("AI 辅助评分：逐表单开启，建议分不自动保存", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/dashboard/${publish.formId}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('dash-ai-grading') !== null")),
+        "看板出现 AI 辅助评分开关",
+        20_000,
+      );
+      const before = await page.evaluate(
+        "var el = byTestId('dash-ai-grading'); return el === null ? null : el.checked;",
+      );
+      must(before === false, `AI 辅助评分默认应关闭，实际 ${JSON.stringify(before)}`);
+      const toggled = await page.tap('[data-testid="dash-ai-grading"]');
+      must(toggled.ok === true, `点不到 AI 辅助评分开关：${JSON.stringify(toggled)}`);
+      await waitFor(
+        async () => (await page.evaluate("var el = byTestId('dash-ai-grading'); return el !== null && el.checked === true;")),
+        "AI 辅助评分开关打开",
+        10_000,
+      );
+
+      await waitFor(
+        async () =>
+          (await page.evaluate("return document.querySelector('[data-testid^=\"dash-grade-\"]') !== null")),
+        "看板提交行渲染出批改按钮",
+        20_000,
+      );
+      const open = await page.tap('[data-testid^="dash-grade-"]');
+      must(open.ok === true, `点不到看板批改按钮：${JSON.stringify(open)}`);
+      await waitFor(
+        async () => (await page.evaluate("return document.querySelector('[data-testid^=grade-ai-]') !== null;")),
+        "批改面板出现 AI 辅助评分按钮",
+        20_000,
+      );
+      const asked = await page.tap('[data-testid^="grade-ai-"]');
+      must(asked.ok === true, `点不到 AI 辅助评分：${JSON.stringify(asked)}`);
+      const suggestion = await waitFor(
+        async () => {
+          const value = await page.evaluate(
+            "var el = document.querySelector('[data-testid^=grade-ai-suggestion-]'); return el === null ? null : el.textContent.trim();",
+          );
+          return typeof value === "string" && value.includes("建议") ? value : null;
+        },
+        "出现 AI 建议分与理由",
+        20_000,
+      );
+      const saved = await page.evaluate("return document.querySelector('[data-testid=grade-saved]') !== null;");
+      must(saved === false, "AI 建议不应自动保存");
+      artifacts.push(await page.screenshot(nextArtifactName("ai-grading")));
+      return { suggestion: suggestion.slice(0, 120), autoSaved: false };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -1779,6 +1832,7 @@ async function main() {
       directGenerate,
       singleItem,
       supplement,
+      aiGrading,
       dashboard,
       graded,
       steps,

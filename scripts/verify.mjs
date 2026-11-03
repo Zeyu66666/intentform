@@ -1447,6 +1447,80 @@ async function vc15SupplementItem(request, ctx) {
   must(stale.status === 409, `VC15 旧版本应 409，实际 ${String(stale.status)}`);
 }
 
+/**
+ * VC16：主观题 AI 辅助评分（A-23）。
+ *
+ * 五段：表单开关默认关闭时 403；开启后只回建议（mock 给满分一半）；
+ * **不写 manual_grades**；只接受简答；旧版/别人不可见由归属与提交版本约束。
+ */
+async function vc16AiGrade(request, ctx) {
+  const schema = {
+    meta: { version: 1, kind: "quiz", title: "AI 评分卷", objectives: [], totalScore: 10 },
+    items: [
+      {
+        id: "g-single",
+        type: "single",
+        title: "单选",
+        required: true,
+        score: 5,
+        options: [
+          { id: "a", text: "A" },
+          { id: "b", text: "B" },
+        ],
+        answer: "a",
+      },
+      { id: "g-short", type: "short", title: "简答", required: true, score: 5, maxLength: 100 },
+    ],
+  };
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: schema.meta.title, kind: "quiz", schema, source: "generate" },
+  });
+  must(created.status === 201, `VC16 建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const formId = created.json.form.id;
+  const versionId = created.json.version.id;
+  const published = await request("POST", `/api/forms/${formId}/publish`, {
+    cookie: ctx.cookie,
+    json: { versionId },
+  });
+  must(published.status === 200, `VC16 发布失败（${String(published.status)}）：${firstLine(published.text)}`);
+  const submitted = await request("POST", "/api/submissions", {
+    json: {
+      slug: published.json.slug,
+      formVersionId: versionId,
+      answers: { "g-single": "a", "g-short": "先把函数配方，顶点横坐标是 -b/2a。" },
+    },
+  });
+  must(submitted.status === 201, `VC16 提交失败（${String(submitted.status)}）：${firstLine(submitted.text)}`);
+  const submissionId = submitted.json.submissionId;
+  const path = `/api/forms/${formId}/submissions/${submissionId}/ai-grade`;
+
+  const closed = await request("POST", path, { cookie: ctx.cookie, json: { itemId: "g-short" } });
+  must(closed.status === 403, `VC16 默认关闭应 403，实际 ${String(closed.status)}`);
+
+  const enabled = await request("POST", `/api/forms/${formId}/settings`, {
+    cookie: ctx.cookie,
+    json: { showAnswersAfterSubmit: false, aiGradingEnabled: true },
+  });
+  must(enabled.status === 200 && enabled.json.aiGradingEnabled === true, "VC16 开启 AI 评分失败");
+
+  const suggested = await request("POST", path, { cookie: ctx.cookie, json: { itemId: "g-short" } });
+  must(suggested.status === 200, `VC16 建议失败（${String(suggested.status)}）：${firstLine(suggested.text)}`);
+  must(suggested.json.suggestedScore === 2, `VC16 mock 建议应为满分一半 2，实际 ${String(suggested.json.suggestedScore)}`);
+  must(suggested.json.maxScore === 5, `VC16 满分应为 5，实际 ${String(suggested.json.maxScore)}`);
+  must(suggested.json.source === "mock", `VC16 应标注 mock 来源，实际 ${String(suggested.json.source)}`);
+  must(suggested.json.promptVersion === "grade.v1", `VC16 prompt 版本应为 grade.v1，实际 ${String(suggested.json.promptVersion)}`);
+
+  const rows = await request("GET", `/api/forms/${formId}/submissions`, { cookie: ctx.cookie });
+  const row = rows.json.rows.find((entry) => entry.submissionId === submissionId);
+  must(row !== undefined, "VC16 找不到刚提交的行");
+  must(Object.keys(row.manualScores).length === 0, `VC16 建议不应落分：${JSON.stringify(row.manualScores)}`);
+  must(row.pendingScore === 5, `VC16 待批分应仍为 5，实际 ${String(row.pendingScore)}`);
+
+  const wrongType = await request("POST", path, { cookie: ctx.cookie, json: { itemId: "g-single" } });
+  must(wrongType.status === 400, `VC16 单选题应 400，实际 ${String(wrongType.status)}`);
+}
+
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const CHECKS = [
   ["VC1 发布快照：改草稿不影响已发布版本的收集页", vc1Snapshot],
@@ -1464,6 +1538,7 @@ const CHECKS = [
   ["VC13 单题修改：建议作用域、答案改动进判分、越界 422 不写库", vc13SingleItemEdit],
   ["VC14 通用 Patch 与重做：RFC 6902 翻译、越界不写库、撤销可重做", vc14JsonPatchAndRedo],
   ["VC15 覆盖矩阵补题：按知识点×层级回一题、不写库、越界 422", vc15SupplementItem],
+  ["VC16 AI 辅助评分：默认关闭、只回建议、不写人工分", vc16AiGrade],
 ];
 
 async function main() {
