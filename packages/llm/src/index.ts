@@ -61,6 +61,7 @@ export * from "./config.ts";
 export * from "./errors.ts";
 export * from "./fixtures.ts";
 export * from "./generate.ts";
+export * from "./grade-short.ts";
 export * from "./json.ts";
 export * from "./line-splitter.ts";
 export * from "./logger.ts";
