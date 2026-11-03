@@ -31,6 +31,19 @@ export interface GradeFormProps {
 
 export function GradeForm(props: GradeFormProps): JSX.Element {
   const { formId, row, shortItems, api, onGraded, onClose } = props;
+  const [aiEnabled, setAiEnabled] = useState(false);
+
+  // AI 辅助评分是表单级开关（A-23）：关着就完全不显示按钮，避免「点了才被拒」。
+  useEffect(() => {
+    let cancelled = false;
+    void api.getSettings(formId).then((outcome) => {
+      if (cancelled || !outcome.ok) return;
+      setAiEnabled(outcome.data.aiGradingEnabled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, formId]);
 
   if (shortItems.length === 0) {
     return (
@@ -70,6 +83,7 @@ export function GradeForm(props: GradeFormProps): JSX.Element {
             row={row}
             item={item}
             api={api}
+            aiEnabled={aiEnabled}
             onGraded={onGraded}
           />
         ))}
@@ -89,16 +103,23 @@ function GradeRow({
   row,
   item,
   api,
+  aiEnabled,
   onGraded,
 }: {
   readonly formId: string;
   readonly row: SubmissionRow;
   readonly item: GradableShortItem;
   readonly api: TeacherApi;
+  readonly aiEnabled: boolean;
   readonly onGraded: () => void;
 }): JSX.Element {
   const [value, setValue] = useState(() => gradeInputValue(row, item.itemId));
   const [state, setState] = useState<SaveState>({ status: "idle" });
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<{ readonly score: number; readonly rationale: string } | null>(
+    null,
+  );
 
   // 上层刷新后 `row` 换了个对象：已录过的分要跟着走，否则教师看到的还是自己刚才手打的字符串。
   useEffect(() => {
@@ -107,6 +128,23 @@ function GradeRow({
 
   const answer = row.answers[item.itemId];
   const answerText = typeof answer === "string" ? answer : Array.isArray(answer) ? answer.join(" / ") : "";
+
+  const askAi = (): void => {
+    if (aiBusy) return;
+    setAiBusy(true);
+    setAiError(null);
+    void api.aiGrade(formId, row.submissionId, { itemId: item.itemId }).then((outcome) => {
+      setAiBusy(false);
+      if (!outcome.ok) {
+        setAiError(describeFailure(outcome.failure, { notFound: "这条提交不存在了" }));
+        return;
+      }
+      // 只填建议分，不落库：教师仍要按「保存」确认。
+      setValue(String(outcome.data.suggestedScore));
+      setState({ status: "idle" });
+      setAiSuggestion({ score: outcome.data.suggestedScore, rationale: outcome.data.rationale });
+    });
+  };
 
   const submit = (): void => {
     const parsed = parseGradeInput(value, item.score);
@@ -134,6 +172,30 @@ function GradeRow({
       <p className="m-0 mt-1 whitespace-pre-wrap break-words text-sm text-ink" data-testid={`grade-answer-${item.itemId}`}>
         {answerText.trim() === "" ? <span className="text-muted">（未作答）</span> : answerText}
       </p>
+      {aiEnabled ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-testid={`grade-ai-${item.itemId}`}
+            className="min-h-[44px] rounded-sm border border-line px-2 text-sm text-accent disabled:opacity-50"
+            disabled={aiBusy}
+            onClick={askAi}
+          >
+            {aiBusy ? "评分中…" : "AI 辅助评分"}
+          </button>
+          <span className="text-xs text-muted">只给建议，不会自动保存</span>
+        </div>
+      ) : null}
+      {aiError === null ? null : (
+        <p className="m-0 mt-1 text-xs text-danger" role="alert" data-testid={`grade-ai-error-${item.itemId}`}>
+          {aiError}
+        </p>
+      )}
+      {aiSuggestion === null ? null : (
+        <p className="m-0 mt-1 text-xs text-muted" data-testid={`grade-ai-suggestion-${item.itemId}`}>
+          {`建议 ${formatScoreNumber(aiSuggestion.score)} 分：${aiSuggestion.rationale}`}
+        </p>
+      )}
       <div className="mt-1 flex items-center gap-2">
         <label className="text-xs text-muted" htmlFor={`grade-input-${item.itemId}`}>
           得分

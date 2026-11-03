@@ -7,6 +7,8 @@
 
 import {
   API_PATHS,
+  type AiGradeRequest,
+  type AiGradeResponse,
   type CreateFormRequest,
   type CreateFormResponse,
   type FormDetailResponse,
@@ -59,6 +61,15 @@ export interface TeacherApi {
     submissionId: string,
     request: GradeRequest,
   ) => Promise<ApiResult<GradeResponse>>;
+  /**
+   * AI 辅助评分（A-23）：只回建议分与理由，**不落库**。
+   * 表单未开启 `aiGradingEnabled` 时服务端 403。
+   */
+  readonly aiGrade: (
+    formId: string,
+    submissionId: string,
+    request: AiGradeRequest,
+  ) => Promise<ApiResult<AiGradeResponse>>;
   /** 表单详情：编辑页拿它的 `version.id` 当乐观锁的 `baseVersionId`。 */
   readonly getForm: (formId: string) => Promise<ApiResult<FormDetailResponse>>;
   /**
@@ -146,6 +157,12 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
         // PATCH 而不是 POST：路径与语义都跟服务端注册的那条对齐，
         // 也让「改了什么」在浏览器网络面板里一眼可辨。
         method: "PATCH",
+        body: request,
+        csrf: true,
+      }),
+    aiGrade: (formId, submissionId, request) =>
+      client.request<AiGradeResponse>(API_PATHS.aiGrade(formId, submissionId), {
+        method: "POST",
         body: request,
         csrf: true,
       }),

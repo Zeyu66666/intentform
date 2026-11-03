@@ -245,17 +245,20 @@ function SettingsRow({
   readonly api: TeacherApi;
 }): JSX.Element {
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setEnabled(null);
+    setAiEnabled(null);
     setMessage(null);
     void api.getSettings(formId).then((outcome) => {
       if (cancelled) return;
       if (outcome.ok) {
         setEnabled(outcome.data.showAnswersAfterSubmit);
+        setAiEnabled(outcome.data.aiGradingEnabled);
         return;
       }
       setMessage(describeFailure(outcome.failure, { notFound: "读不到这份表单的设置" }));
@@ -267,22 +270,36 @@ function SettingsRow({
 
   if (kind !== "quiz") return <></>;
 
-  const toggle = (next: boolean): void => {
+  const save = (nextShow: boolean, nextAi: boolean): void => {
     if (busy) return;
-    const previous = enabled;
+    const previousShow = enabled;
+    const previousAi = aiEnabled;
     setBusy(true);
     setMessage(null);
-    setEnabled(next);
-    void api.updateSettings(formId, { showAnswersAfterSubmit: next }).then((outcome) => {
-      setBusy(false);
-      if (outcome.ok) {
-        setEnabled(outcome.data.showAnswersAfterSubmit);
-        return;
-      }
-      // 失败时把开关拨回去：界面上的状态必须和服务端一致。
-      setEnabled(previous);
-      setMessage(describeFailure(outcome.failure, { notFound: "这份表单不存在" }));
-    });
+    setEnabled(nextShow);
+    setAiEnabled(nextAi);
+    void api
+      .updateSettings(formId, { showAnswersAfterSubmit: nextShow, aiGradingEnabled: nextAi })
+      .then((outcome) => {
+        setBusy(false);
+        if (outcome.ok) {
+          setEnabled(outcome.data.showAnswersAfterSubmit);
+          setAiEnabled(outcome.data.aiGradingEnabled);
+          return;
+        }
+        // 失败时把开关拨回去：界面上的状态必须和服务端一致。
+        setEnabled(previousShow);
+        setAiEnabled(previousAi);
+        setMessage(describeFailure(outcome.failure, { notFound: "这份表单不存在" }));
+      });
+  };
+
+  const toggle = (next: boolean): void => {
+    save(next, aiEnabled === true);
+  };
+
+  const toggleAi = (next: boolean): void => {
+    save(enabled === true, next);
   };
 
   return (
@@ -301,6 +318,26 @@ function SettingsRow({
         提交后向学生展示答案解析
         <span className="text-xs text-muted">
           {enabled === null ? "（读取中…）" : enabled ? "（已开启）" : "（默认关闭）"}
+        </span>
+      </label>
+      <label className="flex min-h-[44px] items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          data-testid="dash-ai-grading"
+          className="size-4 accent-accent"
+          checked={aiEnabled === true}
+          disabled={aiEnabled === null || busy}
+          onChange={(event) => {
+            toggleAi(event.target.checked);
+          }}
+        />
+        允许 AI 辅助评分
+        <span className="text-xs text-muted">
+          {aiEnabled === null
+            ? "（读取中…）"
+            : aiEnabled
+              ? "（已开启：批改简答时会把该题原文发送给模型）"
+              : "（默认关闭）"}
         </span>
       </label>
       {message === null ? null : (
