@@ -54,7 +54,7 @@ async function setShowAnswers(
   formId: string,
   enabled: boolean,
 ) {
-  return call<{ ok: true; showAnswersAfterSubmit: boolean }>(
+  return call<{ ok: true; showAnswersAfterSubmit: boolean; aiGradingEnabled: boolean }>(
     app,
     "POST",
     `/api/forms/${formId}/settings`,
@@ -94,6 +94,29 @@ describe("表单展示设置", () => {
 
     const off = await setShowAnswers(app, cookie, quiz.formId, false);
     expect(off.json.showAnswersAfterSubmit).toBe(false);
+  });
+
+  it("AI 辅助评分单独开关：默认关闭，省略字段不会把它顺手关掉", async () => {
+    const { app, cookie, quiz } = await boot();
+    const initial = await call<{ ok: true; aiGradingEnabled: boolean }>(
+      app,
+      "GET",
+      `/api/forms/${quiz.formId}/settings`,
+      { cookie },
+    );
+    expect(initial.json.aiGradingEnabled).toBe(false);
+
+    const on = await call<{ ok: true; showAnswersAfterSubmit: boolean; aiGradingEnabled: boolean }>(
+      app,
+      "POST",
+      `/api/forms/${quiz.formId}/settings`,
+      { body: { showAnswersAfterSubmit: false, aiGradingEnabled: true }, cookie },
+    );
+    expect(on.json.aiGradingEnabled).toBe(true);
+
+    // 老客户端只发 showAnswers：AI 开关保持开启。
+    const legacy = await setShowAnswers(app, cookie, quiz.formId, true);
+    expect(legacy.json.aiGradingEnabled).toBe(true);
   });
 
   it("别人的表单 403，未登录 401，请求体不合法 400", async () => {

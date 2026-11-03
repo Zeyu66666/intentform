@@ -40,6 +40,7 @@ export async function handleGetFormSettings(ctx: RouteContext): Promise<void> {
   const response: FormSettingsResponse = {
     ok: true,
     showAnswersAfterSubmit: stored.showAnswersAfterSubmit,
+    aiGradingEnabled: stored.aiGradingEnabled,
   };
   sendJson(ctx.res, 200, response);
 }
@@ -63,16 +64,22 @@ export async function handleUpdateFormSettings(ctx: RouteContext): Promise<void>
     return;
   }
 
+  const current = getFormSettings(ctx.db, form.id);
   setFormSettings(
     ctx.db,
     form.id,
-    { showAnswersAfterSubmit: parsed.data.showAnswersAfterSubmit },
+    {
+      showAnswersAfterSubmit: parsed.data.showAnswersAfterSubmit,
+      // 未传 = 不改这一项：老客户端只发 showAnswers 时不会把 AI 开关顺手关掉。
+      aiGradingEnabled: parsed.data.aiGradingEnabled ?? current.aiGradingEnabled,
+    },
     new Date().toISOString(),
   );
   const stored = getFormSettings(ctx.db, form.id);
   const response: FormSettingsResponse = {
     ok: true,
     showAnswersAfterSubmit: stored.showAnswersAfterSubmit,
+    aiGradingEnabled: stored.aiGradingEnabled,
   };
   sendJson(ctx.res, 200, response);
 }

@@ -97,6 +97,8 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS form_settings (
      form_id                  TEXT PRIMARY KEY REFERENCES forms(id) ON DELETE CASCADE,
      show_answers_after_submit INTEGER NOT NULL DEFAULT 0 CHECK (show_answers_after_submit IN (0, 1)),
+     -- A-23：AI 辅助评分默认关闭；开启后只允许把**简答题**原文发给模型。
+     ai_grading_enabled       INTEGER NOT NULL DEFAULT 0 CHECK (ai_grading_enabled IN (0, 1)),
      updated_at               TEXT NOT NULL
    )`,
 

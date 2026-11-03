@@ -23,6 +23,7 @@ import { isMutatingMethod, type ServerEnv } from "./env.ts";
 import { handleFillView } from "./fill-route.ts";
 import { handleGetFormSettings, handleUpdateFormSettings } from "./settings-route.ts";
 import { handleGradeSubmission } from "./grade-route.ts";
+import { handleAiGrade } from "./ai-grade-route.ts";
 import {
   handleCreateForm,
   handleGetForm,
@@ -94,6 +95,13 @@ export const ROUTES: readonly RouteDef[] = [
   },
   { method: "GET", pattern: "/api/forms/:id/submissions", handler: handleSubmissions },
   { method: "GET", pattern: "/api/forms/:id/submissions.csv", handler: handleSubmissionsCsv },
+  // A-23：AI 辅助评分只回建议，不写 manual_grades；表单开关关闭时 403。
+  {
+    method: "POST",
+    pattern: "/api/forms/:id/submissions/:submissionId/ai-grade",
+    handler: handleAiGrade,
+    rateLimit: { name: "ai-grade", limitPerWindow: (env) => env.rateSuggestPerMin },
+  },
   // 省赛 R-02：人工批改。`POST` 而不是 `PUT`：路径里没有"哪个分"，分值在体里，
   // 用 POST + (提交, 题目) 覆盖写表达"录入一次"，比 PUT 一个虚拟资源更直白。
   { method: "POST", pattern: "/api/forms/:id/submissions/:submissionId/grades", handler: handleGradeSubmission },

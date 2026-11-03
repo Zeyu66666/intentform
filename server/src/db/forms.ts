@@ -287,27 +287,36 @@ export function redoDepth(db: Db, formId: string): number {
 export function getFormSettings(
   db: Db,
   formId: string,
-): { readonly showAnswersAfterSubmit: boolean } {
+): { readonly showAnswersAfterSubmit: boolean; readonly aiGradingEnabled: boolean } {
   const row = db
-    .prepare<[string], { show_answers_after_submit: number }>(
-      "SELECT show_answers_after_submit FROM form_settings WHERE form_id = ?",
+    .prepare<[string], { show_answers_after_submit: number; ai_grading_enabled: number }>(
+      "SELECT show_answers_after_submit, ai_grading_enabled FROM form_settings WHERE form_id = ?",
     )
     .get(formId);
-  return { showAnswersAfterSubmit: row?.show_answers_after_submit === 1 };
+  return {
+    showAnswersAfterSubmit: row?.show_answers_after_submit === 1,
+    aiGradingEnabled: row?.ai_grading_enabled === 1,
+  };
 }
 
 /** 覆盖写设置。`form_id` 是主键，重复写就是改这一行。 */
 export function setFormSettings(
   db: Db,
   formId: string,
-  settings: { readonly showAnswersAfterSubmit: boolean },
+  settings: { readonly showAnswersAfterSubmit: boolean; readonly aiGradingEnabled: boolean },
   updatedAt: string,
 ): void {
   db.prepare(
-    `INSERT INTO form_settings (form_id, show_answers_after_submit, updated_at)
-     VALUES (?, ?, ?)
+    `INSERT INTO form_settings (form_id, show_answers_after_submit, ai_grading_enabled, updated_at)
+     VALUES (?, ?, ?, ?)
      ON CONFLICT(form_id) DO UPDATE SET
        show_answers_after_submit = excluded.show_answers_after_submit,
+       ai_grading_enabled = excluded.ai_grading_enabled,
        updated_at = excluded.updated_at`,
-  ).run(formId, settings.showAnswersAfterSubmit ? 1 : 0, updatedAt);
+  ).run(
+    formId,
+    settings.showAnswersAfterSubmit ? 1 : 0,
+    settings.aiGradingEnabled ? 1 : 0,
+    updatedAt,
+  );
 }

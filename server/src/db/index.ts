@@ -36,4 +36,22 @@ export function migrate(db: Db): void {
   for (const statement of MIGRATION_STATEMENTS) {
     db.exec(statement);
   }
+  ensureFormSettingsColumns(db);
+}
+
+/**
+ * `CREATE TABLE IF NOT EXISTS` 不会给老库补列。A-23 新增 `ai_grading_enabled`
+ * 时，已存在的 `form_settings` 需要单独 ALTER；用 `PRAGMA table_info` 判断，
+ * 重复启动不会二次 ALTER。
+ */
+function ensureFormSettingsColumns(db: Db): void {
+  const columns = db
+    .prepare<[], { name: string }>("PRAGMA table_info(form_settings)")
+    .all()
+    .map((column) => column.name);
+  if (!columns.includes("ai_grading_enabled")) {
+    db.exec(
+      "ALTER TABLE form_settings ADD COLUMN ai_grading_enabled INTEGER NOT NULL DEFAULT 0 CHECK (ai_grading_enabled IN (0, 1))",
+    );
+  }
 }
