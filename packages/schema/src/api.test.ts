@@ -14,6 +14,7 @@ import {
   publishRequestSchema,
   submitRequestSchema,
   suggestPatchRequestSchema,
+  supplementItemRequestSchema,
 } from "./api.ts";
 import { formSchema } from "./types.ts";
 
@@ -189,6 +190,39 @@ describe("通用 JSON Patch 请求（2026-11-02）", () => {
       patchFormRequestSchema.safeParse({
         baseVersionId: "v1",
         jsonPatch: [{ op: "remove", path: "/items/0/title", value: "多余" }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("覆盖矩阵补题（A-22）", () => {
+  it("知识点、层级、基准版本都必填，层级只认六个枚举", () => {
+    expect(
+      supplementItemRequestSchema.safeParse({
+        baseVersionId: "v1",
+        knowledgePoint: "kp-a",
+        bloom: "apply",
+      }).success,
+    ).toBe(true);
+    expect(
+      supplementItemRequestSchema.safeParse({
+        baseVersionId: "v1",
+        knowledgePoint: "kp-a",
+        bloom: "unknown",
+      }).success,
+    ).toBe(false);
+    expect(
+      supplementItemRequestSchema.safeParse({ baseVersionId: "v1", bloom: "apply" }).success,
+    ).toBe(false);
+  });
+
+  it("补充要求最多 500 字", () => {
+    expect(
+      supplementItemRequestSchema.safeParse({
+        baseVersionId: "v1",
+        knowledgePoint: "kp-a",
+        bloom: "apply",
+        instruction: "x".repeat(501),
       }).success,
     ).toBe(false);
   });

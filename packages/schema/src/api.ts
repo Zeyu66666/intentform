@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import {
+  BLOOM_LEVELS,
   FORM_KINDS,
   FORM_STATUSES,
   FORM_VERSION_SOURCES,
@@ -27,7 +28,7 @@ import {
   CLARIFY_SLOTS,
   type ClarifyQuestion,
 } from "./clarify.ts";
-import { formSchema, type FormSchema } from "./types.ts";
+import { formSchema, type FormItem, type FormSchema } from "./types.ts";
 import type { FormBlueprint } from "./blueprint.ts";
 import type { CoverageMatrix } from "./coverage.ts";
 import { patchOpsSchema, type PatchChange, type PatchError, type PatchOp } from "./patch.ts";
@@ -57,6 +58,7 @@ export const API_PATHS = {
   undoDraft: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/undo`,
   redoDraft: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/redo`,
   suggestPatch: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/suggest`,
+  supplementItem: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/supplement`,
   submissions: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions`,
   submissionsCsv: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions.csv`,
   /** 教师给某条提交里的某道简答打分（省赛 R-02）。 */
@@ -358,6 +360,30 @@ export interface SuggestPatchResponse {
   /** 套用之后的可发布状态；与 PATCH 返回的 issues 同源同义。 */
   readonly issues: readonly PatchIssue[];
   /** 产生这条建议的来源；界面据此标注「本次由 mock 脚本产生」。 */
+  readonly source: "live" | "record" | "mock";
+  readonly promptVersion: string;
+}
+
+/* ------------------------- 覆盖矩阵补题（2026-11-03） ------------------------ */
+
+/**
+ * `POST /api/forms/:id/supplement` 的请求：为某个「知识点 × 布鲁姆层级」
+ * 生成**一道**题。只回候选，不写库；教师确认后才由编辑器发 `addItem`。
+ */
+export const supplementItemRequestSchema = z.object({
+  baseVersionId: z.string().min(1).max(64),
+  knowledgePoint: z.string().regex(LIMITS.shortIdPattern, "知识点 id 不合法").max(32),
+  bloom: z.enum(BLOOM_LEVELS),
+  /** 可选补充要求；不传就按知识点与层级生成。 */
+  instruction: z.string().trim().max(500).optional(),
+});
+
+export type SupplementItemRequest = z.infer<typeof supplementItemRequestSchema>;
+
+export interface SupplementItemResponse {
+  readonly ok: true;
+  /** 候选题目；id 由服务端生成，教师确认前不进草稿。 */
+  readonly item: FormItem;
   readonly source: "live" | "record" | "mock";
   readonly promptVersion: string;
 }
