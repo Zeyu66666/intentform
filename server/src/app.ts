@@ -13,6 +13,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleLogin, handleLogout, handleMe } from "./auth.ts";
 import { handleSuggestPatch } from "./suggest-route.ts";
+import { handleSupplementItem } from "./supplement-route.ts";
 import { handleSubmissions, handleSubmissionsCsv } from "./analytics-route.ts";
 import { handleClarify } from "./clarify-route.ts";
 import { handlePlan } from "./plan-route.ts";
@@ -83,6 +84,13 @@ export const ROUTES: readonly RouteDef[] = [
     pattern: "/api/forms/:id/suggest",
     handler: handleSuggestPatch,
     rateLimit: { name: "suggest", limitPerWindow: (env) => env.rateSuggestPerMin },
+  },
+  // 覆盖矩阵补题：只回一道候选题，不写库；与 suggest 同源花钱，配额同源。
+  {
+    method: "POST",
+    pattern: "/api/forms/:id/supplement",
+    handler: handleSupplementItem,
+    rateLimit: { name: "supplement", limitPerWindow: (env) => env.rateSuggestPerMin },
   },
   { method: "GET", pattern: "/api/forms/:id/submissions", handler: handleSubmissions },
   { method: "GET", pattern: "/api/forms/:id/submissions.csv", handler: handleSubmissionsCsv },

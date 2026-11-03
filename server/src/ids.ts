@@ -10,7 +10,7 @@
 
 import { randomBytes } from "node:crypto";
 
-export function newId(prefix: "t" | "f" | "v" | "s"): string {
+export function newId(prefix: "t" | "f" | "v" | "s" | "q"): string {
   return `${prefix}_${randomBytes(8).toString("hex")}`;
 }
 
