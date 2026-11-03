@@ -1654,6 +1654,113 @@ async function main() {
       };
     });
 
+    // 16) 覆盖矩阵点击补题（2026-11-03）：
+    // 点矩阵格 → 编辑页出现「补题」面板 → 模型生成候选题 → 加入草稿并保存；
+    // 再从矩阵点另一格走手动路径，确认模板题带上了知识点与层级。
+    const supplement = await step("覆盖矩阵点击补题：模型生成 + 手动模板", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/dashboard/${publish.formId}`);
+      await waitFor(
+        async () =>
+          (await page.evaluate("return document.querySelectorAll('[data-testid^=\"coverage-cell-\"]').length > 1")),
+        "覆盖矩阵渲染出可点击单元格",
+        20_000,
+      );
+      const cell = await page.evaluate(`
+        var el = document.querySelector('[data-testid^="coverage-cell-"]');
+        if (el === null) return null;
+        return { testid: el.getAttribute('data-testid'), label: el.getAttribute('aria-label') };
+      `);
+      must(cell !== null && cell.testid !== null, `取不到覆盖矩阵单元格：${JSON.stringify(cell)}`);
+      const prefix = "coverage-cell-";
+      const rest = cell.testid.slice(prefix.length);
+      const lastDash = rest.lastIndexOf("-");
+      must(lastDash > 0, `单元格 testid 形状不对：${cell.testid}`);
+      const knowledgePoint = rest.slice(0, lastDash);
+      const bloom = rest.slice(lastDash + 1);
+
+      const clicked = await page.tap(`[data-testid="${cell.testid}"]`);
+      must(clicked.ok === true, `点不到矩阵单元格：${JSON.stringify(clicked)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-supplement') !== null")),
+        "编辑页出现补题面板",
+        20_000,
+      );
+      artifacts.push(await page.screenshot(nextArtifactName("coverage-supplement")));
+
+      const generated = await page.tap('[data-testid="edit-supplement-generate"]');
+      must(generated.ok === true, `点不到「用模型生成这题」：${JSON.stringify(generated)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-supplement-proposal') !== null")),
+        "补题建议卡渲染",
+        20_000,
+      );
+      artifacts.push(await page.screenshot(nextArtifactName("coverage-proposal")));
+
+      const adopted = await page.tap('[data-testid="edit-supplement-adopt"]');
+      must(adopted.ok === true, `点不到「加入草稿」：${JSON.stringify(adopted)}`);
+      const diffText = await waitFor(
+        async () => {
+          const text = await page.evaluate(
+            "var el = byTestId('edit-changes'); return el === null ? '' : el.textContent.trim();",
+          );
+          return text.includes("新增") ? text : null;
+        },
+        "加入草稿后 diff 出现新增题目",
+        10_000,
+      );
+      const versionBefore = await draftVersionOf(page);
+      const saved = await page.tap('[data-testid="edit-save"]');
+      must(saved.ok === true, `点不到保存：${JSON.stringify(saved)}`);
+      await waitFor(
+        async () => {
+          const n = await draftVersionOf(page);
+          return typeof n === "number" && n !== versionBefore ? n : null;
+        },
+        "补题保存后版本号变化",
+        20_000,
+      );
+      const detail = await page.evaluate(
+        `return fetch(${JSON.stringify(`/api/forms/${publish.formId}`)}, { credentials: 'include' }).then(function (r) { return r.json(); });`,
+      );
+      const added = detail.schema.items.filter(
+        (item) => item.knowledgePoint === knowledgePoint && item.bloom === bloom,
+      );
+      must(added.length >= 1, `保存后应有一道题落在 ${knowledgePoint} × ${bloom}`);
+
+      // 手动路径：同一矩阵的另一格，只到「加题进草稿」为止，不保存。
+      await page.goto(`${webBase}/dashboard/${publish.formId}`);
+      await waitFor(
+        async () =>
+          (await page.evaluate("return document.querySelectorAll('[data-testid^=\"coverage-cell-\"]').length > 1")),
+        "矩阵再次渲染",
+        20_000,
+      );
+      const second = await page.evaluate(`
+        var all = document.querySelectorAll('[data-testid^="coverage-cell-"]');
+        var el = all.length > 1 ? all[all.length - 1] : null;
+        return el === null ? null : el.getAttribute('data-testid');
+      `);
+      must(second !== null && second !== cell.testid, "应能点到另一个矩阵格");
+      const clickedSecond = await page.tap(`[data-testid="${second}"]`);
+      must(clickedSecond.ok === true, `点不到第二个矩阵格：${JSON.stringify(clickedSecond)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-supplement-manual') !== null")),
+        "第二个补题面板渲染",
+        20_000,
+      );
+      const manual = await page.tap('[data-testid="edit-supplement-manual"]');
+      must(manual.ok === true, `点不到「手动填写这题」：${JSON.stringify(manual)}`);
+      await waitFor(
+        async () => (await page.evaluate("var el = byTestId('edit-changes'); return el !== null && el.textContent.indexOf('新增') >= 0;")),
+        "手动补题后 diff 出现新增题目",
+        10_000,
+      );
+      artifacts.push(await page.screenshot(nextArtifactName("coverage-manual")));
+
+      return { knowledgePoint, bloom, diff: diffText.slice(0, 80), generated: true, manual: true };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -1671,6 +1778,7 @@ async function main() {
       darkMode,
       directGenerate,
       singleItem,
+      supplement,
       dashboard,
       graded,
       steps,

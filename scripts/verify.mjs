@@ -1405,6 +1405,48 @@ async function vc14JsonPatchAndRedo(request, ctx) {
   must(staleRedo.json.redone === false, "VC14 撤销后再改，旧分支不应还能重做");
 }
 
+/**
+ * VC15：覆盖矩阵补题（2026-11-03）。
+ *
+ * 三段：合法知识点 × 层级回一道候选、**不写库**；知识点不在大纲里 422；
+ * 旧 baseVersionId 409（补题和改题一样以草稿指针为基准）。
+ */
+async function vc15SupplementItem(request, ctx) {
+  const schema = JSON.parse(JSON.stringify(QUIZ_SCHEMA));
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: schema.meta.title, kind: "quiz", schema, source: "generate" },
+  });
+  must(created.status === 201, `VC15 建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const formId = created.json.form.id;
+  const v1 = created.json.version.id;
+
+  const suggested = await request("POST", `/api/forms/${formId}/supplement`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: v1, knowledgePoint: "kp-vertex", bloom: "apply" },
+  });
+  must(suggested.status === 200, `VC15 补题失败（${String(suggested.status)}）：${firstLine(suggested.text)}`);
+  must(suggested.json.item.type !== "section" && suggested.json.item.type !== "scale", "VC15 补题不能回分节/量表");
+  must(suggested.json.item.knowledgePoint === "kp-vertex", `VC15 知识点应钉在请求上：${JSON.stringify(suggested.json.item)}`);
+  must(suggested.json.item.bloom === "apply", `VC15 层级应钉在请求上：${JSON.stringify(suggested.json.item)}`);
+  must(suggested.json.source === "mock", `VC15 应标注 mock 来源，实际 ${String(suggested.json.source)}`);
+  must(typeof suggested.json.item.id === "string" && suggested.json.item.id.startsWith("q_"), "VC15 题目 id 应由服务端生成");
+
+  const after = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(after.json.version.n === 1, `VC15 补题不应写库，实际 n=${String(after.json.version.n)}`);
+
+  const unknown = await request("POST", `/api/forms/${formId}/supplement`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: v1, knowledgePoint: "kp_missing", bloom: "apply" },
+  });
+  must(unknown.status === 422, `VC15 未知知识点应 422，实际 ${String(unknown.status)}`);
+  const stale = await request("POST", `/api/forms/${formId}/supplement`, {
+    cookie: ctx.cookie,
+    json: { baseVersionId: "v_stale", knowledgePoint: "kp-vertex", bloom: "apply" },
+  });
+  must(stale.status === 409, `VC15 旧版本应 409，实际 ${String(stale.status)}`);
+}
+
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const CHECKS = [
   ["VC1 发布快照：改草稿不影响已发布版本的收集页", vc1Snapshot],
@@ -1421,6 +1463,7 @@ const CHECKS = [
   ["VC12 答案解析开关：默认关闭、开启后随提交返回、公开视图不变", vc12AnswerReview],
   ["VC13 单题修改：建议作用域、答案改动进判分、越界 422 不写库", vc13SingleItemEdit],
   ["VC14 通用 Patch 与重做：RFC 6902 翻译、越界不写库、撤销可重做", vc14JsonPatchAndRedo],
+  ["VC15 覆盖矩阵补题：按知识点×层级回一题、不写库、越界 422", vc15SupplementItem],
 ];
 
 async function main() {
