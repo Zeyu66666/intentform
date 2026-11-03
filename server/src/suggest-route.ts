@@ -23,7 +23,7 @@ import {
   type SuggestPatchResponse,
   type SuggestScope,
 } from "@intentform/schema";
-import { resolveLlmMode, resolveLlmRuntimeConfig, suggestPatch } from "@intentform/llm";
+import { suggestPatch } from "@intentform/llm";
 import { requireTeacher } from "./auth.ts";
 import { findForm, findVersion } from "./db/forms.ts";
 import { describeZodError, readJsonBody, sendApiError, sendJson, type RouteContext } from "./http.ts";
@@ -93,10 +93,12 @@ export async function handleSuggestPatch(ctx: RouteContext): Promise<void> {
     return;
   }
 
-  // 上游配置按请求解析：`LLM_MODE` 是进程级事实，解析一次很便宜，换来的好处是
-  // 这条路由不需要在启动期就配 Key（`mock` 模式的测试与演示完全离线）。
-  const rawEnv = ctx.env.rawEnv;
-  const config = resolveLlmRuntimeConfig(resolveLlmMode(rawEnv), rawEnv);
+  // 配置取运行时快照：网页切了模式后，下一条建议立即跟着走。
+  if (ctx.llm === undefined) {
+    sendApiError(ctx.res, "internal", "服务端未配置模型，无法生成建议");
+    return;
+  }
+  const config = ctx.llm.config;
 
   let result;
   try {

@@ -24,6 +24,7 @@ import { handleFillView } from "./fill-route.ts";
 import { handleGetFormSettings, handleUpdateFormSettings } from "./settings-route.ts";
 import { handleGradeSubmission } from "./grade-route.ts";
 import { handleAiGrade } from "./ai-grade-route.ts";
+import { handleGetLlmSettings, handleUpdateLlmSettings } from "./llm-settings-route.ts";
 import {
   handleCreateForm,
   handleGetForm,
@@ -65,6 +66,8 @@ export const ROUTES: readonly RouteDef[] = [
     rateLimit: { name: "plan", limitPerWindow: (env) => env.rateGeneratePerMin },
   },
 
+  { method: "GET", pattern: "/api/settings/llm", handler: handleGetLlmSettings },
+  { method: "POST", pattern: "/api/settings/llm", handler: handleUpdateLlmSettings },
   { method: "POST", pattern: "/api/forms", handler: handleCreateForm },
   { method: "GET", pattern: "/api/forms", handler: handleListForms },
   { method: "GET", pattern: "/api/forms/:id", handler: handleGetForm },

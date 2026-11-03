@@ -20,6 +20,11 @@ export interface RouteContext {
   readonly llm?: {
     readonly config: LlmRuntimeConfig;
     readonly logger: LlmLogger;
+    /** 全局模型设置（只有设置路由用；测试可以不提供）。 */
+    readonly settings?: () => import("./llm-runtime.ts").LlmPublicSettings;
+    readonly updateSettings?: (
+      input: import("./llm-runtime.ts").LlmSettingsInput,
+    ) => import("./llm-runtime.ts").LlmPublicSettings;
   };
   readonly req: IncomingMessage;
   readonly res: ServerResponse;

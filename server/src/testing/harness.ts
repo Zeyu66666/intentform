@@ -15,7 +15,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
 import { hashSync } from "@node-rs/argon2";
 import type { CreateFormResponse, FormSchema, PublishResponse } from "@intentform/schema";
-import { resolveLlmRuntimeConfig, silentLogger } from "@intentform/llm";
+import { resolveLlmMode, resolveLlmRuntimeConfig, silentLogger } from "@intentform/llm";
+import { createLlmRuntime } from "../llm-runtime.ts";
 
 import { createApiApp } from "../app.ts";
 import { openDatabase, type Db } from "../db/index.ts";
@@ -51,9 +52,17 @@ export function createTestEnv(overrides: NodeJS.ProcessEnv = {}): ServerEnv {
 export async function startTestServer(env: ServerEnv = createTestEnv()): Promise<TestServer> {
   const db = openDatabase(env.databasePath);
   // 测试默认给 mock 模式的模型依赖：`/api/plan` 因此能真打，且不联网、不花钱。
+  // 显式传了 `LLM_MODE`（如 suggest 的 replay 用例）就按它建运行时，
+  // 因为路由现在从 `ctx.llm.config` 取配置，不再每次请求重读 env。
+  const llmEnv = { ...env.rawEnv, LLM_MODE: env.rawEnv["LLM_MODE"] ?? "mock" };
+  const runtime = createLlmRuntime(resolveLlmRuntimeConfig(resolveLlmMode(llmEnv), llmEnv), llmEnv);
   const llm = {
-    config: resolveLlmRuntimeConfig("mock", {}, {}),
+    get config() {
+      return runtime.config;
+    },
     logger: silentLogger,
+    settings: () => runtime.publicSettings(),
+    updateSettings: (input: Parameters<typeof runtime.update>[0]) => runtime.update(input),
   };
   const app = createApiApp({ db, env, llm });
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {

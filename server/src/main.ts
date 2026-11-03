@@ -24,6 +24,7 @@ import {
   resolveLlmMode,
   resolveLlmRuntimeConfig,
   requiresUpstreamCredentials,
+  type LlmLogger,
 } from "@intentform/llm";
 import { FIELD_TYPES, SCHEMA_VERSION } from "@intentform/schema";
 
@@ -32,6 +33,7 @@ import { createApiApp } from "./app.ts";
 import { openDatabase } from "./db/index.ts";
 import { readServerEnv, type ServerEnv } from "./env.ts";
 import { clientIp } from "./http.ts";
+import { createLlmRuntime } from "./llm-runtime.ts";
 import { createRateLimiter, rateLimitKey } from "./rate-limit.ts";
 import { isProductionEnvironment, PRODUCTION_CONTENT_SECURITY_POLICY } from "./security.ts";
 
@@ -118,11 +120,26 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
 
   // 上游配置在启动期解析：缺 Key / 非法 LLM_TIMEOUT_MS 现在就抛，而不是等第一次生成。
   const llmConfig = resolveLlmRuntimeConfig(config.llmMode, env);
-  const logger = createLogger({
+  const llmRuntime = createLlmRuntime(llmConfig, env);
+  let logger = createLogger({
     secrets: llmConfig.apiKey === null ? [] : [llmConfig.apiKey],
     verbose: env["LLM_LOG_VERBOSE"] === "1",
   });
-  const generateRoute = createGenerateHandler({ config: llmConfig, logger });
+  const log: LlmLogger = (level, message, detail) => {
+    logger(level, message, detail);
+  };
+  const refreshLogger = (): void => {
+    const key = llmRuntime.config.apiKey;
+    logger = createLogger({
+      secrets: key === null ? [] : [key],
+      verbose: env["LLM_LOG_VERBOSE"] === "1",
+    });
+  };
+  const generateRoute = createGenerateHandler({
+    config: llmConfig,
+    getConfig: () => llmRuntime.config,
+    logger: log,
+  });
 
   // I4 持久层：数据库打开即完成幂等迁移，句柄跟着这条连接活。
   const serverEnv: ServerEnv = readServerEnv(env);
@@ -131,7 +148,19 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
   // 限流器在 `main.ts` 建、同时交给 API 应用和 `/api/generate`：两条写路径共用
   // 同一份内存计数，否则「生成限流」和「提交限流」会各自从 0 开始，也就没有全局视图。
   const limiter = createRateLimiter();
-  const api = createApiApp({ db, env: serverEnv, limiter, llm: { config: llmConfig, logger } });
+  const llmDeps = {
+    get config() {
+      return llmRuntime.config;
+    },
+    logger: log,
+    settings: () => llmRuntime.publicSettings(),
+    updateSettings: (input: Parameters<typeof llmRuntime.update>[0]) => {
+      const next = llmRuntime.update(input);
+      refreshLogger();
+      return next;
+    },
+  };
+  const api = createApiApp({ db, env: serverEnv, limiter, llm: llmDeps });
 
   const server = createServer((req, res) => {
     const pathname = (req.url ?? "/").split("?")[0] ?? "/";
@@ -167,7 +196,15 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
     }
 
     if (req.method === "GET" && pathname === "/healthz") {
-      const body = JSON.stringify(healthPayload(config));
+      // 模式可能在网页「模型设置」里改过：健康检查要回当前运行值，而不是启动值。
+      const liveMode = llmRuntime.config.mode;
+      const body = JSON.stringify(
+        healthPayload({
+          ...config,
+          llmMode: liveMode,
+          needsApiKey: requiresUpstreamCredentials(liveMode),
+        }),
+      );
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
         "content-length": Buffer.byteLength(body),

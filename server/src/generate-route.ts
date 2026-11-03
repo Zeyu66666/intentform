@@ -48,6 +48,8 @@ export interface GenerateRouteOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly llmMode?: LlmMode;
   readonly config?: LlmRuntimeConfig;
+  /** 每次请求现取配置：网页切换模式后，下一条生成立即生效。 */
+  readonly getConfig?: () => LlmRuntimeConfig;
   readonly logger?: LlmLogger;
   /** 心跳间隔（毫秒）；测试传 0 关闭。默认沿用契约的 15s。 */
   readonly heartbeatMs?: number;
@@ -238,7 +240,7 @@ export interface GenerateHandler {
 export function createGenerateHandler(options: GenerateRouteOptions = {}): GenerateHandler {
   const logger = options.logger ?? silentLogger;
   const env = options.env ?? process.env;
-  const config =
+  const initialConfig =
     options.config ??
     resolveLlmRuntimeConfig(options.llmMode ?? "replay", env, {});
 
@@ -272,6 +274,7 @@ export function createGenerateHandler(options: GenerateRouteOptions = {}): Gener
     }
 
     if (res.writableEnded || res.destroyed) return;
+    const config = options.getConfig?.() ?? initialConfig;
 
     // 客户端断开（curl Ctrl-C / 浏览器关闭标签）→ 取消上游，别空转到超时。
     const controller = new AbortController();
@@ -334,5 +337,5 @@ export function createGenerateHandler(options: GenerateRouteOptions = {}): Gener
     }
   };
 
-  return { handle, config };
+  return { handle, config: initialConfig };
 }
