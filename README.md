@@ -55,10 +55,12 @@
 | 结构强约束 | Zod Schema + 规则 R1–R8（id 唯一、答案须在选项内、分值合计、LaTeX 可解析、知识点须声明等） |
 | 自动修复环 | 逐行校验出错时只回喂出错字段，最多 2 轮；错误集不减少即终止，不静默重试 |
 | 发布快照 | 版本追加式写入、写后不改；发布 = 指向某个版本；改草稿不影响已发布卷子与历史提交 |
-| 受限修改 | 六种操作（改题干/选项/分值，加、删、移题）+ 单步撤销；一句话改题先给建议、确认后才落库 |
+| 受限修改 | 十一种操作（改题干/选项/分值/属性，加、删、移题等）+ 通用 JSON Patch（落库前翻译回受限 op）+ 撤销/重做；一句话改题先给建议、确认后才落库 |
 | 作答与收集 | 学生手机端零登录作答；问卷（survey）走收集页闭环，测验（quiz）走自动判分 |
 | 判分与统计 | 客观题服务端判分；简答题人工批改；每题正确率、得分分布、覆盖矩阵；CSV 导出 |
 | 出卷与回看 | 打印版考卷（可含答案）；教师可开启「提交后展示答案解析」，答案只随那次提交返回 |
+| 生成页直接编辑 | 蓝图可改题量/题型/分值/知识点；生成后的预览卡也能就地改题干、选项、答案，发布用的就是改过的版本 |
+| 模型设置 | 登录后可在网页切换 `live` / `record` / `replay` / `mock`、改 API 端点与模型名、填 API Key；只对当前进程生效，Key 不回显 |
 | 可复现 | `live` / `record` / `replay` / `mock` 四种模式；默认回放，无需 API Key 即可跑通完整闭环 |
 
 ## 技术栈与架构
@@ -139,13 +141,14 @@ LLM_MODE=live LLM_API_KEY=sk-... pnpm dev:server
 
 | 想干什么 | 怎么走 |
 |---|---|
-| 只看生成效果 | 打开首页 → 点一个预置需求（初二数学 / 高一英语 / 高二生物）→ 开始生成。中栏逐字段出现，右栏时间线同步推进 |
+| 只看生成效果 | 先登录（未登录打开任何教师页都会先看到登录表单）→ 在首页点一个预置需求（初二数学 / 高一英语 / 高二生物）→ 开始生成。中栏逐字段出现，右栏时间线同步推进 |
+| 改模型模式或填 Key | 登录后点顶栏「模型设置」→ 选模式、填端点/模型名/Key → 保存，下一条模型请求立即生效；重启后回到 `.env` 的启动配置 |
 | 走完整的发布闭环 | 生成完成后点「保存并发布」→ 拿到 `/f/xxxxxxxx` 学生短链 → 手机视口打开作答 → 提交 → 回 `/dashboard` 看这条提交与 CSV |
 | 改一份已发布的表单 | `/dashboard` → 选中表单 →「编辑这份表单的题目与分值」→ 在顶部写一句话（例：把第一题题干改短一点）→「生成改动建议」→ 看人话差异 →「采用并保存」→ 需要时点「撤销上一步」 |
 | 看问卷收集页 | 首页把表单类型切到「问卷」→ 生成 → 发布 → 学生端填写 → 看板按字段回收统计（不出现平均分、满分；单选/多选/量表附各选项计数与占比） |
 | 只玩数据（不看生成） | `pnpm seed` 后登录 → `/dashboard`，已有 2 份表单与 30 条提交 |
 
-前端路由共六条：`/`（生成页）、`/login`、`/dashboard`（可带表单 id）、`/forms/:id/edit`、`/forms/:id/print`（打印版考卷）、`/f/:slug`（学生收集页）。
+前端路由共七条：`/`（生成页）、`/login`、`/dashboard`（可带表单 id）、`/forms/:id/edit`、`/forms/:id/print`（打印版考卷）、`/settings`（模型设置）、`/f/:slug`（学生收集页）。教师页统一先确认登录；`/f/:slug` 保持匿名可填。
 
 ## 生成模式
 
@@ -160,6 +163,8 @@ LLM_MODE=live LLM_API_KEY=sk-... pnpm dev:server
 
 回放节奏由 `LLM_REPLAY_SPEED` 控制：`1x`（录制视频用）/ `2x` / `instant`（CI 与 `pnpm verify` 用）。
 
+登录后可在网页「模型设置」里临时改模式、端点、模型名和 Key。这类修改**只存当前进程内存**，不写 `.env`、不落库：重启后回到启动配置，部署事实仍以环境变量为准。Key 只提交给服务端，任何响应只返回 `hasApiKey`；留空表示保持原 Key。
+
 `replay` 模式下游输入**未命中**时明确报错，不回落 mock：服务端返回 `llm_config` 与 `REPLAY_MISS_HINT`，界面提示两条出路（切 `LLM_MODE=mock` 并标注「演示数据」，或切 `record` 录一条）。回放未命中静默降级成假数据是明确禁止的。
 
 ## 验证与质量
@@ -169,7 +174,7 @@ pnpm install --frozen-lockfile
 pnpm check                      # = lint + typecheck + test
 node scripts/secret-scan.mjs    # 工作区密钥扫描
 node scripts/secret-scan.mjs --history   # 全历史扫描
-pnpm verify                     # = node scripts/verify.mjs，VC1–VC16
+pnpm verify                     # = node scripts/verify.mjs，VC1–VC17
 node scripts/browser-closed-loop.mjs     # 生产构建 + 真浏览器闭环
 pnpm eval                       # 整份需求达标率（默认 replay，不用 Key）
 ```
@@ -177,9 +182,9 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | 命令 | 覆盖范围 |
 |---|---|
 | `pnpm typecheck` | 四个包全量类型检查 |
-| `pnpm test` | 78 个测试文件 / 929 条用例（oxlint `--deny-warnings`、Vitest） |
-| `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC16；自起临时服务与临时库，不碰 `data/intentform.db` |
-| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十七步（含打印版 PDF、答案解析、暗色模式、跳过蓝图直生成、单题编辑与撤销/重做、覆盖矩阵补题、AI 辅助评分）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
+| `pnpm test` | 81 个测试文件 / 953 条用例（oxlint `--deny-warnings`、Vitest） |
+| `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC17；自起临时服务与临时库，不碰 `data/intentform.db` |
+| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十八步（含登录优先、蓝图与预览就地编辑、打印版 PDF、答案解析、暗色模式、跳过蓝图直生成、单题编辑与撤销/重做、覆盖矩阵补题、AI 辅助评分、模型设置填 Key 不回显）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
 | `pnpm eval` | 30 条需求集的整份达标率，报告写入 `eval/runs/<runId>/` 并更新 `eval/runs/latest.json` |
 
 浏览器闭环需要本机 Chrome（`CHROME_PATH` 可指定；找不到会 `exit 2` 而不是静默跳过）。
@@ -203,7 +208,8 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 [verify] VC14 通用 Patch 与重做：RFC 6902 翻译、越界不写库、撤销可重做 … 通过
 [verify] VC15 覆盖矩阵补题：按知识点×层级回一题、不写库、越界 422 … 通过
 [verify] VC16 AI 辅助评分：默认关闭、只回建议、不写人工分 … 通过
-[verify] 全部通过（16/16）
+[verify] VC17 模型运行设置：登录后可改、立即生效、Key 只回 hasApiKey … 通过
+[verify] 全部通过（17/17）
 ```
 
 `pnpm verify` 证明的是 HTTP 语义闭环，不是浏览器里的真实操作；后者归 `browser-closed-loop.mjs`。两条证据链互不替代。
@@ -217,6 +223,7 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | `POST` | `/api/auth/login` | 教师登录（argon2 校验，下发 session cookie） |
 | `POST` | `/api/auth/logout` | 退出 |
 | `GET` | `/api/auth/me` | 当前登录身份 |
+| `GET` / `POST` | `/api/settings/llm` | 当前进程的模型模式/端点/模型名；可提交 Key（只存内存、只回 `hasApiKey`）；`ADMIN_EMAIL` 限定可写人 |
 | `POST` | `/api/generate` | 流式生成（SSE），限流 |
 | `POST` | `/api/clarify` | 意图澄清：只回追问，不调模型、不写库，限流 |
 | `POST` | `/api/plan` | 两阶段蓝图：只回结构，不写库，限流 |
@@ -278,6 +285,7 @@ AI 辅助评分（A-23）是**教师侧**的另一个数据出口：只有教师
 | `SESSION_TTL_HOURS` | `72` | 会话有效期 |
 | `COOKIE_SECURE` | `false` | 仅 HTTPS 部署开启；本地 `http://127.0.0.1` 必须关闭 |
 | `ARGON2_MEMORY_KIB` | `65536` | argon2id 内存成本，下限 8192 |
+| `ADMIN_EMAIL` | 空 | 允许在网页「模型设置」里改全局模型配置的教师邮箱；空 = 任意已登录教师可改（单教师演示），生产建议填写 |
 | `RATE_GENERATE_PER_MIN` | `10` | 生成/澄清/规划的每分钟配额（按来源 IP 哈希） |
 | `RATE_SUBMIT_PER_MIN` | `30` | 学生提交每分钟配额 |
 | `RATE_SUGGEST_PER_MIN` | `10` | 一句话改题的每分钟配额（服务端识别，模板未列） |
@@ -296,7 +304,7 @@ AI 辅助评分（A-23）是**教师侧**的另一个数据出口：只有教师
 
 | 项 | 做法 |
 |---|---|
-| 密钥 | 只存在于服务端环境变量；前端零 Key；`.env` 永不入库，只提交 `.env.example` |
+| 密钥 | 启动时只从服务端环境变量读取；`.env` 永不入库，只提交 `.env.example`。网页「模型设置」可提交 Key（A-24）：只存当前进程内存、不写盘、不进日志、响应只回 `hasApiKey`；`ADMIN_EMAIL` 限制可写人 |
 | 密码 | `@node-rs/argon2`（预编译二进制，免 node-gyp），成本可配 |
 | SQL | better-sqlite3 预编译语句，禁止字符串拼接 |
 | XSS | 禁止 `dangerouslySetInnerHTML`；唯一例外是 KaTeX 输出（`trust:false`、`strict`） |
@@ -314,7 +322,7 @@ AI 辅助评分（A-23）是**教师侧**的另一个数据出口：只有教师
 
 ## 已知限制
 
-- 改表单只支持六种受限操作 + 单步撤销，不做通用 Patch；「一句话改题」只给建议，落库仍走同一套操作集。
+- 改表单支持十一种受限操作、通用 JSON Patch（落库前翻译回受限 op）与撤销/重做；「一句话改题」只给建议，落库仍走同一套操作集。
 - 版本冲突只有 HTTP 层自动化证据（VC2/VC6），浏览器里没有真实多窗口并发点击的截图证据。
 - `replay` / `mock` 模式证明的是链路通电与确定性，不证明模型输出质量；模型能力以 `eval/runs/latest.json` 指向的 live 报告为准。
 - 浏览器闭环目前只在 Windows + Chrome 156 上验证过；其他平台未取得实测证据。

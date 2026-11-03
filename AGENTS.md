@@ -58,7 +58,7 @@
 
 | 项 | 红线 |
 |---|---|
-| 密钥 | 只存在于服务端 `.env`；前端零 Key；`.env` 永不入库；只提交 `.env.example` |
+| 密钥 | 启动时只从服务端 `.env` / 进程环境读取；`.env` 永不入库，只提交 `.env.example`。**唯一例外（A-24）**：已登录教师可在网页「模型设置」提交 API Key 供当前进程使用；Key 只存内存，不写 `.env`、不落库、不进日志，任何响应只回 `hasApiKey`，重启后回到启动配置；`ADMIN_EMAIL` 非空时只有该邮箱可写 |
 | 日志 | 不记录 Key、密码、`Authorization`、完整答卷；AI 辅助评分不得记录学生答案或模型原文 |
 | SQL | 只用 better-sqlite3 预编译语句，禁止字符串拼接 |
 | XSS | 禁止 `dangerouslySetInnerHTML`，唯一例外是 KaTeX 输出（`trust:false`、`strict`） |
@@ -83,7 +83,7 @@ node scripts/secret-scan.mjs
 node scripts/secret-scan.mjs --history
 ```
 
-**`pnpm verify` 不是上面这几条的同义词。** 它跑 `scripts/verify.mjs` 的 HTTP 级验证用例，当前是 **VC1–VC16**（发布快照、判分与版本冲突、学生端零泄漏、生成→发布→提交→看板、人工批改、受限修改与撤销、每题正确率、意图澄清、两阶段蓝图、覆盖矩阵、收集页闭环、答案解析开关、单题修改与答案版本隔离、通用 JSON Patch 与重做、覆盖矩阵补题、AI 辅助评分边界）；每落地一条闭环能力就配一条 VC，数量随能力增长，不写死为三条。它证明的是 HTTP 语义闭环，不是浏览器里的真实操作——后者归 `scripts/browser-closed-loop.mjs`。别把 `check` 当成「一条命令跑通生成→渲染→提交」的验收。
+**`pnpm verify` 不是上面这几条的同义词。** 它跑 `scripts/verify.mjs` 的 HTTP 级验证用例，当前是 **VC1–VC17**（发布快照、判分与版本冲突、学生端零泄漏、生成→发布→提交→看板、人工批改、受限修改与撤销、每题正确率、意图澄清、两阶段蓝图、覆盖矩阵、收集页闭环、答案解析开关、单题修改与答案版本隔离、通用 JSON Patch 与重做、覆盖矩阵补题、AI 辅助评分边界、模型运行设置（登录后可改、立即生效、Key 只回 `hasApiKey`））；每落地一条闭环能力就配一条 VC，数量随能力增长，不写死为三条。它证明的是 HTTP 语义闭环，不是浏览器里的真实操作——后者归 `scripts/browser-closed-loop.mjs`。别把 `check` 当成「一条命令跑通生成→渲染→提交」的验收。
 
 涉及外部调用的功能，必须同时提供 `LLM_MODE=replay` 或 `mock` 路径，并在该路径下验证一遍。
 
