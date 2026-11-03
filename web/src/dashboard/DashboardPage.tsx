@@ -583,14 +583,19 @@ function SubmissionsSection({
       )}
 
       {state.data.coverageMatrix.rows.length === 0 ? null : (
-        <section className="mt-3" data-testid="dash-coverage-matrix">
+        <details className="mt-3 rounded-md border border-line bg-surface p-2" data-testid="dash-coverage">
+          <summary className="cursor-pointer text-sm font-semibold text-ink" data-testid="dash-coverage-toggle">
+            教学覆盖分析（进阶）
+            <span className="ml-2 text-xs font-normal text-muted">按知识点 × 认知层次统计，点格子可补题</span>
+          </summary>
+          <div className="mt-2" data-testid="dash-coverage-matrix">
           <div className="flex flex-wrap items-baseline justify-between gap-1">
-            <h2 className="m-0 text-base font-semibold text-ink">知识点 × 布鲁姆覆盖</h2>
-            <p className="m-0 text-xs text-muted">按当前版本实际题目统计，0 表示尚未覆盖</p>
+            <h2 className="m-0 text-sm font-semibold text-ink">知识点 × 认知层次</h2>
+            <p className="m-0 text-xs text-muted">按当前发布版本统计，0 表示尚未覆盖</p>
           </div>
           <div className="mt-1 overflow-x-auto">
             <table className="w-full min-w-[560px] border-collapse text-sm">
-              <caption className="sr-only">知识点 × 布鲁姆覆盖矩阵</caption>
+              <caption className="sr-only">知识点 × 认知层次覆盖矩阵</caption>
               <thead>
                 <tr className="border-b border-line text-left text-muted">
                   <th scope="col" className="py-1 pr-2 font-medium">知识点</th>
@@ -626,7 +631,8 @@ function SubmissionsSection({
               </tbody>
             </table>
           </div>
-        </section>
+          </div>
+        </details>
       )}
 
       {/* R-04 之后上面多了一张「每题正确率」表，两张表挨着时第二张的表头会被
@@ -663,47 +669,55 @@ function SubmissionsSection({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.submissionId} className="border-b border-line last:border-0" data-testid="dash-row">
-                <td className="py-1 pr-2 text-ink">{formatDateTime(row.createdAt)}</td>
-                {isSurvey ? null : (
-                  <>
-                    <td className="py-1 pr-2 text-right tabular-nums text-ink">{rowScoreText(row)}</td>
-                    <td className="py-1 pr-2 text-right">
-                      {needsGrading(row) ? (
-                        <button
-                          type="button"
-                          data-testid={`dash-grade-${row.submissionId}`}
-                          className="min-h-[44px] rounded-sm border border-accent px-2 text-sm text-accent"
-                          onClick={() => {
-                            onToggleGrading(row.submissionId);
-                          }}
-                        >
-                          {gradingId === row.submissionId ? "收起批改" : "批改"}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-muted">{pendingLabel(row.pendingScore, hasManualItems)}</span>
-                      )}
+              <Fragment key={row.submissionId}>
+                <tr className="border-b border-line last:border-0" data-testid="dash-row">
+                  <td className="py-1 pr-2 text-ink">{formatDateTime(row.createdAt)}</td>
+                  {isSurvey ? null : (
+                    <>
+                      <td className="py-1 pr-2 text-right tabular-nums text-ink">{rowScoreText(row)}</td>
+                      <td className="py-1 pr-2 text-right">
+                        {needsGrading(row) ? (
+                          <button
+                            type="button"
+                            data-testid={`dash-grade-${row.submissionId}`}
+                            className="min-h-[44px] rounded-sm border border-accent px-2 text-sm text-accent"
+                            onClick={() => {
+                              onToggleGrading(row.submissionId);
+                            }}
+                          >
+                            {gradingId === row.submissionId ? "收起批改" : "批改"}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted">{pendingLabel(row.pendingScore, hasManualItems)}</span>
+                        )}
+                      </td>
+                    </>
+                  )}
+                </tr>
+                {gradingId === row.submissionId && gradingRow !== null ? (
+                  <tr className="bg-bg">
+                    <td colSpan={isSurvey ? 1 : 3} className="px-0">
+                      {/* 批改面板跟着这一行走：教师点哪行，输入框就在哪行下面，
+                          不再跳到整张表末尾。 */}
+                      <GradeForm
+                        formId={formId}
+                        row={gradingRow}
+                        shortItems={state.data.shortItems}
+                        api={api}
+                        onGraded={onGraded}
+                        onClose={() => {
+                          onToggleGrading(gradingRow.submissionId);
+                        }}
+                      />
                     </td>
-                  </>
-                )}
-              </tr>
+                  </tr>
+                ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
       )}
 
-      {gradingRow === null ? null : (
-        <GradeForm
-          formId={formId}
-          row={gradingRow}
-          shortItems={state.data.shortItems}
-          api={api}
-          onGraded={onGraded}
-          onClose={() => {
-            onToggleGrading(gradingRow.submissionId);
-          }}
-        />
-      )}
     </section>
   );
 }

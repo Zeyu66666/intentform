@@ -258,8 +258,8 @@ export function EditField({ item }: { readonly item: FormItem }): JSX.Element {
         ) : null}
         <div className="ml-auto flex flex-wrap gap-1">
           {meta.score === null ? null : <Badge>{meta.score} 分</Badge>}
-          {meta.bloom === null ? null : <Badge tone="accent">{meta.bloom}</Badge>}
-          {meta.knowledgePoint === null ? null : <Badge>知识 {meta.knowledgePoint}</Badge>}
+          {/* 布鲁姆层级是教学分析用的内部标注，不摆在每道题的标题旁。 */}
+          {meta.knowledgePoint === null ? null : <Badge>知识点</Badge>}
         </div>
       </header>
 

@@ -19,7 +19,7 @@ import { BLOOM_LEVELS, LIMITS, type BloomLevel, type ChoiceOption, type FormItem
 import type { AnswerDraft } from "./answer-input";
 import { scoreOfItem, type ItemDraft } from "./patch-plan";
 
-const BLOOM_LABELS: Readonly<Record<BloomLevel, string>> = {
+export const BLOOM_LABELS: Readonly<Record<BloomLevel, string>> = {
   remember: "记忆",
   understand: "理解",
   apply: "应用",
@@ -247,9 +247,11 @@ export function ItemEditor({
       )}
 
       {item.type === "scale" || item.type === "section" ? null : (
-        <div className="flex flex-wrap items-end gap-2">
+        <details className="rounded-sm border border-line px-2 py-1">
+          <summary className="cursor-pointer text-xs text-muted">教学标注（可选）</summary>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">布鲁姆层级</span>
+            <span className="text-xs text-muted">认知层次</span>
             <select
               data-testid="edit-bloom"
               value={draft.bloom ?? ""}
@@ -265,7 +267,7 @@ export function ItemEditor({
               <option value="">（无）</option>
               {BLOOM_LEVELS.map((level) => (
                 <option key={level} value={level}>
-                  {`${BLOOM_LABELS[level]}（${level}）`}
+                  {BLOOM_LABELS[level]}
                 </option>
               ))}
             </select>
@@ -289,7 +291,8 @@ export function ItemEditor({
               ))}
             </select>
           </label>
-        </div>
+          </div>
+        </details>
       )}
 
       <div className="flex flex-wrap items-center gap-2">

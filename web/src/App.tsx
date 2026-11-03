@@ -19,8 +19,11 @@ import type {
   ClarifyQuestion,
   ClarifySlotId,
   FormBlueprint,
+  FormItem,
   FormKind,
+  Objective,
 } from "@intentform/schema";
+import { summarizeBlueprint } from "@intentform/schema";
 
 import { createClarifyApi } from "./api/clarify";
 import { createPlanApi } from "./api/plan";
@@ -133,6 +136,10 @@ export function App(): JSX.Element {
   // 发布结果留在 App：`PublishPanel` 只在 done 之后挂载，把结果存在它自己里面的化，
   // 下面任何一次重渲染（预览视角切换、时间线更新）都可能把刚拿到的短链弄丢。
   const [published, setPublished] = useState<PublishedForm | null>(null);
+  /** 发布前就地改过的题：按字段 id 覆盖生成结果，保存/发布时一起带走。 */
+  const [fieldEdits, setFieldEdits] = useState<Readonly<Record<string, FormItem>>>({});
+  /** 生成蓝图里的知识点，供预览里的「教学标注」下拉使用。 */
+  const [objectives, setObjectives] = useState<readonly Objective[]>([]);
 
   // 唯一的 HTTP 出口（`credentials: "include"` + CSRF 头都在 `http.ts` 里）。
   const api = useMemo(() => createTeacherApi(createHttpClient()), []);
@@ -156,6 +163,8 @@ export function App(): JSX.Element {
       blueprint?: FormBlueprint,
     ): void => {
       setPublished(null);
+      setFieldEdits({});
+      setObjectives(blueprint?.knowledgePoints ?? []);
       setClarify({ status: "idle" });
       setPlan({ status: "idle" });
       setDrafts(EMPTY_DRAFTS);
@@ -239,7 +248,15 @@ export function App(): JSX.Element {
   }, [requirement, mode, clarifyApi, kind, requestPlan, beginGeneration, planFirst]);
 
   const fields = selectPreviewFields(state);
-  const fieldNodes = useMemo(() => fields.map((entry) => entry.node), [fields]);
+  const editedFields = useMemo(
+    () =>
+      fields.map((entry) => ({
+        ...entry,
+        node: fieldEdits[entry.node.id] ?? entry.node,
+      })),
+    [fields, fieldEdits],
+  );
+  const fieldNodes = useMemo(() => editedFields.map((entry) => entry.node), [editedFields]);
   const errors = selectUnresolvedErrors(state);
   /** 追问块：只在后端真的回了追问时出现；「跳过」永远在旁边。 */
   const clarifySlot =
@@ -295,7 +312,13 @@ export function App(): JSX.Element {
     plan.status === "ready" ? (
       <BlueprintCard
         blueprint={plan.blueprint}
-        summary={plan.summary}
+        onChange={(blueprint) => {
+          setPlan((current) =>
+            current.status === "ready"
+              ? { ...current, blueprint, summary: summarizeBlueprint(blueprint) }
+              : current,
+          );
+        }}
         onConfirm={() => {
           beginGeneration(requirement.trim(), plan.clarifications, plan.blueprint);
         }}
@@ -341,9 +364,7 @@ export function App(): JSX.Element {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-baseline gap-2 border-b border-line bg-surface px-2 py-1">
-        <h1 className="m-0 text-lg font-semibold">意卷 IntentForm</h1>
-        <span className="text-xs text-muted">自然语言 → 结构化表单</span>
-        {/* 右侧信息合成一组：单独用 ml-auto 的兄弟元素在窄屏会被挤出可视区。 */}
+        {/* 品牌与主导航在登录后的顶栏里，这里只留本页的运行状态，避免两行重复的站名。 */}
         <div className="ml-auto flex min-w-0 flex-wrap items-baseline justify-end gap-2">
           {terminalText === null ? null : (
             <span className={`text-xs ${terminalTone}`} aria-live="polite">
@@ -405,8 +426,12 @@ export function App(): JSX.Element {
           className="min-h-0 min-w-0 overflow-hidden rounded-md border border-line bg-surface"
         >
           <PreviewPanel
-            fields={fields}
+            fields={editedFields}
             errors={errors}
+            objectives={objectives}
+            onFieldChange={(item) => {
+              setFieldEdits((current) => ({ ...current, [item.id]: item }));
+            }}
             mode={previewMode}
             status={state.status}
             onModeChange={setPreviewMode}

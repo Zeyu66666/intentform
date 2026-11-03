@@ -6,7 +6,11 @@
  * 所以"学生视角"不可能因为某个 props 传错而漏出答案。
  */
 
-import { ERROR_HINTS, type FormItem } from "@intentform/schema";
+import { useState } from "react";
+
+import { ERROR_HINTS, type FormItem, type Objective } from "@intentform/schema";
+
+import { GeneratedItemEditor } from "./GeneratedItemEditor";
 
 import { EditField, FillField } from "../render/FieldRegistry";
 import type { FieldErrorEntry, FieldEntry, RunStatus } from "../stream/generate-machine";
@@ -18,7 +22,10 @@ export interface PreviewPanelProps {
   readonly errors: ReadonlyMap<number, FieldErrorEntry>;
   readonly mode: PreviewMode;
   readonly status: RunStatus;
+  readonly objectives: readonly Objective[];
   readonly onModeChange: (mode: PreviewMode) => void;
+  /** 发布前就地改题：只有教师视角可编辑。 */
+  readonly onFieldChange?: (item: FormItem) => void;
 }
 
 const MODE_LABEL: Record<PreviewMode, string> = {
@@ -39,8 +46,11 @@ export function PreviewPanel({
   errors,
   mode,
   status,
+  objectives,
   onModeChange,
+  onFieldChange,
 }: PreviewPanelProps): JSX.Element {
+  const [editingId, setEditingId] = useState<string | null>(null);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center gap-2 border-b border-line px-2 py-1">
@@ -75,7 +85,7 @@ export function PreviewPanel({
 
       <p className="m-0 border-b border-line bg-bg px-2 py-1 text-xs text-muted">
         {mode === "fill"
-          ? "学生视角：答案、解析、分值、bloom、知识点全部不渲染（接口层还有 publicView 兜底）。"
+          ? "学生视角：答案、解析与分值都不渲染（接口层还有 publicView 兜底）。"
           : STATUS_TIP[status]}
       </p>
 
@@ -104,7 +114,20 @@ export function PreviewPanel({
                       </p>
                     </div>
                   )}
-                  <ItemView item={entry.node} mode={mode} />
+                  <ItemView
+                    item={entry.node}
+                    mode={mode}
+                    objectives={objectives}
+                    editing={editingId === entry.node.id}
+                    onToggleEdit={
+                      onFieldChange === undefined || mode !== "edit"
+                        ? undefined
+                        : () => {
+                            setEditingId((current) => (current === entry.node.id ? null : entry.node.id));
+                          }
+                    }
+                    {...(onFieldChange === undefined ? {} : { onFieldChange })}
+                  />
                 </div>
               );
             })}
@@ -115,7 +138,40 @@ export function PreviewPanel({
   );
 }
 
-function ItemView({ item, mode }: { readonly item: FormItem; readonly mode: PreviewMode }): JSX.Element {
+function ItemView({
+  item,
+  mode,
+  objectives,
+  editing,
+  onToggleEdit,
+  onFieldChange,
+}: {
+  readonly item: FormItem;
+  readonly mode: PreviewMode;
+  readonly objectives: readonly Objective[];
+  readonly editing: boolean;
+  readonly onToggleEdit?: (() => void) | undefined;
+  readonly onFieldChange?: (item: FormItem) => void;
+}): JSX.Element {
   // 两态各自走自己的注册表：这里没有 `if (mode === "fill") hideAnswer()` 之类的分支。
-  return mode === "edit" ? <EditField item={item} /> : <FillField item={item} />;
+  if (mode !== "edit") return <FillField item={item} />;
+  return (
+    <div className="flex flex-col gap-1">
+      {onToggleEdit === undefined ? null : (
+        <button
+          type="button"
+          data-testid={`preview-edit-${item.id}`}
+          className="w-fit rounded-sm border border-line px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent"
+          onClick={onToggleEdit}
+        >
+          {editing ? "收起编辑" : "编辑这题"}
+        </button>
+      )}
+      {editing && onFieldChange !== undefined ? (
+        <GeneratedItemEditor item={item} objectives={objectives} onChange={onFieldChange} />
+      ) : (
+        <EditField item={item} />
+      )}
+    </div>
+  );
 }
