@@ -71,5 +71,6 @@ export * from "./provider.ts";
 export * from "./repair.ts";
 export * from "./replay-key.ts";
 export * from "./sources.ts";
+export * from "./supplement.ts";
 export * from "./sse-writer.ts";
 export * from "./validate-line.ts";
