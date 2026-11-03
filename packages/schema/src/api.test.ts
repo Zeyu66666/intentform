@@ -4,6 +4,8 @@ import {
   API_ERROR_STATUS,
   API_PATHS,
   CSV_BASE_COLUMNS,
+  aiGradeRequestSchema,
+  formSettingsRequestSchema,
   ITEM_SCOPE_PATCH_OPS_SET,
   VERSION_CONFLICT_MESSAGE,
   createFormRequestSchema,
@@ -192,6 +194,38 @@ describe("通用 JSON Patch 请求（2026-11-02）", () => {
         jsonPatch: [{ op: "remove", path: "/items/0/title", value: "多余" }],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("AI 辅助评分（A-23）", () => {
+  it("请求只收 itemId，不收答案原文", () => {
+    expect(aiGradeRequestSchema.safeParse({ itemId: "q-short" }).success).toBe(true);
+    expect(aiGradeRequestSchema.safeParse({ itemId: "Q" }).success).toBe(false);
+    expect(
+      aiGradeRequestSchema.safeParse({ itemId: "q-short", answer: "学生原文" }).success,
+    ).toBe(false);
+  });
+
+  it("AI 开关默认省略不改变其它设置", () => {
+    expect(formSettingsRequestSchema.safeParse({ showAnswersAfterSubmit: false }).success).toBe(true);
+    expect(
+      formSettingsRequestSchema.safeParse({
+        showAnswersAfterSubmit: false,
+        aiGradingEnabled: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      formSettingsRequestSchema.safeParse({
+        showAnswersAfterSubmit: false,
+        aiGradingEnabled: "yes",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("路由表带 ai-grade 路径", () => {
+    expect(API_PATHS.aiGrade("f 1", "s/2")).toBe(
+      "/api/forms/f%201/submissions/s%2F2/ai-grade",
+    );
   });
 });
 

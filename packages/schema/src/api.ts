@@ -59,6 +59,8 @@ export const API_PATHS = {
   redoDraft: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/redo`,
   suggestPatch: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/suggest`,
   supplementItem: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/supplement`,
+  aiGrade: (formId: string, submissionId: string) =>
+    `/api/forms/${encodeURIComponent(formId)}/submissions/${encodeURIComponent(submissionId)}/ai-grade`,
   submissions: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions`,
   submissionsCsv: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions.csv`,
   /** 教师给某条提交里的某道简答打分（省赛 R-02）。 */
@@ -240,6 +242,11 @@ export interface PublishResponse {
  */
 export const formSettingsRequestSchema = z.object({
   showAnswersAfterSubmit: z.boolean(),
+  /**
+   * AI 辅助评分（2026-11-03）。**默认关闭**；只有教师显式打开，且只对简答题，
+   * 才允许把该题原文发给模型。省略表示不改这一项，兼容老客户端。
+   */
+  aiGradingEnabled: z.boolean().optional(),
 });
 
 export type FormSettingsRequest = z.infer<typeof formSettingsRequestSchema>;
@@ -247,6 +254,7 @@ export type FormSettingsRequest = z.infer<typeof formSettingsRequestSchema>;
 export interface FormSettingsResponse {
   readonly ok: true;
   readonly showAnswersAfterSubmit: boolean;
+  readonly aiGradingEnabled: boolean;
 }
 
 /* ------------------------------ 受限修改（R-03） ---------------------------- */
@@ -680,6 +688,37 @@ export interface GradeResponse {
   readonly ok: true;
   /** 打完这一题之后，该条提交的最新状态（得分/待批改额度都已重算）。 */
   readonly submission: SubmissionRow;
+}
+
+/* --------------------------- AI 辅助评分（A-23） --------------------------- */
+
+/**
+ * `POST /api/forms/:id/submissions/:submissionId/ai-grade` 的请求。
+ *
+ * 只收 `itemId`：学生答案由服务端从这条提交里取，教师不能借这个接口
+ * 把任意文本送进模型。表单级开关 `aiGradingEnabled` 关闭时整条路由拒绝。
+ */
+export const aiGradeRequestSchema = z
+  .object({
+    itemId: z.string().regex(LIMITS.shortIdPattern, "itemId 需匹配 ^[a-z0-9_-]{1,32}$"),
+  })
+  // 学生答案必须由服务端从提交里取；客户端多传一个 answer 键也直接拒，避免"像是能指定答案"。
+  .strict();
+
+export type AiGradeRequest = z.infer<typeof aiGradeRequestSchema>;
+
+/**
+ * 只回**建议**，不落分。教师看到建议后仍要点原来的「保存」才写 `manual_grades`，
+ * 所以模型不能直接改任何学生的成绩。
+ */
+export interface AiGradeResponse {
+  readonly ok: true;
+  readonly itemId: string;
+  readonly suggestedScore: number;
+  readonly maxScore: number;
+  readonly rationale: string;
+  readonly source: "live" | "record" | "mock";
+  readonly promptVersion: string;
 }
 
 /**
