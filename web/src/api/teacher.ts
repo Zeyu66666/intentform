@@ -27,6 +27,8 @@ import {
   type SubmissionsResponse,
   type SuggestPatchRequest,
   type SuggestPatchResponse,
+  type SupplementItemRequest,
+  type SupplementItemResponse,
   type UndoDraftRequest,
   type UndoDraftResponse,
 } from "@intentform/schema";
@@ -96,6 +98,11 @@ export interface TeacherApi {
     formId: string,
     request: SuggestPatchRequest,
   ) => Promise<ApiResult<SuggestPatchResponse>>;
+  /** 覆盖矩阵补题：只回一道候选题，不写库；教师确认后由编辑器发 addItem。 */
+  readonly supplementItem: (
+    formId: string,
+    request: SupplementItemRequest,
+  ) => Promise<ApiResult<SupplementItemResponse>>;
 }
 
 export function createTeacherApi(client: HttpClient): TeacherApi {
@@ -156,6 +163,12 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
       }),
     suggestPatch: (formId, request) =>
       client.request<SuggestPatchResponse>(API_PATHS.suggestPatch(formId), {
+        method: "POST",
+        body: request,
+        csrf: true,
+      }),
+    supplementItem: (formId, request) =>
+      client.request<SupplementItemResponse>(API_PATHS.supplementItem(formId), {
         method: "POST",
         body: request,
         csrf: true,

@@ -14,6 +14,8 @@
  * `router.test.ts` 与 `config.test.ts` 各自盯着这条不变量）。
  */
 
+import type { BloomLevel } from "@intentform/schema";
+
 /** 学生收集页前缀。必须等于 `readWebConfig({}).fillPathPrefix`。 */
 export const FILL_PATH_PREFIX = "/f" as const;
 
@@ -121,6 +123,25 @@ export function routeToPath(route: Route): string {
     case "notFound":
       return route.path;
   }
+}
+
+/**
+ * 覆盖矩阵点击补题的地址：编辑页 + 预填知识点/层级。
+ *
+ * 查询串不参与 `parseRoute`（它只看 pathname），但编辑页会读 `add=1&kp=…&bloom=…`
+ * 打开补题面板。参数一律 encode，知识点 id 里出现 `&` 也不会串键。
+ */
+export function editorAddItemPath(
+  formId: string,
+  knowledgePoint: string,
+  bloom: BloomLevel,
+): string {
+  const query = new URLSearchParams({
+    add: "1",
+    kp: knowledgePoint,
+    bloom,
+  });
+  return `${routeToPath({ name: "edit", formId })}?${query.toString()}`;
 }
 
 /** 只描述用到的那部分 window：测试注入假对象时不必伪造整个 Location/History。 */

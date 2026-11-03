@@ -171,6 +171,40 @@ describe("planPatch", () => {
     expect("ops" in plan.request ? plan.request.ops : null).toEqual(plan.ops);
   });
 
+  it("补题预填：手工模板带上知识点与布鲁姆层级", () => {
+    const id = nextItemId(base().schema.items);
+    const state = withSelection(
+      withAddItem(base(), { id, knowledgePoint: "kp-a", bloom: "apply" }),
+      id,
+    );
+    const plan = expectOk(planPatch(state));
+    const added = itemById(plan.preview, id);
+    if (!("bloom" in added)) throw new Error("新题应带 bloom");
+    expect(added.bloom).toBe("apply");
+    expect(added.knowledgePoint).toBe("kp-a");
+  });
+
+  it("模型补题：整道候选题原样成为 addItem，不由前端改字段", () => {
+    const item: FormItem = {
+      id: "q_model",
+      type: "single",
+      title: "模型补的题",
+      required: true,
+      score: 5,
+      bloom: "apply",
+      knowledgePoint: "kp-a",
+      options: [
+        { id: "a", text: "A" },
+        { id: "b", text: "B" },
+      ],
+      answer: "a",
+    };
+    const plan = expectOk(planPatch(withSelection(withAddItem(base(), { item }), item.id)));
+    const added = itemById(plan.preview, "q_model");
+    expect(added.title).toBe("模型补的题");
+    expect(plan.ops.some((op) => op.op === "addItem" && op.item.id === "q_model")).toBe(true);
+  });
+
   it("草稿跨题保留：切走再改另一题，前一题的改动还在预览里", () => {
     const first = withStem(base(), "q-single", "第一题改过");
     const plan = expectOk(planPatch(withScore(withSelection(first, "q-short"), "q-short", 30)));

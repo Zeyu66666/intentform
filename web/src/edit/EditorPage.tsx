@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { LIMITS, type FormDetailResponse } from "@intentform/schema";
+import { LIMITS, type FormDetailResponse, type FormItem } from "@intentform/schema";
 
 import { describeFailure, isUnauthorized, isVersionConflict } from "../api/failures";
 import { createHttpClient, type ApiFailure } from "../api/http";
@@ -26,6 +26,8 @@ import { createTeacherApi } from "../api/teacher";
 import { Link } from "../Link";
 import { ItemEditor } from "./ItemEditor";
 import { SuggestBox } from "./SuggestBox";
+import { SupplementBox } from "./SupplementBox";
+import { parseAddQuery, type AddPrefill } from "./supplement-query";
 import { TYPE_LABELS } from "../render/FieldRegistry";
 import { DASHBOARD_PATH, LOGIN_PATH, routeToPath } from "../router";
 import { toAnswerPayload } from "./answer-input";
@@ -33,6 +35,7 @@ import {
   draftOf,
   initialEditState,
   moveTargets,
+  nextItemId,
   planPatch,
   resolveSelection,
   withAddItem,
@@ -84,6 +87,8 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
   const [busy, setBusy] = useState(false);
   /** 重做栈是否有一步可退。服务端是唯一事实源，这里只缓存详情/撤销/重做的返回值。 */
   const [redoAvailable, setRedoAvailable] = useState(false);
+  /** 覆盖矩阵点进来的补题目标（`?add=1&kp=…&bloom=…`）；处理完就清空。 */
+  const [supplement, setSupplement] = useState<AddPrefill | null>(() => parseAddQuery(window.location.search));
   /** 点「刷新」或换表单时 +1，驱动重新取数；保存/撤销成功后不走这里（就地更新）。 */
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -158,6 +163,33 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
 
   const handleReload = (): void => {
     setReloadToken((token) => token + 1);
+  };
+
+  /** 补题面板处理完就从地址栏去掉查询串，刷新时不会又弹一次。 */
+  const finishSupplement = (): void => {
+    setSupplement(null);
+    window.history.replaceState(null, "", window.location.pathname);
+  };
+
+  const handleManualSupplement = (): void => {
+    if (supplement === null) return;
+    const id = nextItemId(preview.items);
+    update((state) =>
+      withSelection(
+        withAddItem(state, {
+          id,
+          knowledgePoint: supplement.knowledgePoint,
+          bloom: supplement.bloom,
+        }),
+        id,
+      ),
+    );
+    finishSupplement();
+  };
+
+  const handleGeneratedSupplement = (item: FormItem): void => {
+    update((state) => withSelection(withAddItem(state, { item }), item.id));
+    finishSupplement();
   };
 
   const handleSave = (): void => {
@@ -353,6 +385,22 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
           aria-label="编辑面板"
           className="flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto rounded-md border border-line bg-surface p-2"
         >
+          {supplement === null ? null : (
+            <SupplementBox
+              api={api}
+              formId={formId}
+              baseVersionId={edit.baseVersionId}
+              knowledgePoint={supplement.knowledgePoint}
+              objectiveName={
+                detail.schema.meta.objectives.find(
+                  (objective) => objective.id === supplement.knowledgePoint,
+                )?.name ?? supplement.knowledgePoint
+              }
+              bloom={supplement.bloom}
+              onManual={handleManualSupplement}
+              onGenerated={handleGeneratedSupplement}
+            />
+          )}
           {selected === null ? (
             <p className="m-0 text-sm text-muted">这份表单还没有题目，点左侧「加题」开始。</p>
           ) : (

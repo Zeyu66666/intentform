@@ -13,13 +13,24 @@ export interface LinkProps {
   readonly href: string;
   readonly children: React.ReactNode;
   readonly className?: string;
+  /** 可访问名与测试钩子：矩阵单元格需要「为某知识点补一道某层级题」的完整语义。 */
+  readonly "aria-label"?: string;
+  readonly "data-testid"?: string;
 }
 
-export function Link({ href, children, className }: LinkProps): JSX.Element {
+export function Link({
+  href,
+  children,
+  className,
+  "aria-label": ariaLabel,
+  "data-testid": testId,
+}: LinkProps): JSX.Element {
   return (
     <a
       href={href}
       {...(className === undefined ? {} : { className })}
+      {...(ariaLabel === undefined ? {} : { "aria-label": ariaLabel })}
+      {...(testId === undefined ? {} : { "data-testid": testId })}
       onClick={(event) => {
         // 修饰键 / 非左键 / 已被处理的点击：交给浏览器（新标签、下载、外部协议）。
         if (event.defaultPrevented || event.button !== 0) return;

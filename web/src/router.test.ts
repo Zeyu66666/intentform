@@ -6,10 +6,22 @@ import {
   FILL_PATH_PREFIX,
   LOGIN_PATH,
   createBrowserHost,
+  editorAddItemPath,
   parseRoute,
   routeToPath,
   type WindowLike,
 } from "./router";
+
+describe("editorAddItemPath", () => {
+  it("跳到编辑页并编码补题参数", () => {
+    expect(editorAddItemPath("f_1", "kp_vertex", "apply")).toBe(
+      "/forms/f_1/edit?add=1&kp=kp_vertex&bloom=apply",
+    );
+    expect(editorAddItemPath("a b", "kp_1", "remember")).toBe(
+      "/forms/a%20b/edit?add=1&kp=kp_1&bloom=remember",
+    );
+  });
+});
 
 describe("parseRoute", () => {
   it("根路径是生成页", () => {

@@ -43,7 +43,7 @@ import {
 } from "../dashboard/model";
 import { formatDateTime } from "../format";
 import { Link } from "../Link";
-import { DASHBOARD_PATH, LOGIN_PATH, routeToPath } from "../router";
+import { DASHBOARD_PATH, LOGIN_PATH, editorAddItemPath, routeToPath } from "../router";
 import { navigate } from "../useRoute";
 
 const MAX_WIDTH = "mx-auto w-full max-w-4xl px-2 py-3";
@@ -572,7 +572,16 @@ function SubmissionsSection({
                     </th>
                     {BLOOM_LEVELS.map((bloom) => (
                       <td key={bloom} className="px-1 py-1 text-center tabular-nums text-ink">
-                        {String(row.counts[bloom])}
+                        {/* 点击任一格进入补题：预填这一行的知识点与这一列的层级。
+                            0 与已有覆盖都允许再补，矩阵不替教师判断「够了」。 */}
+                        <Link
+                          href={editorAddItemPath(formId, row.objectiveId, bloom)}
+                          data-testid={`coverage-cell-${row.objectiveId}-${bloom}`}
+                          aria-label={`为${row.objectiveName}补一道${bloomLabel(bloom)}题`}
+                          className="inline-flex min-h-[32px] min-w-[32px] items-center justify-center rounded-sm text-accent underline decoration-dotted underline-offset-2"
+                        >
+                          {String(row.counts[bloom])}
+                        </Link>
                       </td>
                     ))}
                   </tr>

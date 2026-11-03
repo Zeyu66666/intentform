@@ -19,6 +19,7 @@
 import {
   LIMITS,
   applyPatch,
+  formItemSchema,
   type AnswerPayload,
   type BloomLevel,
   type ChoiceOption,
@@ -38,8 +39,18 @@ import { answerDraftOf, answerDraftOfPayload, supportsAnswer, toAnswerPayload, t
  * 因为教师会一个字符一个字符地敲，每敲一下就排一条 op 既没有意义，也会让
  * Diff 预览变成一长串噪声。
  */
+export type AddItemOptions = {
+  /** 预先算好的 id；补题入口用它把新题直接选中。 */
+  readonly id?: string;
+  /** 手工补题：模板题预填的知识点与层级。 */
+  readonly knowledgePoint?: string;
+  readonly bloom?: BloomLevel;
+  /** 模型补题：直接带入整道候选题。 */
+  readonly item?: FormItem;
+};
+
 export type EditIntent =
-  | { readonly kind: "add" }
+  | ({ readonly kind: "add" } & AddItemOptions)
   | { readonly kind: "remove"; readonly itemId: string }
   /** `toIndex` 是**移动后**的下标，与 `moveItem` op 的口径一致，不做二次换算。 */
   | { readonly kind: "move"; readonly itemId: string; readonly toIndex: number };
@@ -313,8 +324,8 @@ export function withClearItemDraft(state: EditState, itemId: string): EditState 
   return { ...state, drafts: rest };
 }
 
-export function withAddItem(state: EditState): EditState {
-  return { ...state, intents: [...state.intents, { kind: "add" }] };
+export function withAddItem(state: EditState, options: AddItemOptions = {}): EditState {
+  return { ...state, intents: [...state.intents, { kind: "add", ...options }] };
 }
 
 export function withRemoveItem(state: EditState, itemId: string): EditState {
@@ -377,11 +388,26 @@ export function planPatch(state: EditState): PatchPlan {
   for (const intent of state.intents) {
     switch (intent.kind) {
       case "add": {
-        const id = nextItemId(schema.items);
+        if (intent.item !== undefined) {
+          const failure = advance({
+            op: "addItem",
+            index: schema.items.length,
+            item: formItemSchema.parse(intent.item),
+          });
+          if (failure !== null) return { ok: false, ...failure };
+          break;
+        }
+        const id = intent.id ?? nextItemId(schema.items);
+        const template = newItemTemplate(id, schema.meta.kind);
+        const item = {
+          ...template,
+          ...(intent.knowledgePoint === undefined ? {} : { knowledgePoint: intent.knowledgePoint }),
+          ...(intent.bloom === undefined ? {} : { bloom: intent.bloom }),
+        };
         const failure = advance({
           op: "addItem",
           index: schema.items.length,
-          item: newItemTemplate(id, schema.meta.kind),
+          item,
         });
         if (failure !== null) return { ok: false, ...failure };
         break;
