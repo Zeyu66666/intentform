@@ -1521,6 +1521,55 @@ async function vc16AiGrade(request, ctx) {
   must(wrongType.status === 400, `VC16 单选题应 400，实际 ${String(wrongType.status)}`);
 }
 
+/**
+ * VC17：进程内模型运行设置（2026-11-03）。
+ *
+ * 「网页改配置」只改当前进程：登录后才能读；切到 replay 立即体现在运行配置与
+ * `/healthz`；Key 只以 `hasApiKey` 出现；非法输入 400 且不改变正在跑的模式。
+ */
+async function vc17LlmSettings(request, ctx) {
+  const anonymous = await request("GET", "/api/settings/llm");
+  must(anonymous.status === 401, `VC17 未登录读取应 401，实际 ${String(anonymous.status)}`);
+
+  const initial = await request("GET", "/api/settings/llm", { cookie: ctx.cookie });
+  must(initial.status === 200, `VC17 读取设置失败（${String(initial.status)}）：${firstLine(initial.text)}`);
+  must(initial.json.mode === "mock", `VC17 启动模式应为 mock，实际 ${String(initial.json.mode)}`);
+  must(initial.json.hasApiKey === false, "VC17 mock 启动不应有 Key");
+  must(!initial.text.includes('"apiKey"'), "VC17 响应体出现了 apiKey 键");
+
+  const switched = await request("POST", "/api/settings/llm", {
+    cookie: ctx.cookie,
+    json: { mode: "replay", baseUrl: "https://api.example.com/v1", model: "verify-model" },
+  });
+  must(switched.status === 200, `VC17 切换 replay 失败（${String(switched.status)}）：${firstLine(switched.text)}`);
+  must(switched.json.mode === "replay", `VC17 模式应变为 replay，实际 ${String(switched.json.mode)}`);
+
+  const after = await request("GET", "/api/settings/llm", { cookie: ctx.cookie });
+  must(after.json.mode === "replay", "VC17 切换后 GET 未反映新模式");
+  must(after.json.model === "verify-model", `VC17 模型名未生效：${String(after.json.model)}`);
+
+  // `/healthz` 回的是运行值而不是启动值：网页切完模式，探测端点不能继续报 mock。
+  const health = await request("GET", "/healthz");
+  must(health.status === 200, `VC17 healthz 不可用（${String(health.status)}）`);
+  must(health.json.llmMode === "replay", `VC17 healthz 仍报启动模式：${String(health.json.llmMode)}`);
+
+  const invalid = await request("POST", "/api/settings/llm", {
+    cookie: ctx.cookie,
+    json: { mode: "live", baseUrl: "https://api.example.com/v1", model: "verify-model" },
+  });
+  must(invalid.status === 400, `VC17 live 缺 Key 应 400，实际 ${String(invalid.status)}`);
+  const stillReplay = await request("GET", "/api/settings/llm", { cookie: ctx.cookie });
+  must(stillReplay.json.mode === "replay", "VC17 失败更新不应改变正在运行的模式");
+
+  // 还原 mock：VC17 是最后一条，但让脚本的最终状态与启动时一致，避免后续加用例时踩坑。
+  const restored = await request("POST", "/api/settings/llm", {
+    cookie: ctx.cookie,
+    json: { mode: "mock", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  });
+  must(restored.status === 200, `VC17 还原 mock 失败（${String(restored.status)}）`);
+  must(restored.json.mode === "mock", "VC17 未还原到 mock");
+}
+
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const CHECKS = [
   ["VC1 发布快照：改草稿不影响已发布版本的收集页", vc1Snapshot],
@@ -1539,6 +1588,7 @@ const CHECKS = [
   ["VC14 通用 Patch 与重做：RFC 6902 翻译、越界不写库、撤销可重做", vc14JsonPatchAndRedo],
   ["VC15 覆盖矩阵补题：按知识点×层级回一题、不写库、越界 422", vc15SupplementItem],
   ["VC16 AI 辅助评分：默认关闭、只回建议、不写人工分", vc16AiGrade],
+  ["VC17 模型运行设置：登录后可改、立即生效、Key 只回 hasApiKey", vc17LlmSettings],
 ];
 
 async function main() {
@@ -1554,6 +1604,9 @@ async function main() {
     COOKIE_SECURE: "false",
     APP_ORIGIN: baseUrl,
     LLM_MODE: "mock",
+    // 显式清空：脚本继承 `process.env`，本机若恰好导出了 LLM_API_KEY，
+    // 启动期的 mock 运行时会带着它，VC17 的「启动无 Key」就不再是确定事实。
+    LLM_API_KEY: "",
     ARGON2_MEMORY_KIB: "8192",
   };
 

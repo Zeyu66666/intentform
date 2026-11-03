@@ -578,10 +578,29 @@ async function collectionStatRows(page) {
   );
 }
 
-/** 看板「知识点 × 布鲁姆覆盖」矩阵的行文本（R-07）。 */
+/** 看板「知识点 × 认知层次」矩阵的行文本（R-07）。 */
 async function coverageMatrixRows(page) {
   return page.evaluate(
     "var table = document.querySelector('[data-testid=dash-coverage-matrix]'); return table === null ? [] : Array.prototype.map.call(table.querySelectorAll('tbody tr'), function (tr) { return Array.prototype.map.call(tr.querySelectorAll('th,td'), function (cell) { return cell.textContent.trim(); }); });",
+  );
+}
+
+/**
+ * 覆盖矩阵默认收在 `<details>` 里（2026-11-03 起）：DOM 一直在，但格子不可见，
+ * 可信点击会因 0×0 失败。要补题先像真人一样点开摘要。
+ */
+async function openCoverage(page) {
+  const opened = await page.evaluate(
+    "var d = byTestId('dash-coverage'); return d !== null && d.open === true;",
+  );
+  if (opened) return;
+  const toggled = await page.tap('[data-testid="dash-coverage-toggle"]');
+  must(toggled.ok === true, `点不到覆盖分析展开按钮：${JSON.stringify(toggled)}`);
+  await waitFor(
+    async () =>
+      (await page.evaluate("var d = byTestId('dash-coverage'); return d !== null && d.open === true;")),
+    "覆盖分析展开",
+    10_000,
   );
 }
 
@@ -680,13 +699,15 @@ async function main() {
     const cookie = (nodeLogin.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
     must(cookie.startsWith("intentform_session="), "脚本侧没拿到会话 cookie");
 
-    // 1) 登录
-    const login = await step("登录（/login → /dashboard）", async () => {
-      await page.goto(`${webBase}/login`);
+    // 1) 登录：先验证「未登录直接打开看板会被登录页拦住」，再登录回到原地址。
+    const login = await step("登录优先：未登录打开 /dashboard 显示登录页，登录后回看板", async () => {
+      await page.goto(`${webBase}/dashboard`);
       await waitFor(
         async () => (await page.evaluate("return bySelector('input[name=email]') !== null")),
-        "登录表单渲染",
+        "未登录打开看板时应先显示登录表单",
       );
+      const gatedPath = await page.path();
+      must(gatedPath === "/dashboard", `登录页不应改写地址，实际 ${gatedPath}`);
       // 截图取在填表之前：这张图要证明的是「会话建立前的入口」，不是登录后的看板
       artifacts.push(await page.screenshot("01-login.png"));
       const filled = await page.evaluate(`
@@ -705,7 +726,7 @@ async function main() {
       const forms = await page.evaluate(
         "return Array.prototype.map.call(document.querySelectorAll('[data-testid=dash-form-select] option'), function (o) { return o.textContent.trim(); });",
       );
-      return { path: await page.path(), forms };
+      return { gatedPath, path: await page.path(), forms };
     });
 
     // 2) 生成
@@ -733,6 +754,27 @@ async function main() {
         "var el = byTestId('plan-summary'); return el === null ? '' : el.textContent.trim();",
       );
       must(planSummary.length > 0, "蓝图卡片没有摘要");
+
+      // 蓝图不是只读公告：改标题后受控输入必须保留新值，确认按钮仍可用。
+      const editedPlanTitle = "教师改过的蓝图标题";
+      const planTyped = await page.evaluate(
+        `return setValue('[data-testid=plan-title]', ${JSON.stringify(editedPlanTitle)});`,
+      );
+      must(planTyped.ok === true, `蓝图标题没填进去：${JSON.stringify(planTyped)}`);
+      await waitFor(
+        async () => {
+          const value = await page.evaluate(
+            "var el = byTestId('plan-title'); return el === null ? null : el.value;",
+          );
+          return value === editedPlanTitle ? value : null;
+        },
+        "蓝图标题改动保留在输入框里",
+        10_000,
+      );
+      const planConfirmDisabled = await page.evaluate(
+        "var el = byTestId('plan-confirm'); return el === null ? null : el.disabled;",
+      );
+      must(planConfirmDisabled === false, "改蓝图后确认按钮不应变灰");
       artifacts.push(await page.screenshot("02b-plan.png"));
       const confirmPlan = await page.tap('[data-testid=plan-confirm]');
       must(confirmPlan.ok === true, `点不到「按蓝图生成」：${JSON.stringify(confirmPlan)}`);
@@ -746,7 +788,54 @@ async function main() {
       must(timeline.includes("修复") || timeline.includes("repair"), "时间线里没有修复记录（mock 必然有一次）");
       // R-06 的界面级证据：时间线里必须真的出现 plan 阶段与蓝图摘要。
       must(timeline.includes("蓝图已确认"), "时间线里没有蓝图摘要（plan 阶段没发生）");
-      return { requirement: REQUIREMENT, source, planSummary, sawRepairEntry: true };
+
+      // 发布前直接改题：点「编辑这题」→ 改题干 → 预览卡立即显示新文案。
+      const editButton = await page.evaluate(
+        `var el = document.querySelector('[data-testid^="preview-edit-"]'); return el === null ? null : el.getAttribute('data-testid');`,
+      );
+      must(editButton !== null, "预览卡没有「编辑这题」入口");
+      const editedItemId = editButton.slice("preview-edit-".length);
+      const opened = await page.tap(`[data-testid="${editButton}"]`);
+      must(opened.ok === true, `点不到「编辑这题」：${JSON.stringify(opened)}`);
+      await waitFor(
+        async () =>
+          (await page.evaluate(
+            `return byTestId(${JSON.stringify(`preview-editor-${editedItemId}`)}) !== null;`,
+          )),
+        "预览卡进入编辑态",
+        10_000,
+      );
+      const editedTitle = "就地改过的第一题";
+      const titleTyped = await page.evaluate(
+        `return setValue('[data-testid=${JSON.stringify(`preview-title-${editedItemId}`)}]', ${JSON.stringify(editedTitle)});`,
+      );
+      must(titleTyped.ok === true, `预览题干没填进去：${JSON.stringify(titleTyped)}`);
+      await waitFor(
+        async () => {
+          const value = await page.evaluate(
+            `var el = byTestId(${JSON.stringify(`preview-title-${editedItemId}`)}); return el === null ? null : el.value;`,
+          );
+          return value === editedTitle ? value : null;
+        },
+        "预览编辑保留新题干",
+        10_000,
+      );
+      const closed = await page.tap(`[data-testid="${editButton}"]`);
+      must(closed.ok === true, `点不到「收起编辑」：${JSON.stringify(closed)}`);
+      await waitFor(
+        async () => (await page.text()).includes(editedTitle),
+        "收起编辑后预览卡显示改过的题干",
+        10_000,
+      );
+      return {
+        requirement: REQUIREMENT,
+        source,
+        planSummary,
+        planTitleEdited: editedPlanTitle,
+        editedItemId,
+        editedTitle,
+        sawRepairEntry: true,
+      };
     });
 
     // 3) 保存并发布
@@ -783,6 +872,18 @@ async function main() {
         must(matched !== undefined, `表单列表里找不到 slug=${slug} 的那张（UI 发布的 formId 无从得知）`);
         formId = matched.id;
         versionId = matched.publishedVersionId ?? "";
+
+        // 生成页里就地改过的题干必须真的进发布快照——这就是「发布界面能直接改题」的证据。
+        const detail = await request("GET", `/api/forms/${formId}`, { cookie });
+        must(detail.status === 200, `读已发布表单失败（${String(detail.status)}）：${detail.text}`);
+        const editedItem = (detail.json.schema.items ?? []).find(
+          (item) => item.id === generate.editedItemId,
+        );
+        must(editedItem !== undefined, `发布快照里找不到就地编辑的题 ${generate.editedItemId}`);
+        must(
+          editedItem.title === generate.editedTitle,
+          `发布快照没有带上改过的题干：${JSON.stringify(editedItem.title)}`,
+        );
       } else {
         const sse = await request("POST", "/api/generate", { json: { requirement: REQUIREMENT } });
         must(sse.status === 200, `兜底生成失败（${String(sse.status)}）：${sse.text}`);
@@ -995,6 +1096,22 @@ async function main() {
       must(open.ok === true, `点不到看板上的批改按钮：${JSON.stringify(open)}`);
       must(open.heightPx >= 44, `批改按钮触控高度只有 ${String(open.heightPx)}px（应 ≥44px）`);
       await waitFor(async () => (await page.text()).includes("批改"), "批改面板出现", 20_000);
+
+      // 批改面板必须紧跟在被点的那一行下面，而不是跳整张表的末尾。
+      const placement = await page.evaluate(`
+        var button = document.querySelector('[data-testid^="dash-grade-"]');
+        var row = button === null ? null : button.closest('tr');
+        var next = row === null ? null : row.nextElementSibling;
+        return {
+          rowTag: row === null ? null : row.tagName,
+          nextTag: next === null ? null : next.tagName,
+          adjacent: next !== null && next.querySelector('[data-testid="grade-panel"]') !== null,
+        };
+      `);
+      must(
+        placement.adjacent === true,
+        `批改面板不在所点行下面：${JSON.stringify(placement)}`,
+      );
 
       const answerText = await page.evaluate(
         "var el = document.querySelector('[data-testid^=grade-answer]'); return el === null ? null : el.textContent.trim();",
@@ -1666,6 +1783,7 @@ async function main() {
         "覆盖矩阵渲染出可点击单元格",
         20_000,
       );
+      await openCoverage(page);
       const cell = await page.evaluate(`
         var el = document.querySelector('[data-testid^="coverage-cell-"]');
         if (el === null) return null;
@@ -1736,6 +1854,7 @@ async function main() {
         "矩阵再次渲染",
         20_000,
       );
+      await openCoverage(page);
       const second = await page.evaluate(`
         var all = document.querySelectorAll('[data-testid^="coverage-cell-"]');
         var el = all.length > 1 ? all[all.length - 1] : null;
@@ -1814,13 +1933,104 @@ async function main() {
       return { suggestion: suggestion.slice(0, 120), autoSaved: false };
     });
 
+    // 18) 模型设置（2026-11-03）：四个模式、端点、模型名与 Key 都在网页里改。
+    // 服务进程实际切到 replay 再切回 mock；Key 提交后只以 hasApiKey 出现，
+    // 输入框会被清空——「不回显」是这条步骤的核心断言。
+    const llmSettings = await step("模型设置：网页切换模式并填 Key，保存后不回显", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/settings`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('llm-mode') !== null")),
+        "模型设置页渲染",
+        20_000,
+      );
+      const initialMode = await page.evaluate("return byTestId('llm-mode').value");
+      must(initialMode === "mock", `设置页应显示启动模式 mock，实际 ${JSON.stringify(initialMode)}`);
+
+      const setMode = async (value) =>
+        page.evaluate(`
+          var el = byTestId('llm-mode');
+          var setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+          setter.call(el, ${JSON.stringify(value)});
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return el.value;
+        `);
+      const noticeText = async () =>
+        page.evaluate("var el = byTestId('llm-settings-notice'); return el === null ? null : el.textContent.trim();");
+      const waitApplied = async (label) =>
+        waitFor(
+          async () => {
+            const text = await noticeText();
+            return typeof text === "string" && text.includes("已应用") ? text : null;
+          },
+          label,
+          20_000,
+        );
+
+      must((await setMode("replay")) === "replay", "下拉没切到 replay");
+      const savedReplay = await page.tap('[data-testid="llm-save"]');
+      must(savedReplay.ok === true, `点不到保存：${JSON.stringify(savedReplay)}`);
+      const replayNotice = await waitApplied("replay 设置保存成功");
+      const afterReplay = await page.evaluate(
+        "return fetch('/api/settings/llm', { credentials: 'include' }).then(function (r) { return r.text(); });",
+      );
+      must(afterReplay.includes('"mode":"replay"'), `设置没有立即生效：${afterReplay.slice(0, 200)}`);
+      must(!afterReplay.includes('"apiKey"'), `设置响应出现了 apiKey 键：${afterReplay.slice(0, 200)}`);
+
+      const key = "browser-test-key-not-real";
+      const endpointTyped = await page.evaluate(
+        `return setValue('[data-testid="llm-base-url"]', "https://api.example.com/v1");`,
+      );
+      const modelTyped = await page.evaluate(
+        `return setValue('[data-testid="llm-model"]', "browser-model");`,
+      );
+      const keyTyped = await page.evaluate(
+        `return setValue('[data-testid="llm-api-key"]', ${JSON.stringify(key)});`,
+      );
+      must(
+        endpointTyped.ok === true && modelTyped.ok === true && keyTyped.ok === true,
+        `端点/模型/Key 没填进去：${JSON.stringify({ endpointTyped, modelTyped, keyTyped })}`,
+      );
+      must((await setMode("mock")) === "mock", "下拉没切回 mock");
+      const savedKey = await page.tap('[data-testid="llm-save"]');
+      must(savedKey.ok === true, `点不到保存：${JSON.stringify(savedKey)}`);
+      await waitApplied("mock + Key 设置保存成功");
+
+      const afterKey = await page.evaluate(
+        "return fetch('/api/settings/llm', { credentials: 'include' }).then(function (r) { return r.text(); });",
+      );
+      must(afterKey.includes('"mode":"mock"'), `模式没有切回 mock：${afterKey.slice(0, 200)}`);
+      must(afterKey.includes('"hasApiKey":true'), `Key 没有被服务端接收：${afterKey.slice(0, 200)}`);
+      must(!afterKey.includes(key), "设置接口回显了 Key");
+      const cleared = await page.evaluate("return byTestId('llm-api-key').value");
+      must(cleared === "", `保存后 Key 输入框应清空，实际 ${JSON.stringify(cleared)}`);
+      must(!(await page.text()).includes(key), "设置页面文本里出现了 Key");
+      artifacts.push(await page.screenshot(nextArtifactName("llm-settings")));
+
+      // 留空 = 保持原 Key：再存一次（不填 Key）不应把 Key 清掉。
+      // 这是设置页写明的语义，也是「改端点不必重输 Key」的实现保证。
+      const kept = await page.tap('[data-testid="llm-save"]');
+      must(kept.ok === true, `点不到再次保存：${JSON.stringify(kept)}`);
+      await waitApplied("留空保持 Key 的保存成功");
+      const afterKeep = await page.evaluate(
+        "return fetch('/api/settings/llm', { credentials: 'include' }).then(function (r) { return r.text(); });",
+      );
+      must(afterKeep.includes('"hasApiKey":true'), `留空保存不应清掉 Key：${afterKeep.slice(0, 200)}`);
+
+      return { initialMode, replayNotice, keyEchoed: false, blankKeepsKey: true };
+    });
+
     const summary = {
       ok: true,
       chrome,
       ports: { app: apiPort, cdp: debugPort },
       form: { formId: publish.formId, slug: publish.slug, publishMode: publish.mode },
       login,
-      generate: { source: generate.source },
+      generate: {
+        source: generate.source,
+        planTitleEdited: generate.planTitleEdited,
+        previewTitleEdited: generate.editedTitle,
+      },
       student,
       submitted,
       edited,
@@ -1833,6 +2043,7 @@ async function main() {
       singleItem,
       supplement,
       aiGrading,
+      llmSettings,
       dashboard,
       graded,
       steps,
