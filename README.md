@@ -169,7 +169,7 @@ pnpm install --frozen-lockfile
 pnpm check                      # = lint + typecheck + test
 node scripts/secret-scan.mjs    # 工作区密钥扫描
 node scripts/secret-scan.mjs --history   # 全历史扫描
-pnpm verify                     # = node scripts/verify.mjs，VC1–VC15
+pnpm verify                     # = node scripts/verify.mjs，VC1–VC16
 node scripts/browser-closed-loop.mjs     # 生产构建 + 真浏览器闭环
 pnpm eval                       # 整份需求达标率（默认 replay，不用 Key）
 ```
@@ -177,9 +177,9 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | 命令 | 覆盖范围 |
 |---|---|
 | `pnpm typecheck` | 四个包全量类型检查 |
-| `pnpm test` | 76 个测试文件 / 914 条用例（oxlint `--deny-warnings`、Vitest） |
-| `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC15；自起临时服务与临时库，不碰 `data/intentform.db` |
-| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十六步（含打印版 PDF、答案解析、暗色模式、跳过蓝图直生成、单题编辑与撤销/重做、覆盖矩阵补题）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
+| `pnpm test` | 78 个测试文件 / 929 条用例（oxlint `--deny-warnings`、Vitest） |
+| `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC16；自起临时服务与临时库，不碰 `data/intentform.db` |
+| `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十七步（含打印版 PDF、答案解析、暗色模式、跳过蓝图直生成、单题编辑与撤销/重做、覆盖矩阵补题、AI 辅助评分）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
 | `pnpm eval` | 30 条需求集的整份达标率，报告写入 `eval/runs/<runId>/` 并更新 `eval/runs/latest.json` |
 
 浏览器闭环需要本机 Chrome（`CHROME_PATH` 可指定；找不到会 `exit 2` 而不是静默跳过）。
@@ -202,7 +202,8 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 [verify] VC13 单题修改：建议作用域、答案改动进判分、越界 422 不写库 … 通过
 [verify] VC14 通用 Patch 与重做：RFC 6902 翻译、越界不写库、撤销可重做 … 通过
 [verify] VC15 覆盖矩阵补题：按知识点×层级回一题、不写库、越界 422 … 通过
-[verify] 全部通过（15/15）
+[verify] VC16 AI 辅助评分：默认关闭、只回建议、不写人工分 … 通过
+[verify] 全部通过（16/16）
 ```
 
 `pnpm verify` 证明的是 HTTP 语义闭环，不是浏览器里的真实操作；后者归 `browser-closed-loop.mjs`。两条证据链互不替代。
@@ -223,7 +224,7 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | `GET` | `/api/forms` | 列出当前教师的表单 |
 | `GET` | `/api/forms/:id` | 表单详情（含版本信息） |
 | `POST` | `/api/forms/:id/publish` | 发布指定版本快照 |
-| `GET` / `POST` | `/api/forms/:id/settings` | 表单展示设置（提交后是否展示答案解析；默认关闭） |
+| `GET` / `POST` | `/api/forms/:id/settings` | 表单设置（提交后展示答案解析、AI 辅助评分；均默认关闭） |
 | `PATCH` | `/api/forms/:id` | 受限修改：十一种 op，或 RFC 6902 `jsonPatch`（翻译回受限 op 后落库）；追加草稿版本，旧 `baseVersionId` 返回 409 |
 | `POST` | `/api/forms/:id/undo` | 撤销一步（当前版本压入重做栈，草稿指针退回父版本） |
 | `POST` | `/api/forms/:id/redo` | 重做一步（按 LIFO 弹栈；撤销后又改则栈清空） |
@@ -232,11 +233,14 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | `GET` | `/api/forms/:id/submissions` | 提交列表与统计（得分分布、每题正确率、覆盖矩阵） |
 | `GET` | `/api/forms/:id/submissions.csv` | 导出 CSV |
 | `POST` | `/api/forms/:id/submissions/:submissionId/grades` | 简答题人工批改 |
+| `POST` | `/api/forms/:id/submissions/:submissionId/ai-grade` | AI 辅助评分：仅简答、仅开关开启时；只回建议分，不落库 |
 | `POST` | `/api/submissions` | 学生提交（匿名，限流） |
 | `GET` | `/f/:slug` | 学生收集页（HTML 壳或公开视图 JSON） |
 | `GET` | `/healthz` | 健康检查 |
 
 学生端接口只经 `publicView(schema)` 输出：响应里不含 `answer`、`explanation` 等教师侧字段；提交响应默认只含得分；未发布的表单返回 404。唯一例外：教师在该表单上打开「提交后展示答案解析」后，`POST /api/submissions` 的**那一次成功响应**会带 `review`（对错、正确答案、解析）；`GET /f/:slug` 在任何情况下都不含答案。
+
+AI 辅助评分（A-23）是**教师侧**的另一个数据出口：只有教师逐表单打开 `aiGradingEnabled`，且只把被批改的那一道简答原文发给模型；接口只回建议分/理由，不自动写分、不记录答案。默认关闭，关闭时整条路由 403。
 
 ## 配置
 
