@@ -48,6 +48,11 @@ export interface ServerEnv {
    */
   readonly webIndexHtml: string;
   /**
+   * 允许修改全局模型设置（模式 / 端点 / Key）的教师邮箱，小写。
+   * 空串 = 任意已登录教师可改（单教师演示）；生产建议填写。
+   */
+  readonly adminEmail: string;
+  /**
    * 原始环境变量（只读）。
    *
    * 存在理由：本服务把大部分配置在启动期解析成强类型字段，但 LLM 那一组是**按请求**
@@ -155,6 +160,7 @@ export function readServerEnv(env: NodeJS.ProcessEnv = process.env): ServerEnv {
       "RATE_SUGGEST_PER_MIN",
     ),
     webIndexHtml: readString(env["WEB_INDEX_HTML"]),
+    adminEmail: readString(env["ADMIN_EMAIL"]).toLowerCase(),
     rawEnv: env,
   };
 }

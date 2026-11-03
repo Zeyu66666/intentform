@@ -34,6 +34,43 @@ import type { CoverageMatrix } from "./coverage.ts";
 import { patchOpsSchema, type PatchChange, type PatchError, type PatchOp } from "./patch.ts";
 import { jsonPatchOpsSchema, type JsonPatchOp } from "./json-patch.ts";
 
+/* --------------------------- 模型运行设置（2026-11-03） --------------------------- */
+
+/** 与 `@intentform/llm` 的 `LlmMode` 同值；schema 不能依赖 llm，所以在这里单列。 */
+export const LLM_MODES = ["live", "record", "replay", "mock"] as const;
+export type LlmModeName = (typeof LLM_MODES)[number];
+
+export const LLM_MODE_LABELS: Readonly<Record<LlmModeName, string>> = {
+  live: "真实调用（live）",
+  record: "真实调用并录制（record）",
+  replay: "回放录像（replay，不联网）",
+  mock: "内置演示数据（mock，不联网）",
+};
+
+/**
+ * 网页修改全局模型设置。**API Key 只提交给服务端、只存内存、永不回显**；
+ * 留空表示保持原 Key 不变，避免每次改端点都要重新输一遍。
+ */
+export const llmSettingsRequestSchema = z.object({
+  mode: z.enum(LLM_MODES),
+  baseUrl: z.string().trim().url("API 端点必须是合法 URL").max(300),
+  model: z.string().trim().min(1, "模型名不能为空").max(120),
+  apiKey: z.string().trim().max(300).optional(),
+});
+
+export type LlmSettingsRequest = z.infer<typeof llmSettingsRequestSchema>;
+
+export interface LlmSettingsResponse {
+  readonly ok: true;
+  readonly mode: LlmModeName;
+  readonly baseUrl: string;
+  readonly model: string;
+  /** 只回「有没有 Key」，绝不回 Key 本身。 */
+  readonly hasApiKey: boolean;
+  /** 当前登录教师是否允许改全局设置（由服务端 `ADMIN_EMAIL` 决定）。 */
+  readonly canEdit: boolean;
+}
+
 /** 路由表：前后端都从这里取路径，避免 "/api/forms/:id/publish" 手写成两种拼法。 */
 export const API_PATHS = {
   login: "/api/auth/login",
@@ -61,6 +98,7 @@ export const API_PATHS = {
   supplementItem: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/supplement`,
   aiGrade: (formId: string, submissionId: string) =>
     `/api/forms/${encodeURIComponent(formId)}/submissions/${encodeURIComponent(submissionId)}/ai-grade`,
+  llmSettings: "/api/settings/llm",
   submissions: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions`,
   submissionsCsv: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/submissions.csv`,
   /** 教师给某条提交里的某道简答打分（省赛 R-02）。 */
