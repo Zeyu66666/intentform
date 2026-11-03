@@ -380,9 +380,9 @@ export function App(): JSX.Element {
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-[var(--layout-gap)] overflow-y-auto p-2 xl:grid-cols-[var(--layout-left)_minmax(0,1fr)_var(--layout-right)] xl:overflow-hidden">
         <section
           aria-label="需求输入"
-          className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-line bg-surface"
+          className="flex max-h-full min-h-0 min-w-0 flex-col self-start overflow-y-auto rounded-md border border-line bg-surface"
         >
-          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <div className="min-w-0">
             <RequirementPanel
               requirement={requirement}
               status={state.status}

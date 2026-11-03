@@ -286,7 +286,7 @@ export function ItemEditor({
               <option value="">（无）</option>
               {objectives.map((objective) => (
                 <option key={objective.id} value={objective.id}>
-                  {`${objective.name}（${objective.id}）`}
+                  {objective.name}
                 </option>
               ))}
             </select>

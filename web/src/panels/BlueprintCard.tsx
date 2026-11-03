@@ -20,7 +20,6 @@ import {
   addSection,
   removeKnowledgePoint,
   removeSection,
-  withKnowledgeId,
   withKnowledgeName,
   withSectionCount,
   withSectionTitle,
@@ -100,7 +99,7 @@ export function BlueprintCard({
               }}
             />
             <input
-              className={`${INPUT} w-16`}
+              className={`${INPUT} w-20 text-right tabular-nums`}
               aria-label={`第 ${String(index + 1)} 章题量`}
               inputMode="numeric"
               value={String(section.count)}
@@ -125,12 +124,12 @@ export function BlueprintCard({
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-muted">题型分布</span>
-        <div className="grid grid-cols-3 gap-1">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
           {FIELD_TYPES.filter((type) => type !== "section").map((type) => (
-            <label key={type} className="flex items-center gap-1 text-xs text-muted">
-              <span className="w-8 shrink-0">{FIELD_TYPE_LABELS[type]}</span>
+            <label key={type} className="flex items-center justify-between gap-1 text-xs text-muted">
+              <span className="shrink-0">{FIELD_TYPE_LABELS[type]}</span>
               <input
-                className={`${INPUT} w-full`}
+                className={`${INPUT} w-16 text-right tabular-nums`}
                 inputMode="numeric"
                 aria-label={`${FIELD_TYPE_LABELS[type]}数量`}
                 value={String(blueprint.typeMix[type] ?? 0)}
@@ -173,19 +172,11 @@ export function BlueprintCard({
           {blueprint.knowledgePoints.map((point, index) => (
             <div key={`kp-${String(index)}`} className="flex items-center gap-1">
               <input
-                className={`${INPUT} min-w-0 flex-[2]`}
+                className={`${INPUT} min-w-0 flex-1`}
                 aria-label={`知识点 ${String(index + 1)} 名称`}
                 value={point.name}
                 onChange={(event) => {
                   onChange(withKnowledgeName(blueprint, index, event.target.value));
-                }}
-              />
-              <input
-                className={`${INPUT} min-w-0 flex-1`}
-                aria-label={`知识点 ${String(index + 1)} id`}
-                value={point.id}
-                onChange={(event) => {
-                  onChange(withKnowledgeId(blueprint, index, event.target.value));
                 }}
               />
               <button

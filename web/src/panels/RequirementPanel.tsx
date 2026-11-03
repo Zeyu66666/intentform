@@ -173,7 +173,7 @@ export function RequirementPanel({
         </p>
       </section>
 
-      <div className="mt-auto flex flex-col gap-1">
+      <div className="flex flex-col gap-1">
         {preStepSlot ?? (
           <button
             type="button"

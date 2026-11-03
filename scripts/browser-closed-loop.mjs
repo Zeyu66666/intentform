@@ -775,11 +775,58 @@ async function main() {
         "var el = byTestId('plan-confirm'); return el === null ? null : el.disabled;",
       );
       must(planConfirmDisabled === false, "改蓝图后确认按钮不应变灰");
+
+      // 题型分布的数字要真的看得清：输入框太窄时数字被裁掉，截图和 DOM 都留证。
+      const typeInputs = await page.evaluate(`
+        return Array.from(document.querySelectorAll('[aria-label$="数量"]')).map(function (el) {
+          var rect = el.getBoundingClientRect();
+          return { label: el.getAttribute('aria-label'), width: Math.round(rect.width), font: getComputedStyle(el).fontSize };
+        });
+      `);
+      must(typeInputs.length > 0, "蓝图里没有题型分布输入框");
+      must(
+        typeInputs.every((entry) => entry.width >= 48 && parseFloat(entry.font) >= 12),
+        `题型分布输入框太窄或字号太小：${JSON.stringify(typeInputs)}`,
+      );
+
+      // 知识点行不该把内部 id 当输入内容；id 仍留在蓝图里给题目引用。
+      const planInputValues = await page.evaluate(
+        "return Array.from(document.querySelectorAll('[data-testid=plan-card] input')).map(function (el) { return el.value; });",
+      );
+      must(
+        planInputValues.every((value) => !value.startsWith("kp_")),
+        `蓝图输入框暴露了知识点内部 id：${JSON.stringify(planInputValues)}`,
+      );
+
+      // 截图对准蓝图卡（左栏此刻已滚动），而不是只拍页面顶部。
+      await page.evaluate("var el = byTestId('plan-card'); if (el !== null) el.scrollIntoView({ block: 'start' });");
       artifacts.push(await page.screenshot("02b-plan.png"));
       const confirmPlan = await page.tap('[data-testid=plan-confirm]');
       must(confirmPlan.ok === true, `点不到「按蓝图生成」：${JSON.stringify(confirmPlan)}`);
       // mock 是内置脚本 + 一条故意写坏再修复的题：等前端把 done 状态渲染出来。
       await waitFor(async () => (await page.text()).includes("生成完成"), "生成流走完（出现「生成完成」）", 30_000);
+      // 截图前把页面与左栏都滚回顶部：上面为了拍蓝图卡滚过，不归位会少拍需求与生成方式。
+      const leftLayout = await page.evaluate(`
+        window.scrollTo(0, 0);
+        var section = document.querySelector('[aria-label="需求输入"]');
+        if (section === null) return null;
+        section.scrollTop = 0;
+        var children = Array.prototype.slice.call(section.children);
+        var childrenHeight = children.reduce(function (sum, el) {
+          return sum + el.getBoundingClientRect().height;
+        }, 0);
+        return {
+          sectionHeight: Math.round(section.getBoundingClientRect().height),
+          childrenHeight: Math.round(childrenHeight),
+          blankGap: Math.round(section.getBoundingClientRect().height - childrenHeight),
+        };
+      `);
+      must(leftLayout !== null, "找不到左栏");
+      // 左栏必须按内容收口：mt-auto/flex-1 曾把它拉到和预览栏一样高，按钮上方留出整屏空白。
+      must(
+        leftLayout.blankGap >= -4 && leftLayout.blankGap <= 4,
+        `左栏出现异常空白：${JSON.stringify(leftLayout)}`,
+      );
       artifacts.push(await page.screenshot("02-generate.png"));
       const source = await page.evaluate(
         "var el = byTestId('data-source'); return el === null ? '' : el.textContent.trim();",
@@ -827,6 +874,65 @@ async function main() {
         "收起编辑后预览卡显示改过的题干",
         10_000,
       );
+
+      // 单选答案行必须渲染公式：把选项改成 LaTeX，收起编辑后答案里应是 KaTeX，
+      // 不是 `答案：b（$2x-1=7$）` 这种原样美元符。
+      const mathEdit = await page.tap('[data-testid="preview-edit-q_single"]');
+      must(mathEdit.ok === true, `点不到第 2 题的「编辑这题」：${JSON.stringify(mathEdit)}`);
+      await waitFor(
+        async () =>
+          (await page.evaluate("return byTestId('preview-editor-q_single') !== null")),
+        "第 2 题进入预览编辑态",
+        10_000,
+      );
+      const mathTyped = await page.evaluate(
+        `return setValue('[data-testid="preview-editor-q_single"] [aria-label="选项 2"]', "$2x-1=7$");`,
+      );
+      must(mathTyped.ok === true, `选项没改成公式：${JSON.stringify(mathTyped)}`);
+      const mathClosed = await page.tap('[data-testid="preview-edit-q_single"]');
+      must(mathClosed.ok === true, `点不到第 2 题的「收起编辑」：${JSON.stringify(mathClosed)}`);
+      const answerLine = await waitFor(
+        async () => {
+          const found = await page.evaluate(`
+            var field = document.querySelector('#field-q_single');
+            if (field === null) return null;
+            var text = field.textContent || '';
+            if (text.indexOf('答案：') < 0 || text.indexOf('$2x-1=7$') >= 0) return null;
+            return { hasKatex: field.querySelector('.katex') !== null, text: text.slice(0, 80) };
+          `);
+          return found !== null && found.hasKatex ? found : null;
+        },
+        "单选答案行出现 KaTeX 且不再显示原始 $...$",
+        10_000,
+      );
+      must(answerLine.hasKatex === true, `答案行没有 KaTeX：${JSON.stringify(answerLine)}`);
+
+      // 接着把选项改回纯文本，避免这次渲染验证污染后面发布/学生页的测试数据。
+      const restoreEdit = await page.tap('[data-testid="preview-edit-q_single"]');
+      must(restoreEdit.ok === true, `点不到第 2 题（还原选项）：${JSON.stringify(restoreEdit)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('preview-editor-q_single') !== null")),
+        "第 2 题再次进入预览编辑态",
+        10_000,
+      );
+      const restored = await page.evaluate(
+        `return setValue('[data-testid="preview-editor-q_single"] [aria-label="选项 2"]', "4");`,
+      );
+      must(restored.ok === true, `选项没还原成纯文本：${JSON.stringify(restored)}`);
+      const restoreClosed = await page.tap('[data-testid="preview-edit-q_single"]');
+      must(restoreClosed.ok === true, `点不到第 2 题（还原后收起）：${JSON.stringify(restoreClosed)}`);
+      await waitFor(
+        async () =>
+          (await page.evaluate(`
+            var field = document.querySelector('#field-q_single');
+            if (field === null) return null;
+            var lines = Array.prototype.slice.call(field.querySelectorAll('p'));
+            var answer = lines.find(function (p) { return (p.textContent || '').indexOf('答案：') === 0; });
+            return answer !== undefined && (answer.textContent || '').indexOf('b（4）') >= 0 ? true : null;
+          `)),
+        "还原后单选答案行显示纯文本 b（4）",
+        10_000,
+      );
       return {
         requirement: REQUIREMENT,
         source,
@@ -834,6 +940,8 @@ async function main() {
         planTitleEdited: editedPlanTitle,
         editedItemId,
         editedTitle,
+        answerMath: answerLine.text,
+        leftLayout,
         sawRepairEntry: true,
       };
     });
@@ -915,14 +1023,26 @@ async function main() {
       // 零提交时的每题正确率（R-04）：区块在，但每行的正确率必须是 `—`。
       // 显示 `0%` 会把「还没有人提交」读成「全班全错」——这正是本轮要防的误读，
       // 所以它必须在**还没有数据**的这一刻被断死，而不是只看有数据的样子。
-      const emptyStats = await itemStatRows(page);
-      must(emptyStats.length > 0, "看板上没有「每题正确率」区块");
+      const emptyStats = await waitFor(
+        async () => {
+          const rows = await itemStatRows(page);
+          return rows.length > 0 ? rows : null;
+        },
+        "看板出现「每题正确率」区块",
+        10_000,
+      );
       must(
         emptyStats.every((cells) => cells[3] === "—"),
         `零提交时正确率应显示 —（不是 0%），实际 ${JSON.stringify(emptyStats)}`,
       );
-      const emptyCoverage = await coverageMatrixRows(page);
-      must(emptyCoverage.length > 0, "看板上没有「知识点 × 布鲁姆覆盖」区块");
+      const emptyCoverage = await waitFor(
+        async () => {
+          const rows = await coverageMatrixRows(page);
+          return rows.length > 0 ? rows : null;
+        },
+        "看板出现「知识点 × 布鲁姆覆盖」区块",
+        10_000,
+      );
       must(
         emptyCoverage.every((cells) => cells.length === 7 && cells.slice(1).every((cell) => /^\d+$/.test(cell))),
         `零提交时覆盖矩阵应保留六个数值单元格，实际 ${JSON.stringify(emptyCoverage)}`,

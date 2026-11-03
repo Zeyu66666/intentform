@@ -178,7 +178,9 @@ const EDIT_REGISTRY: {
       <>
         <OptionList options={item.options} answers={[item.answer]} />
         <AnswerLine label="答案">
-          {item.answer}（{item.options.find((option) => option.id === item.answer)?.text ?? "选项不存在"}）
+          {item.answer}（
+          <MathText text={item.options.find((option) => option.id === item.answer)?.text ?? "选项不存在"} />
+          ）
         </AnswerLine>
       </>
     ),
