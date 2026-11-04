@@ -11,11 +11,17 @@ import { parseBlueprint, type FormBlueprint } from "@intentform/schema";
 
 import {
   addKnowledgePoint,
+  addQuota,
   addSection,
+  quotaRemaining,
   removeKnowledgePoint,
+  removeQuota,
   removeSection,
   withKnowledgeId,
   withKnowledgeName,
+  withQuotaCount,
+  withQuotaKnowledgePoint,
+  withQuotaType,
   withSectionCount,
   withSectionTitle,
   withTitle,
@@ -169,5 +175,102 @@ describe("知识点编辑", () => {
 
     const removed = removeKnowledgePoint(added, 0);
     expect(removed.knowledgePoints).toEqual([added.knowledgePoints[1]]);
+  });
+});
+
+describe("知识点 × 题型配额", () => {
+  it("加配额只占位，不增加题量", () => {
+    const next = addQuota(BASE);
+    expect(next.quotas).toEqual([{ knowledgePoint: "kp_vertex", type: "single", count: 1 }]);
+    expect(sumTypes(next)).toBe(next.totalCount);
+    expectValid(next);
+  });
+
+  it("没有知识点或没有题型余量时加配额原样返回", () => {
+    const noPoints: FormBlueprint = { ...BASE, knowledgePoints: [] };
+    expect(addQuota(noPoints)).toBe(noPoints);
+    const full: FormBlueprint = {
+      ...BASE,
+      typeMix: { single: 1 },
+      quotas: [{ knowledgePoint: "kp_vertex", type: "single", count: 1 }],
+    };
+    expect(addQuota(full)).toBe(full);
+  });
+
+  it("题量夹在 1..该题型剩余容量", () => {
+    const one = addQuota(BASE);
+    expect(quotaRemaining(one, "single")).toBe(1);
+    expect(withQuotaCount(one, 0, 99).quotas?.[0]?.count).toBe(2);
+    expect(withQuotaCount(one, 0, 0).quotas?.[0]?.count).toBe(1);
+    expectValid(withQuotaCount(one, 0, 2));
+  });
+
+  it("换题型按新题型余量裁剪；没有余量的题型不换", () => {
+    const one = addQuota(BASE);
+    const changed = withQuotaType(one, 0, "short");
+    expect(changed.quotas?.[0]).toEqual({ knowledgePoint: "kp_vertex", type: "short", count: 1 });
+    expectValid(changed);
+
+    const fullShort: FormBlueprint = {
+      ...BASE,
+      quotas: [{ knowledgePoint: "kp_vertex", type: "short", count: 1 }],
+    };
+    expect(withQuotaType(fullShort, 0, "short")).toBe(fullShort);
+    expect(withQuotaType(fullShort, 0, "multi")).toBe(fullShort);
+  });
+
+  it("改知识点只动目标条目的引用", () => {
+    const two: FormBlueprint = {
+      ...BASE,
+      knowledgePoints: [
+        { id: "kp_vertex", name: "顶点坐标" },
+        { id: "kp_open", name: "开口方向" },
+      ],
+      quotas: [
+        { knowledgePoint: "kp_vertex", type: "single", count: 1 },
+        { knowledgePoint: "kp_vertex", type: "short", count: 1 },
+      ],
+    };
+    const changed = withQuotaKnowledgePoint(two, 1, "kp_open");
+    expect(changed.quotas?.[1]?.knowledgePoint).toBe("kp_open");
+    expect(changed.quotas?.[0]?.knowledgePoint).toBe("kp_vertex");
+    expectValid(changed);
+  });
+
+  it("删除配额按位置生效", () => {
+    const two: FormBlueprint = { ...BASE, quotas: [
+      { knowledgePoint: "kp_vertex", type: "single", count: 1 },
+      { knowledgePoint: "kp_vertex", type: "short", count: 1 },
+    ] };
+    expect(removeQuota(two, 0).quotas).toEqual([{ knowledgePoint: "kp_vertex", type: "short", count: 1 }]);
+  });
+
+  it("题型总数调小会裁剪配额而不是把蓝图改成非法", () => {
+    const one = addQuota(BASE);
+    const shrunk = withTypeCount(one, "single", 0);
+    expect((shrunk.quotas ?? []).every((quota) => quota.type !== "single")).toBe(true);
+    expectValid(shrunk);
+  });
+
+  it("章节重分导致题型容量变小时同样裁剪", () => {
+    const withTwo: FormBlueprint = {
+      ...BASE,
+      typeMix: { single: 5 },
+      quotas: [{ knowledgePoint: "kp_vertex", type: "single", count: 2 }],
+    };
+    const next = withSectionCount(withTwo, 0, 1);
+    expect((next.quotas ?? []).every((quota) => quota.count <= (next.typeMix.single ?? 0))).toBe(true);
+    expectValid(next);
+  });
+
+  it("删除知识点连带删除它的配额；改 id 同步改写引用", () => {
+    const one = addQuota(BASE);
+    const removed = removeKnowledgePoint(one, 0);
+    expect(removed.quotas).toEqual([]);
+    expectValid(removed);
+
+    const renamed = withKnowledgeId(one, 0, "kp_open");
+    expect(renamed.quotas?.[0]?.knowledgePoint).toBe("kp_open");
+    expectValid(renamed);
   });
 });

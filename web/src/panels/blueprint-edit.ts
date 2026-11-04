@@ -13,9 +13,11 @@
 import {
   FIELD_TYPES,
   LIMITS,
+  type BlueprintQuota,
   type FieldType,
   type FormBlueprint,
   type FormKind,
+  type QuotaType,
 } from "@intentform/schema";
 
 const NON_SECTION_TYPES = FIELD_TYPES.filter((type) => type !== "section");
@@ -48,6 +50,27 @@ function distribute(total: number, weights: readonly number[]): number[] {
   return floors;
 }
 
+/**
+ * 把配额裁到新题型容量的范围里：按原顺序保留，超出的条目先减题量再丢弃。
+ * 题型总数被调小时，蓝图必须仍然合法，而不是把确认按钮变灰。
+ */
+function fitQuotas(
+  quotas: readonly BlueprintQuota[],
+  typeMix: Readonly<Partial<Record<FieldType, number>>>,
+): BlueprintQuota[] {
+  const used = new Map<QuotaType, number>();
+  const fitted: BlueprintQuota[] = [];
+  for (const quota of quotas) {
+    const capacity = typeMix[quota.type] ?? 0;
+    const already = used.get(quota.type) ?? 0;
+    const count = Math.min(quota.count, Math.max(0, capacity - already));
+    if (count <= 0) continue;
+    fitted.push({ ...quota, count });
+    used.set(quota.type, already + count);
+  }
+  return fitted;
+}
+
 function withSectionsAndMix(
   blueprint: FormBlueprint,
   sections: readonly { readonly title: string; readonly count: number }[],
@@ -65,6 +88,9 @@ function withSectionsAndMix(
     totalCount,
     typeMix: typeCounts,
     totalScore: blueprint.kind === "survey" ? 0 : blueprint.totalScore,
+    ...(blueprint.quotas === undefined
+      ? {}
+      : { quotas: fitQuotas(blueprint.quotas, typeCounts) }),
   };
 }
 
@@ -160,9 +186,19 @@ export function withKnowledgeName(blueprint: FormBlueprint, index: number, name:
 }
 
 export function withKnowledgeId(blueprint: FormBlueprint, index: number, id: string): FormBlueprint {
+  const previous = blueprint.knowledgePoints[index]?.id;
+  const knowledgePoints = blueprint.knowledgePoints.map((point, at) =>
+    at === index ? { ...point, id } : point,
+  );
+  if (previous === undefined || previous === id || blueprint.quotas === undefined) {
+    return { ...blueprint, knowledgePoints };
+  }
   return {
     ...blueprint,
-    knowledgePoints: blueprint.knowledgePoints.map((point, at) => (at === index ? { ...point, id } : point)),
+    knowledgePoints,
+    quotas: blueprint.quotas.map((quota) =>
+      quota.knowledgePoint === previous ? { ...quota, knowledgePoint: id } : quota,
+    ),
   };
 }
 
@@ -178,8 +214,105 @@ export function addKnowledgePoint(blueprint: FormBlueprint): FormBlueprint {
 }
 
 export function removeKnowledgePoint(blueprint: FormBlueprint, index: number): FormBlueprint {
+  const removed = blueprint.knowledgePoints[index];
+  const knowledgePoints = blueprint.knowledgePoints.filter((_, at) => at !== index);
+  if (removed === undefined || blueprint.quotas === undefined) {
+    return { ...blueprint, knowledgePoints };
+  }
   return {
     ...blueprint,
-    knowledgePoints: blueprint.knowledgePoints.filter((_, at) => at !== index),
+    knowledgePoints,
+    quotas: blueprint.quotas.filter((quota) => quota.knowledgePoint !== removed.id),
+  };
+}
+
+/** 某题型还能再指定几道；`exceptIndex` 用于编辑单条配额时排除它自己。 */
+export function quotaRemaining(
+  blueprint: FormBlueprint,
+  type: FieldType,
+  exceptIndex = -1,
+): number {
+  if (type === "section") return 0;
+  const used = (blueprint.quotas ?? []).reduce(
+    (sum, quota, index) =>
+      index !== exceptIndex && quota.type === type ? sum + quota.count : sum,
+    0,
+  );
+  return Math.max(0, (blueprint.typeMix[type] ?? 0) - used);
+}
+
+/** 加一条指定：优先第一个知识点、第一个还有余量且未被占用的题型，初始 1 道。 */
+export function addQuota(blueprint: FormBlueprint): FormBlueprint {
+  for (const point of blueprint.knowledgePoints) {
+    for (const type of NON_SECTION_TYPES) {
+      if (quotaRemaining(blueprint, type) === 0) continue;
+      const duplicated = (blueprint.quotas ?? []).some(
+        (quota) => quota.knowledgePoint === point.id && quota.type === type,
+      );
+      if (duplicated) continue;
+      return {
+        ...blueprint,
+        quotas: [...(blueprint.quotas ?? []), { knowledgePoint: point.id, type, count: 1 }],
+      };
+    }
+  }
+  return blueprint;
+}
+
+export function removeQuota(blueprint: FormBlueprint, index: number): FormBlueprint {
+  if (blueprint.quotas === undefined) return blueprint;
+  return { ...blueprint, quotas: blueprint.quotas.filter((_, at) => at !== index) };
+}
+
+export function withQuotaKnowledgePoint(
+  blueprint: FormBlueprint,
+  index: number,
+  knowledgePoint: string,
+): FormBlueprint {
+  const quota = blueprint.quotas?.[index];
+  if (quota === undefined || blueprint.knowledgePoints.every((point) => point.id !== knowledgePoint)) {
+    return blueprint;
+  }
+  return {
+    ...blueprint,
+    quotas: (blueprint.quotas ?? []).map((entry, at) =>
+      at === index ? { ...entry, knowledgePoint } : entry,
+    ),
+  };
+}
+
+export function withQuotaType(
+  blueprint: FormBlueprint,
+  index: number,
+  type: FieldType,
+): FormBlueprint {
+  const quota = blueprint.quotas?.[index];
+  if (quota === undefined || type === "section" || type === quota.type) return blueprint;
+  const remaining = quotaRemaining(blueprint, type, index);
+  if (remaining === 0) return blueprint;
+  const count = Math.min(quota.count, remaining);
+  return {
+    ...blueprint,
+    quotas: (blueprint.quotas ?? []).map((entry, at) =>
+      at === index ? { ...entry, type, count } : entry,
+    ),
+  };
+}
+
+export function withQuotaCount(
+  blueprint: FormBlueprint,
+  index: number,
+  value: number,
+): FormBlueprint {
+  const quota = blueprint.quotas?.[index];
+  if (quota === undefined) return blueprint;
+  const remaining = quotaRemaining(blueprint, quota.type, index);
+  if (remaining === 0) return blueprint;
+  const count = Math.min(remaining, Math.max(1, clampCount(value)));
+  return {
+    ...blueprint,
+    quotas: (blueprint.quotas ?? []).map((entry, at) =>
+      at === index ? { ...entry, count } : entry,
+    ),
   };
 }
