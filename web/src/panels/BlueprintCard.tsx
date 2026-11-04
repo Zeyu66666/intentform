@@ -9,6 +9,7 @@
 import {
   FIELD_TYPE_LABELS,
   FIELD_TYPES,
+  QUOTA_TYPES,
   parseBlueprint,
   summarizeBlueprint,
   type FieldType,
@@ -55,7 +56,7 @@ export function BlueprintCard({
   const summary = checked.ok ? summarizeBlueprint(checked.blueprint) : checked.message;
   const valid = checked.ok;
   const quotas = blueprint.quotas ?? [];
-  const quotaTypes = FIELD_TYPES.filter((type) => type !== "section");
+  const quotaTypes = QUOTA_TYPES;
   const canAddQuota = blueprint.knowledgePoints.length > 0 && addQuota(blueprint) !== blueprint;
 
   return (

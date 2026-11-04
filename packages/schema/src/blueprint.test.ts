@@ -110,6 +110,16 @@ describe("blueprintSchema", () => {
     );
     expect(result.success).toBe(false);
   });
+
+  it("量表没有知识点字段，不能作为配额题型", () => {
+    const result = blueprintSchema.safeParse(
+      blueprintJson({
+        typeMix: { single: 3, fill: 2, short: 2, scale: 1 },
+        quotas: [{ knowledgePoint: "kp-open", type: "scale", count: 1 }],
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("summarizeBlueprint", () => {

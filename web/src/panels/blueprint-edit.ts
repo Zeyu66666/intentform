@@ -13,6 +13,7 @@
 import {
   FIELD_TYPES,
   LIMITS,
+  QUOTA_TYPES,
   type BlueprintQuota,
   type FieldType,
   type FormBlueprint,
@@ -245,7 +246,7 @@ export function quotaRemaining(
   type: FieldType,
   exceptIndex = -1,
 ): number {
-  if (type === "section") return 0;
+  if (type === "section" || type === "scale") return 0;
   const used = (blueprint.quotas ?? []).reduce(
     (sum, quota, index) =>
       index !== exceptIndex && quota.type === type ? sum + quota.count : sum,
@@ -257,7 +258,7 @@ export function quotaRemaining(
 /** 加一条指定：优先第一个知识点、第一个还有余量且未被占用的题型，初始 1 道。 */
 export function addQuota(blueprint: FormBlueprint): FormBlueprint {
   for (const point of blueprint.knowledgePoints) {
-    for (const type of NON_SECTION_TYPES) {
+    for (const type of QUOTA_TYPES) {
       if (quotaRemaining(blueprint, type) === 0) continue;
       if (!quotaPairFree(blueprint, point.id, type)) continue;
       return {
@@ -301,7 +302,9 @@ export function withQuotaType(
   type: FieldType,
 ): FormBlueprint {
   const quota = blueprint.quotas?.[index];
-  if (quota === undefined || type === "section" || type === quota.type) return blueprint;
+  if (quota === undefined || type === "section" || type === "scale" || type === quota.type) {
+    return blueprint;
+  }
   if (!quotaPairFree(blueprint, quota.knowledgePoint, type, index)) return blueprint;
   const remaining = quotaRemaining(blueprint, type, index);
   if (remaining === 0) return blueprint;

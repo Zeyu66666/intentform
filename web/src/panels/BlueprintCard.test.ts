@@ -63,5 +63,6 @@ describe("BlueprintCard 的知识点标签", () => {
     expect(markup).toContain("立体几何");
     expect(markup).toContain("简答");
     expect(markup).not.toContain(">kp_solid<");
+    expect(markup).not.toContain('value="scale"');
   });
 });

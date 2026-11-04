@@ -31,8 +31,13 @@ export interface BlueprintKnowledgePoint {
   readonly name: string;
 }
 
-/** 非分节题型；配额只能落在这六种上。 */
-export type QuotaType = Exclude<FieldType, "section">;
+/**
+ * 可配额题型：量表没有 `knowledgePoint` 字段，配额对它永远无法兑现；
+ * 分节不是题目。其余五种是唯二能同时表达「知识点」和「题型」的载体。
+ */
+export const QUOTA_TYPES = ["single", "multi", "fill", "number", "short"] as const;
+
+export type QuotaType = (typeof QUOTA_TYPES)[number];
 
 /**
  * 「某知识点出几道某题型」的部分分配。
@@ -101,7 +106,7 @@ const typeMixSchema = z
   })
   .strict();
 
-const quotaTypeSchema = z.enum(["single", "multi", "fill", "number", "short", "scale"]);
+const quotaTypeSchema = z.enum(QUOTA_TYPES);
 
 const quotaSchema = z
   .object({
