@@ -358,6 +358,13 @@ const PAGE_HELPERS = `
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return { ok: true, value: el.value };
   }
+  function setSelectAt(selector, index, value) {
+    var el = document.querySelectorAll(selector)[index];
+    if (el === undefined) return { ok: false, reason: 'missing ' + selector + '[' + index + ']' };
+    el.value = value;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { ok: true, value: el.value };
+  }
   function bodyText() { return document.body === null ? '' : document.body.innerText; }
   function buttonLabels() {
     return Array.prototype.map.call(document.querySelectorAll('button'), function (button) {
@@ -755,6 +762,56 @@ async function main() {
       );
       must(planSummary.length > 0, "蓝图卡片没有摘要");
 
+      // 知识点 × 题型配额：给立体几何指定 1 道简答 + 1 道单选。
+      // 先加一个知识点并改名，再加两条指定；截图会留下这个编辑态。
+      const addedPoint = await page.evaluate("return clickButtonByText('^加知识点$')");
+      must(addedPoint === true, "点不到「加知识点」");
+      const namedPoint = await page.evaluate(
+        `return setValue('[aria-label="知识点 1 名称"]', "立体几何");`,
+      );
+      must(namedPoint.ok === true, `知识点没改名：${JSON.stringify(namedPoint)}`);
+      for (const label of ["第 1 条", "第 2 条"]) {
+        const added = await page.tap('[data-testid="plan-quota-add"]');
+        must(added.ok === true, `点不到「加指定」（${label}）：${JSON.stringify(added)}`);
+      }
+      const shortSet = await page.evaluate(
+        "return setSelectAt('[data-testid=plan-quota-type]', 0, 'short');",
+      );
+      must(shortSet.ok === true, `第 1 条指定没改成简答：${JSON.stringify(shortSet)}`);
+      await waitFor(
+        async () =>
+          (await page.evaluate(
+            "var rows = document.querySelectorAll('[data-testid=plan-quota-type]'); return rows[0] !== undefined && rows[0].value === 'short';",
+          )),
+        "第 1 条指定保留简答",
+        10_000,
+      );
+      const singleSet = await page.evaluate(
+        "return setSelectAt('[data-testid=plan-quota-type]', 1, 'single');",
+      );
+      must(singleSet.ok === true, `第 2 条指定没改成单选：${JSON.stringify(singleSet)}`);
+      const quotaRows = await waitFor(
+        async () => {
+          const rows = await page.evaluate(`
+            return Array.prototype.map.call(document.querySelectorAll('[data-testid=plan-quota]'), function (row) {
+              return {
+                point: row.querySelector('[data-testid=plan-quota-kp]').selectedOptions[0].textContent.trim(),
+                type: row.querySelector('[data-testid=plan-quota-type]').value,
+                count: row.querySelector('[data-testid=plan-quota-count]').value,
+              };
+            });
+          `);
+          return rows.length === 2 &&
+            rows[0].type === "short" &&
+            rows[1].type === "single" &&
+            rows.every((row) => row.point === "立体几何" && row.count === "1")
+            ? rows
+            : null;
+        },
+        "两条配额显示为立体几何的简答 1 + 单选 1",
+        10_000,
+      );
+
       // 蓝图不是只读公告：改标题后受控输入必须保留新值，确认按钮仍可用。
       const editedPlanTitle = "教师改过的蓝图标题";
       const planTyped = await page.evaluate(
@@ -801,6 +858,17 @@ async function main() {
       // 截图对准蓝图卡（左栏此刻已滚动），而不是只拍页面顶部。
       await page.evaluate("var el = byTestId('plan-card'); if (el !== null) el.scrollIntoView({ block: 'start' });");
       artifacts.push(await page.screenshot("02b-plan.png"));
+      // 截图之后清理演示用的知识点；删除知识点应连带删掉它的两条配额。
+      const removedPoint = await page.tap('[aria-label="删除知识点 1"]');
+      must(removedPoint.ok === true, `点不到「删除知识点」：${JSON.stringify(removedPoint)}`);
+      await waitFor(
+        async () =>
+          (await page.evaluate(
+            "return document.querySelectorAll('[data-testid=plan-quota]').length === 0;",
+          )),
+        "删除知识点后配额行一并消失",
+        10_000,
+      );
       const confirmPlan = await page.tap('[data-testid=plan-confirm]');
       must(confirmPlan.ok === true, `点不到「按蓝图生成」：${JSON.stringify(confirmPlan)}`);
       // mock 是内置脚本 + 一条故意写坏再修复的题：等前端把 done 状态渲染出来。
@@ -938,6 +1006,7 @@ async function main() {
         source,
         planSummary,
         planTitleEdited: editedPlanTitle,
+        quotaRows,
         editedItemId,
         editedTitle,
         answerMath: answerLine.text,
