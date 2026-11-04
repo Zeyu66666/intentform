@@ -36,7 +36,7 @@
 - Test: `packages/schema/src/blueprint.test.ts`
 
 **Interfaces:**
-- Produces: `BlueprintQuota { knowledgePoint: string; type: Exclude<FieldType, "section">; count: number }`
+- Produces: `BlueprintQuota { knowledgePoint: string; type: QuotaType; count: number }`，其中 `QuotaType` 只含 `single/multi/fill/number/short`（量表没有知识点字段）
 - Produces: `FormBlueprint.quotas?: readonly BlueprintQuota[]`
 - Produces: `BlueprintDeviation.quotaMismatches: readonly BlueprintQuotaMismatch[]`
 - Produces: `BlueprintQuotaMismatch { knowledgePoint: string; type: QuotaType; planned: number; actual: number }`

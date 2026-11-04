@@ -182,7 +182,7 @@ pnpm eval                       # 整份需求达标率（默认 replay，不用
 | 命令 | 覆盖范围 |
 |---|---|
 | `pnpm typecheck` | 四个包全量类型检查 |
-| `pnpm test` | 83 个测试文件 / 972 条用例（oxlint `--deny-warnings`、Vitest） |
+| `pnpm test` | 83 个测试文件 / 973 条用例（oxlint `--deny-warnings`、Vitest） |
 | `node scripts/verify.mjs` | HTTP 语义闭环 VC1–VC17；自起临时服务与临时库，不碰 `data/intentform.db` |
 | `node scripts/browser-closed-loop.mjs` | 先构建生产前端、再由同源 Node 托管，用 headless Chrome 点完十八步（含登录优先、蓝图与预览就地编辑、打印版 PDF、答案解析、暗色模式、跳过蓝图直生成、单题编辑与撤销/重做、覆盖矩阵补题、AI 辅助评分、模型设置填 Key 不回显）并写截图到 `docs/evidence/`；同时断言首页 CSP 响应头 |
 | `pnpm eval` | 30 条需求集的整份达标率，报告写入 `eval/runs/<runId>/` 并更新 `eval/runs/latest.json` |

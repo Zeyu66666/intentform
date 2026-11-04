@@ -2,7 +2,7 @@
 
 - 迭代：蓝图配额 · 日期：`2026-11-04` · 涉及模块：`packages/schema`、`web`、`scripts`、文档
 - 会话导出：本轮未导出原始会话；本文件按实际修改与命令结果整理
-- 提交边界：契约 `b9ada97`、编辑纯函数 `901365d`、蓝图卡 `fba44fe`、闭环证据 `baabbb6`、重复组合修复 `a20f533`、本留痕与设计/计划随后一个 docs commit
+- 提交边界：契约 `b9ada97`、编辑纯函数 `901365d`、蓝图卡 `fba44fe`、闭环证据 `baabbb6`、重复组合修复 `a20f533`、审查后修复 `f52d51b` / `a59f6e2`、本留痕与设计/计划随后一个 docs commit
 
 ## 开工前写清的四件事（纪律 4.0 第 1 条）
 
@@ -33,6 +33,8 @@
 2. **`addQuota` 最初写成「同一知识点只能有一条」**。这会直接挡住负责人要的「立体几何同时出单选和简答」。改为按 `(知识点, 题型)` 判重，同一知识点可以有多种题型。
 3. **改知识点/题型会制造重复组合**。`withQuotaKnowledgePoint` / `withQuotaType` 只检查容量，没检查目标组合是否已被另一行占用；补了会失败的测试，再用 `quotaPairFree` 统一判重，界面也禁用会重复的选项。
 4. **浏览器 mock 蓝图没有知识点**。为了让闭环覆盖真实编辑路径，测试先手动加知识点并改名「立体几何」，加两条配额并断言，截图后删除知识点，再验证配额行一起消失；这样既不污染后续生成，也证明级联删除。
+5. **闭环的 `setSelectAt` 只改 DOM、没进 React state**。初版直接 `el.value = ...` 再派发 `change`，React 的 value tracker 把这次赋值当成已同步，`onChange` 不触发；`waitFor` 只读 DOM，于是测试是假绿。改用 `HTMLSelectElement.prototype` 的原生 setter（与 `setValue` 同一条路径），并在改标题触发重渲染后重新读取两条配额，确认 state 没有被覆写回原值。
+6. **量表被当成可配额题型**。`scaleFieldSchema` 没有 `knowledgePoint`，量表配额永远无法兑现，`quotaMismatches` 会一直报偏差。把可配额题型收窄为 `single/multi/fill/number/short`，schema、编辑函数与下拉同步排除量表，并补一条「量表不能作配额题型」的失败测试。
 
 自己否决的：
 
@@ -46,7 +48,7 @@
 
 | 命令 | 结果 |
 |---|---|
-| `pnpm check` | **83 文件 / 972 用例全绿**；oxlint 0 告警、0 错误；4 包 typecheck 通过 |
+| `pnpm check` | **83 文件 / 973 用例全绿**；oxlint 0 告警、0 错误；4 包 typecheck 通过 |
 | `node scripts/verify.mjs` | **VC1–VC17 全过（17/17）** |
 | `node scripts/browser-closed-loop.mjs` | **18 步全绿 / 30 个产物**；第 2 步新增配额编辑与级联删除断言 |
 | `node scripts/secret-scan.mjs` / `--history` | 均 0 命中 |
@@ -58,12 +60,15 @@
 | `fba44fe` | `feat(web): 蓝图卡按知识点指定题型 [P23]` | 配额编辑行、中文知识点下拉 |
 | `baabbb6` | `test(scripts): 闭环覆盖蓝图知识点配额 [P23]` | 加两条配额、截图、级联删除 |
 | `a20f533` | `fix(web): 配额编辑不制造重复组合 [P23]` | `quotaPairFree` + 失败测试 |
+| `f52d51b` | `fix(schema): 配额题型排除无知识点的量表 [P23]` | `QUOTA_TYPES` 收窄到五种题型；schema/编辑器/下拉同步 |
+| `a59f6e2` | `test(scripts): 配额题型下拉验证 React 受控状态 [P23]` | 原生 setter + 重渲染后重读，消灭假绿 |
 
 **已知边界**：
 
 - 配额只作为蓝图 JSON 的一部分进入生成请求，提示词正文没有新增解释；真实模型是否遵守配额靠生成后的 `quotaMismatches` 对照，不保证 100% 兑现。若真实上游证明不遵守，下一轮需升 `generate.v4` 并重录 fixture。
 - 配额不进入整表门禁；未兑现时只显示「结构与蓝图有偏差」，不阻止发布。
 - 问卷不显示配额编辑区；旧问卷蓝图即使带 `quotas` 也不会被额外拒绝，但生成链路不会使用它。
+- 量表不可作为配额题型：`scaleFieldSchema` 没有 `knowledgePoint`，配额对它无法兑现。
 - 浏览器闭环为保持后续流程不变，在截图后删除了演示知识点，因此这一步证明的是编辑与级联删除，不是模型按配额生成。
 
 ## 脱敏说明

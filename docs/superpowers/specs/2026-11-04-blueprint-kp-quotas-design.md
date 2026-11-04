@@ -22,9 +22,12 @@
 ## 契约
 
 ```ts
+// 量表没有 knowledgePoint 字段，配额对它永远无法兑现，所以只允许五种题型。
+type QuotaType = "single" | "multi" | "fill" | "number" | "short";
+
 interface BlueprintQuota {
   readonly knowledgePoint: string; // 必须存在于 knowledgePoints[].id
-  readonly type: Exclude<FieldType, "section">;
+  readonly type: QuotaType;
   readonly count: number; // 1..LIMITS.fieldsMax
 }
 
