@@ -145,3 +145,26 @@ describe("planForm", () => {
     ).rejects.toMatchObject({ code: "llm_invalid_output" });
   });
 });
+
+describe("plan 提示词 · 难度与参考卷", () => {
+  it("系统提示要求 difficultyMix 与 styleNotes，并写明不得复用原题", () => {
+    const prompt = buildPlanSystemPrompt();
+    expect(prompt).toContain("difficultyMix");
+    expect(prompt).toContain("styleNotes");
+    expect(prompt).toContain("不得");
+    expect(prompt).toContain("原题");
+  });
+
+  it("参考卷与搜索结果各自进独立定界块", () => {
+    const messages = buildPlanMessages("出一份高三数学试卷", {
+      reference: "参考题干唯一标记-ALPHA",
+      searchResults: [{ title: "搜索结果", snippet: "摘要-BETA", url: "https://example.com/paper" }],
+    });
+    const user = messages[1]?.content ?? "";
+    expect(user).toContain("<<<REFERENCE");
+    expect(user).toContain("参考题干唯一标记-ALPHA");
+    expect(user).toContain("<<<SEARCH");
+    expect(user).toContain("摘要-BETA");
+    expect(user).toContain("https://example.com/paper");
+  });
+});
