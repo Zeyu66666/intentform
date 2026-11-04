@@ -247,3 +247,62 @@ describe("各字段类型的结构约束", () => {
     expect(formSchema.safeParse(survey).success).toBe(true);
   });
 });
+
+describe("显示文本的换行还原（2026-11-04 简答题干事故）", () => {
+  it("把双重转义的字面 \\n 还原成真换行", () => {
+    const input = clone(validQuiz()) as { items: Record<string, unknown>[] };
+    const short = input.items[5];
+    if (short) {
+      short["title"] = "已知函数 $f(x)=x^2$。\\n（1）求单调区间；\\n（2）若 $f(a)=1$，求 $a$。";
+      short["explanation"] = "先求导。\\r\\n再代值。";
+    }
+    const parsed = formSchema.parse(input);
+    const item = parsed.items[5];
+    expect(item?.title).toBe(
+      "已知函数 $f(x)=x^2$。\n（1）求单调区间；\n（2）若 $f(a)=1$，求 $a$。",
+    );
+    expect(item && "explanation" in item ? item.explanation : undefined).toBe(
+      "先求导。\n再代值。",
+    );
+  });
+
+  it("不误伤 LaTeX 命令：\\nabla、\\neq、\\nu 原样保留", () => {
+    const input = clone(validQuiz()) as { items: Record<string, unknown>[] };
+    const item = input.items[1];
+    if (item) {
+      item["title"] = "求 $\\nabla f$ 与 $\\nu$，判断 $a \\neq b$ 是否成立。\\n并说明理由。";
+    }
+    const parsed = formSchema.parse(input);
+    expect(parsed.items[1]?.title).toBe(
+      "求 $\\nabla f$ 与 $\\nu$，判断 $a \\neq b$ 是否成立。\n并说明理由。",
+    );
+  });
+
+  it("选项、解析与分节标题走同一条还原", () => {
+    const input = clone(validQuiz()) as { items: Record<string, unknown>[] };
+    const single = input.items[1] as { options?: Record<string, unknown>[] } | undefined;
+    if (single?.options?.[0]) single.options[0]["text"] = "左\\n根\\n右";
+    const section = input.items[0];
+    if (section) section["title"] = "一、\\n选择题";
+    const parsed = formSchema.parse(input);
+    const parsedSingle = parsed.items[1];
+    expect(
+      parsedSingle?.type === "single" ? parsedSingle.options[0]?.text : undefined,
+    ).toBe("左\n根\n右");
+    expect(parsed.items[0]?.title).toBe("一、\n选择题");
+  });
+
+  it("长度上限按还原后的文本算：`\\n` 不再白占两个字符", () => {
+    // 还原前 raw 长 501（500 个 a + 字面 `\n`），还原后正好 500，应当通过。
+    const fits = clone(validQuiz()) as { items: Record<string, unknown>[] };
+    const fitsItem = fits.items[5];
+    if (fitsItem) fitsItem["title"] = "a".repeat(LIMITS.titleMax - 1) + "\\n";
+    expect(formSchema.safeParse(fits).success).toBe(true);
+
+    // 还原后 501，必须被拒：还原不是绕过上限的后门。
+    const over = clone(validQuiz()) as { items: Record<string, unknown>[] };
+    const overItem = over.items[5];
+    if (overItem) overItem["title"] = "a".repeat(LIMITS.titleMax) + "\\n";
+    expect(formSchema.safeParse(over).success).toBe(false);
+  });
+});

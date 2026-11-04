@@ -36,20 +36,47 @@ const shortIdSchema = z
   .string()
   .regex(LIMITS.shortIdPattern, "id 需匹配 ^[a-z0-9_-]{1,32}$");
 
+/**
+ * 模型偶尔把换行双重转义成**字面** `\n`（反斜杠 + n），而不是真正的换行符。
+ *
+ * 2026-11-04 实测：DeepSeek 输出的多段简答题干在存储里是「……，\n（1）求证……」，
+ * 学生页和编辑器里看到的是一行里夹着反斜杠 n，四道简答全部中招（其余题型都是单行，
+ * 所以只有简答看得出来）。换行问题在读入时统一还原，比在每个渲染点各修一遍可靠：
+ * 服务端读库时也走 `formSchema.safeParse`，旧表单因此无需迁移。
+ *
+ * 只还原「反斜杠 + n/r 且**后面不是字母**」的情况。`\nabla`、`\neq`、`\nu`、`\right`
+ * 这类 LaTeX 命令必须原样保留，否则公式会被改成「换行 + abla」。
+ */
+export function normalizeDisplayText(text: string): string {
+  return text
+    .replace(/(?<!\\)\\r\\n(?![A-Za-z])/gu, "\n")
+    .replace(/(?<!\\)\\n(?![A-Za-z])/gu, "\n");
+}
+
+/** 显示用字符串：先还原双重转义的换行，再按还原后的长度校验上下限。 */
+function displayTextSchema(max: number) {
+  return z.string().transform(normalizeDisplayText).pipe(z.string().min(1).max(max));
+}
+
+/** 可选的显示用字符串（解析、分节描述）。 */
+function optionalDisplayTextSchema(max: number) {
+  return z.string().transform(normalizeDisplayText).pipe(z.string().max(max)).optional();
+}
+
 export const objectiveSchema = z.object({
   id: shortIdSchema,
-  name: z.string().min(1).max(LIMITS.titleMax),
+  name: displayTextSchema(LIMITS.titleMax),
 });
 
 export const choiceOptionSchema = z.object({
   id: shortIdSchema,
-  text: z.string().min(1).max(LIMITS.optionTextMax),
+  text: displayTextSchema(LIMITS.optionTextMax),
 });
 
 /** 所有字段共有的部分。`required` 默认 `true`：题默认必答，例外才显式关掉。 */
 const baseFieldSchema = z.object({
   id: fieldIdSchema,
-  title: z.string().min(1).max(LIMITS.titleMax),
+  title: displayTextSchema(LIMITS.titleMax),
   required: z.boolean().default(true),
 });
 
@@ -69,7 +96,7 @@ const scoredFieldSchema = baseFieldSchema.extend({
   bloom: z.enum(BLOOM_LEVELS).optional(),
   knowledgePoint: shortIdSchema.optional(),
   /** 教师侧解析，`publicView` 会剥掉。 */
-  explanation: z.string().max(LIMITS.explanationMax).optional(),
+  explanation: optionalDisplayTextSchema(LIMITS.explanationMax),
 });
 
 export const singleFieldSchema = scoredFieldSchema.extend({
@@ -124,15 +151,20 @@ export const scaleFieldSchema = baseFieldSchema.extend({
   type: z.literal("scale"),
   min: z.number().int(),
   max: z.number().int(),
-  labels: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
+  labels: z
+    .tuple([
+      z.string().min(1).transform(normalizeDisplayText),
+      z.string().min(1).transform(normalizeDisplayText),
+    ])
+    .optional(),
 });
 
 /** 分节：结构节点，不带 `required` 与分值，因此不继承 `baseFieldSchema`。 */
 export const sectionFieldSchema = z.object({
   type: z.literal("section"),
   id: fieldIdSchema,
-  title: z.string().min(1).max(LIMITS.titleMax),
-  description: z.string().max(LIMITS.explanationMax).optional(),
+  title: displayTextSchema(LIMITS.titleMax),
+  description: optionalDisplayTextSchema(LIMITS.explanationMax),
 });
 
 export const formItemSchema = z.discriminatedUnion("type", [

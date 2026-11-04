@@ -34,4 +34,22 @@ describe("EditField 的公式渲染", () => {
     expect(markup).not.toContain("$2x-1=7$");
     expect(markup).not.toContain("$x=4$");
   });
+
+  it("多问题干保留换行，不被 HTML 折成一行", () => {
+    const item = {
+      id: "q_short",
+      type: "short",
+      title: "已知函数 $f(x)=x^2$。\n（1）求单调区间；\n（2）若 $f(a)=1$，求 $a$。",
+      required: true,
+      score: 18,
+      maxLength: 200,
+    } as const satisfies FormItem;
+
+    const markup = renderToStaticMarkup(createElement(EditField, { item }));
+
+    // 没有 `whitespace-pre-line`，HTML 会把两个 \n 折成空格，四道 18 分简答挤成一整行。
+    expect(markup).toContain("whitespace-pre-line");
+    expect(markup).toContain("\n（1）");
+    expect(markup).toContain("\n（2）");
+  });
 });

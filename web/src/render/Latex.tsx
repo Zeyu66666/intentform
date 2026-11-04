@@ -44,12 +44,19 @@ export interface MathTextProps {
   readonly text: string;
 }
 
-/** 行内混排：普通文本 + `$...$` 公式。 */
+/**
+ * 行内混排：普通文本 + `$...$` 公式。
+ *
+ * 外层 `whitespace-pre-line` 是简答题干的必需品：多问题干（「（1）……\n（2）……」）
+ * 在 HTML 里默认会把换行折成空格，四道 18 分的简答会挤成一整行。`pre-line` 只保留
+ * 换行，其余连续空白照旧折叠，不会把教师手打的缩进放大。放在这里而不是逐个页面加，
+ * 是因为学生页、编辑器、打印页和预览都走这一个入口。
+ */
 export function MathText({ text }: MathTextProps): JSX.Element {
   const segments = useMemo(() => splitMath(text), [text]);
 
   return (
-    <>
+    <span className="whitespace-pre-line">
       {segments.map((segment, index) =>
         segment.kind === "text" ? (
           <Fragment key={`t${String(index)}`}>{segment.text}</Fragment>
@@ -57,6 +64,6 @@ export function MathText({ text }: MathTextProps): JSX.Element {
           <MathSpan key={`m${String(index)}`} tex={segment.tex} />
         ),
       )}
-    </>
+    </span>
   );
 }
