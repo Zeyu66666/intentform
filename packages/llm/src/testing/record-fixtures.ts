@@ -74,8 +74,9 @@ export interface RecordFixturesOptions {
 /**
  * 顺手把**蓝图**的三条也录下来（省赛 R-06）。
  *
- * 蓝图走 `plan.v1`、生成走 `generate.v3`，回放键因此是两个；两段都必须有录像，
- * `replay` 模式下两阶段才能离线跑完整。
+ * 蓝图走 `plan.v2`、生成走 `generate.v4`，回放键因此是两个；两段都必须有录像，
+ * `replay` 模式下两阶段才能离线跑完整。P24 升版后必须**重录全部 6 条**：
+ * 新提示词配旧录像会被 `fixtures.test.ts` 直接判红，不允许冒充。
  */
 async function recordPlan(
   config: ReturnType<typeof resolveLlmRuntimeConfig>,

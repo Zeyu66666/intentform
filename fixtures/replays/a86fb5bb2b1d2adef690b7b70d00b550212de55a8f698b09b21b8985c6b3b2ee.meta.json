@@ -1,15 +1,15 @@
 {
-  "recordedAt": "2026-10-28T11:47:19.922Z",
+  "recordedAt": "2026-11-04T13:15:00.912Z",
   "model": "deepseek-chat",
-  "promptVersion": "plan.v1",
+  "promptVersion": "generate.v4",
   "schemaVersion": 1,
-  "requirementHash": "bbd3a366e6b2776ea61ff73bf61d2c15534b343efece7782cf0b77c6899ad69c",
+  "requirementHash": "a86fb5bb2b1d2adef690b7b70d00b550212de55a8f698b09b21b8985c6b3b2ee",
   "requirementPreview": "做一个高二生物的课前学情调查问卷，8 道题：3 道单选了解预习情况、2 道量表题了解学习信心、2 道填空题收集具体困惑、1 道简答题让学生写出最想搞懂的实验。这",
-  "chunks": 144,
-  "totalMs": 1278,
+  "chunks": 524,
+  "totalMs": 3457,
   "usage": {
-    "promptTokens": 471,
-    "completionTokens": 144
+    "promptTokens": 1175,
+    "completionTokens": 524
   },
   "upstream": "openai-compatible:api.deepseek.com",
   "mode": "record"

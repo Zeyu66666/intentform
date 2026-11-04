@@ -42,7 +42,7 @@ export interface StreamInput {
   /** 本次生成开始的时间戳（`clock()`），用于算 `tMs`。 */
   readonly startedAt: number;
   /**
-   * 覆写 prompt 版本（省赛 R-06 的蓝图链路用 `plan.v1`）。
+   * 覆写 prompt 版本（省赛 R-06 的蓝图链路用 `plan.v2`）。
    * 它进回放键，所以蓝图与生成是**两个独立的键**，互不覆盖。
    */
   readonly promptVersion?: string;
