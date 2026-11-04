@@ -865,6 +865,41 @@ async function main() {
         `题型分布输入框太窄或字号太小：${JSON.stringify(typeInputs)}`,
       );
 
+      // 难度分布（P24）：四档中文输入必须在场，且和等于题型和（同一套配平函数）。
+      const difficulty = await page.evaluate(`
+        var block = byTestId('plan-difficulty');
+        if (block === null) return null;
+        var inputs = Array.prototype.slice.call(block.querySelectorAll('input'));
+        var typeSum = 0;
+        Array.prototype.forEach.call(document.querySelectorAll('[data-testid=plan-card] input'), function (input) {
+          var label = input.getAttribute('aria-label') || '';
+          if (label.slice(-2) === '数量' && block.contains(input) === false) typeSum += Number(input.value || 0);
+        });
+        return {
+          labels: inputs.map(function (input) { return input.getAttribute('aria-label'); }),
+          values: inputs.map(function (input) { return Number(input.value || 0); }),
+          widths: inputs.map(function (input) { return Math.round(input.getBoundingClientRect().width); }),
+          fonts: inputs.map(function (input) { return getComputedStyle(input).fontSize; }),
+          typeSum: typeSum
+        };
+      `);
+      must(difficulty !== null, "蓝图里没有难度分布");
+      const difficultySum = difficulty.values.reduce((sum, value) => sum + value, 0);
+      must(
+        difficulty.labels.length === 4 &&
+          ["基础", "提升", "综合", "压轴"].every((label) => difficulty.labels.includes(`${label}难度数量`)),
+        `难度分布不是四档中文输入：${JSON.stringify(difficulty.labels)}`,
+      );
+      must(
+        difficultySum === difficulty.typeSum,
+        `难度和 ${String(difficultySum)} 与题型和 ${String(difficulty.typeSum)} 不一致`,
+      );
+      must(
+        difficulty.widths.every((width) => width >= 48) &&
+          difficulty.fonts.every((font) => parseFloat(font) >= 12),
+        `难度输入框太窄或字号太小：${JSON.stringify(difficulty)}`,
+      );
+
       // 知识点行不该把内部 id 当输入内容；id 仍留在蓝图里给题目引用。
       const planInputValues = await page.evaluate(
         "return Array.from(document.querySelectorAll('[data-testid=plan-card] input')).map(function (el) { return el.value; });",
@@ -2228,6 +2263,138 @@ async function main() {
       return { initialMode, replayNotice, keyEchoed: false, blankKeepsKey: true };
     });
 
+    // 19) 参考试卷与难度编辑（P24）。mock 模式没有模型，`styleNotes` 只如实写
+    // 「收到 N 字，不解析原文」；这一步验的是参考卷 → 规划 → 回执的数据链路，
+    // 以及「改难度 → 题型和同步」的配平，不冒充模型提炼质量（那由真实录像与 eval 负责）。
+    const referenceStep = await step("参考试卷：粘贴后蓝图出现参考回执，难度分布可编辑", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/`);
+      await waitFor(
+        async () => (await page.evaluate("return bySelector('#requirement-input') !== null")),
+        "生成页需求输入框渲染",
+      );
+      // `/healthz` 是异步读的：先等界面确认运行模式，再断言开关；否则读到的是「未读到模式」。
+      await waitFor(
+        async () => {
+          const hint = await page.evaluate(
+            "var el = byTestId('web-search-hint'); return el === null ? null : el.textContent.trim();",
+          );
+          return typeof hint === "string" && hint.includes("离线演示模式") ? hint : null;
+        },
+        "界面读到时运行模式为离线（mock）",
+        10_000,
+      );
+      // 离线模式（mock/replay/record）下联网参考必须禁用并写明原因：零外呼是硬保证。
+      const searchState = await page.evaluate(`
+        var box = byTestId('web-search');
+        var hint = byTestId('web-search-hint');
+        return { disabled: box === null ? null : box.disabled, hint: hint === null ? null : hint.textContent.trim() };
+      `);
+      must(searchState.disabled === true, `mock 模式下联网参考必须禁用：${JSON.stringify(searchState)}`);
+      must((searchState.hint ?? "").includes("离线"), `禁用原因没有说明离线：${JSON.stringify(searchState.hint)}`);
+
+      const marker = "教师参考-OMEGA";
+      const referenceText = `${marker}\n一、选择题（每题 5 分）\n1. 已知函数 f(x)=x^2，求顶点坐标。`;
+      const typedRequirement = await page.evaluate(
+        `return setValue('#requirement-input', ${JSON.stringify(REQUIREMENT)});`,
+      );
+      const typedReference = await page.evaluate(
+        `return setValue('[data-testid="plan-reference"]', ${JSON.stringify(referenceText)});`,
+      );
+      must(
+        typedRequirement.ok === true && typedReference.ok === true,
+        `需求或参考卷没填进去：${JSON.stringify({ typedRequirement, typedReference })}`,
+      );
+      must(await page.evaluate("return clickButtonByText('^生成表单$')"), "没找到「生成表单」按钮");
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('plan-card') !== null")),
+        "带参考卷的蓝图卡片出现",
+        20_000,
+      );
+      const receipts = await page.evaluate(`
+        var ref = byTestId('plan-reference-receipt');
+        var search = byTestId('plan-search-receipt');
+        return {
+          reference: ref === null ? null : ref.textContent.trim(),
+          search: search === null ? null : search.textContent.trim()
+        };
+      `);
+      must((receipts.reference ?? "").includes("参考卷"), `没有参考卷回执：${JSON.stringify(receipts)}`);
+      must(
+        (receipts.search ?? "").includes("未启用"),
+        `mock 下搜索回执应为未启用：${JSON.stringify(receipts)}`,
+      );
+
+      // 难度可编辑：基础 +1 后总题量与题型和同步增长，再改回原值（不留副作用）。
+      const readDifficulty = `
+        var block = byTestId('plan-difficulty');
+        var inputs = block === null ? [] : Array.prototype.slice.call(block.querySelectorAll('input'));
+        return {
+          basic: inputs.length === 0 ? -1 : Number(inputs[0].value || 0),
+          sum: inputs.reduce(function (total, input) { return total + Number(input.value || 0); }, 0)
+        };
+      `;
+      const beforeEdit = await page.evaluate(`return (function () { ${readDifficulty} })();`);
+      must(beforeEdit.basic >= 0, `蓝图里没有难度分布：${JSON.stringify(beforeEdit)}`);
+      const bumped = await page.evaluate(
+        `return setValue('[aria-label="基础难度数量"]', String(${String(beforeEdit.basic + 1)}));`,
+      );
+      must(bumped.ok === true, `难度输入框没改进去：${JSON.stringify(bumped)}`);
+      await waitFor(
+        async () => {
+          const values = await page.evaluate(`return (function () { ${readDifficulty} })();`);
+          return values.basic === beforeEdit.basic + 1 && values.sum === beforeEdit.sum + 1 ? values : null;
+        },
+        "改难度后题型和同步变化",
+        10_000,
+      );
+      artifacts.push(await page.screenshot(nextArtifactName("plan-reference")));
+      const restored = await page.evaluate(
+        `return setValue('[aria-label="基础难度数量"]', String(${String(beforeEdit.basic)}));`,
+      );
+      must(restored.ok === true, `难度输入框没改回去：${JSON.stringify(restored)}`);
+      await waitFor(
+        async () => {
+          const values = await page.evaluate(`return (function () { ${readDifficulty} })();`);
+          return values.basic === beforeEdit.basic && values.sum === beforeEdit.sum ? values : null;
+        },
+        "难度改回原值",
+        10_000,
+      );
+
+      // 界面不回显 styleNotes；直接调 API 证明它进了 plan 响应，且参考原文没被带出。
+      const directText = await page.evaluate(`
+        return fetch('/api/plan', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'x-intentform-csrf': '1' },
+          body: JSON.stringify({
+            requirement: ${JSON.stringify(REQUIREMENT)},
+            reference: ${JSON.stringify(referenceText)}
+          })
+        }).then(function (response) { return response.text(); });
+      `);
+      const direct = JSON.parse(directText);
+      must(direct.ok === true, `直接调用规划 API 失败：${directText.slice(0, 200)}`);
+      must(
+        typeof direct.blueprint.styleNotes === "string" && direct.blueprint.styleNotes.length > 0,
+        `plan 响应缺少 styleNotes：${directText.slice(0, 300)}`,
+      );
+      must(
+        direct.blueprint.styleNotes.includes("参考卷"),
+        `styleNotes 没有说明参考卷：${String(direct.blueprint.styleNotes)}`,
+      );
+      must(!directText.includes(marker), "plan 响应回显了参考卷原文");
+      must(direct.searchStatus === "off", `mock 下 searchStatus 应为 off：${String(direct.searchStatus)}`);
+
+      return {
+        receipt: receipts,
+        difficulty: { before: beforeEdit.basic, after: beforeEdit.basic + 1, restored: beforeEdit.basic },
+        styleNotes: direct.blueprint.styleNotes.slice(0, 120),
+        searchStatus: direct.searchStatus,
+      };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -2252,6 +2419,7 @@ async function main() {
       supplement,
       aiGrading,
       llmSettings,
+      reference: referenceStep,
       dashboard,
       graded,
       steps,
