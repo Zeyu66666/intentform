@@ -37,6 +37,8 @@ export function SettingsPage(): JSX.Element {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [searchBaseUrl, setSearchBaseUrl] = useState("");
+  const [searchApiKey, setSearchApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ readonly tone: "success" | "error"; readonly text: string } | null>(
     null,
@@ -54,6 +56,7 @@ export function SettingsPage(): JSX.Element {
       setMode(outcome.data.mode);
       setBaseUrl(outcome.data.baseUrl);
       setModel(outcome.data.model);
+      setSearchBaseUrl(outcome.data.searchBaseUrl);
     });
     return () => {
       cancelled = true;
@@ -83,6 +86,8 @@ export function SettingsPage(): JSX.Element {
         baseUrl: baseUrl.trim(),
         model: model.trim(),
         ...(apiKey.trim() === "" ? {} : { apiKey: apiKey.trim() }),
+        searchBaseUrl: searchBaseUrl.trim(),
+        ...(searchApiKey.trim() === "" ? {} : { searchApiKey: searchApiKey.trim() }),
       })
       .then((outcome) => {
         setBusy(false);
@@ -94,7 +99,9 @@ export function SettingsPage(): JSX.Element {
         setMode(outcome.data.mode);
         setBaseUrl(outcome.data.baseUrl);
         setModel(outcome.data.model);
+        setSearchBaseUrl(outcome.data.searchBaseUrl);
         setApiKey("");
+        setSearchApiKey("");
         setNotice({ tone: "success", text: "已应用；下一条模型请求立即使用新配置。" });
       });
   };
@@ -172,6 +179,50 @@ export function SettingsPage(): JSX.Element {
           />
           <span className="text-xs text-muted">
             {load.settings.hasApiKey ? "服务端已保存 Key（不会回显）。" : "服务端当前没有 Key。"}
+          </span>
+        </label>
+
+        <div className="mt-1 border-t border-line pt-3">
+          <h2 className="m-0 text-sm font-semibold text-ink">联网参考搜索（可选）</h2>
+          <p className="m-0 mt-1 text-xs text-muted">
+            只在 live 模式、且教师勾选「联网参考」时才会调用。端点需接受
+            <code> POST {'{query, limit}'} </code>并返回
+            <code> {'{results:[{title,snippet,url}]}'} </code>；供应商差异请用一行代理适配。
+          </p>
+        </div>
+
+        <label className="flex flex-col gap-1 text-sm text-ink">
+          搜索端点
+          <input
+            data-testid="search-base-url"
+            className={INPUT}
+            value={searchBaseUrl}
+            disabled={!canEdit || busy}
+            placeholder="留空 = 不启用联网参考"
+            onChange={(event) => {
+              setSearchBaseUrl(event.target.value);
+              setNotice(null);
+            }}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm text-ink">
+          搜索 Key
+          <input
+            data-testid="search-api-key"
+            className={INPUT}
+            type="password"
+            autoComplete="off"
+            value={searchApiKey}
+            disabled={!canEdit || busy}
+            placeholder={load.settings.hasSearchKey ? "已配置；留空保持不变" : "未配置；调用搜索端点需要"}
+            onChange={(event) => {
+              setSearchApiKey(event.target.value);
+              setNotice(null);
+            }}
+          />
+          <span className="text-xs text-muted">
+            {load.settings.hasSearchKey ? "服务端已保存搜索 Key（不会回显）。" : "服务端当前没有搜索 Key。"}
           </span>
         </label>
 

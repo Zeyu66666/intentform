@@ -12,7 +12,7 @@
  * 状态全部来自 `useGenerateStream()` 的 `useReducer`，没有第二个状态源。
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   Clarification,
@@ -22,6 +22,7 @@ import type {
   FormItem,
   FormKind,
   Objective,
+  PlanSearchStatus,
 } from "@intentform/schema";
 import { summarizeBlueprint } from "@intentform/schema";
 
@@ -29,6 +30,7 @@ import { createClarifyApi } from "./api/clarify";
 import { createPlanApi } from "./api/plan";
 import { describeFailure } from "./api/failures";
 import { createHttpClient } from "./api/http";
+import { readRuntimeMode } from "./api/runtime";
 import { createTeacherApi } from "./api/teacher";
 import { BlueprintCard } from "./panels/BlueprintCard";
 import { ClarifyForm } from "./panels/ClarifyForm";
@@ -96,8 +98,27 @@ type PlanState =
       readonly blueprint: FormBlueprint;
       readonly summary: string;
       readonly clarifications: readonly Clarification[];
+      /** 服务端回执：联网参考是否真的发生（离线模式恒为 off）。 */
+      readonly searchStatus: PlanSearchStatus;
+      readonly searchCount: number;
+      /** 这次规划是否带了参考卷（回执用；之后改左栏文本不影响它）。 */
+      readonly usedReference: boolean;
     }
   | { readonly status: "error"; readonly message: string };
+
+/** 联网参考回执的人话。`off` 是默认状态，也要显示，避免「以为搜了」。 */
+function searchReceiptText(status: PlanSearchStatus, count: number): string {
+  switch (status) {
+    case "used":
+      return `联网参考：已搜到 ${String(count)} 条（只取结构/风格，不复用原题）`;
+    case "empty":
+      return "联网参考：已调用搜索，但没有可用结果";
+    case "failed":
+      return "联网参考：搜索失败，已按不联网继续规划";
+    case "off":
+      return "联网参考：未启用（离线模式或未配置搜索）";
+  }
+}
 
 export function App(): JSX.Element {
   // 只读 `VITE_API_BASE`（`config.ts` 的白名单），且必须走 `resolveApiBase()`：
@@ -127,6 +148,15 @@ export function App(): JSX.Element {
   const [requirement, setRequirement] = useState("");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("edit");
   const [kind, setKind] = useState<FormKind>("quiz");
+  /** 教师粘贴的参考试卷：只随 `/api/plan` 发送，生成请求里没有这个字段。 */
+  const [reference, setReference] = useState("");
+  /** 请求级联网开关；服务端四道闸会再判一次。 */
+  const [webSearch, setWebSearch] = useState(false);
+  /**
+   * 服务端当前 LLM 模式（`/healthz`）。`null` = 没读到（服务未起/网络问题）。
+   * 只有确定为 `live` 才允许勾选联网，其余情况一律禁用并说明原因。
+   */
+  const [runtimeMode, setRuntimeMode] = useState<string | null>(null);
   /**
    * 「先看蓝图再生成」开关（A-02）：默认开，走两阶段；关掉时跳过规划直接生成。
    * 关掉之后两阶段对照不会出现——界面上如实写明，而不是让时间线"少一段"。
@@ -145,6 +175,16 @@ export function App(): JSX.Element {
   const api = useMemo(() => createTeacherApi(createHttpClient()), []);
   const clarifyApi = useMemo(() => createClarifyApi(createHttpClient()), []);
   const planApi = useMemo(() => createPlanApi(createHttpClient()), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readRuntimeMode().then((mode) => {
+      if (!cancelled) setRuntimeMode(mode);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [plan, setPlan] = useState<PlanState>({ status: "idle" });
   const planTokenRef = useRef(0);
   /** 最近一次规划用的补答：规划失败重试时不能把教师刚答的东西弄丢。 */
@@ -186,8 +226,15 @@ export function App(): JSX.Element {
       lastClarificationsRef.current = clarifications;
       setClarify({ status: "idle" });
       setPlan({ status: "loading" });
+      const trimmedReference = reference.trim();
       void planApi
-        .plan({ requirement: requirementText, kind, clarifications: [...clarifications] })
+        .plan({
+          requirement: requirementText,
+          kind,
+          clarifications: [...clarifications],
+          ...(trimmedReference === "" ? {} : { reference: trimmedReference }),
+          ...(webSearch ? { webSearch: true } : {}),
+        })
         .then((outcome) => {
           if (planTokenRef.current !== token) return;
           if (!outcome.ok) {
@@ -204,10 +251,13 @@ export function App(): JSX.Element {
             blueprint: outcome.data.blueprint,
             summary: outcome.data.summary,
             clarifications,
+            searchStatus: outcome.data.searchStatus,
+            searchCount: outcome.data.searchCount,
+            usedReference: trimmedReference !== "",
           });
         });
     },
-    [planApi, kind],
+    [planApi, kind, reference, webSearch],
   );
 
   /**
@@ -310,22 +360,34 @@ export function App(): JSX.Element {
   // 生成前的两步共用左栏同一块位置：先追问（若缺槽位），再蓝图确认。
   const preStepSlot =
     plan.status === "ready" ? (
-      <BlueprintCard
-        blueprint={plan.blueprint}
-        onChange={(blueprint) => {
-          setPlan((current) =>
-            current.status === "ready"
-              ? { ...current, blueprint, summary: summarizeBlueprint(blueprint) }
-              : current,
-          );
-        }}
-        onConfirm={() => {
-          beginGeneration(requirement.trim(), plan.clarifications, plan.blueprint);
-        }}
-        onSkip={() => {
-          beginGeneration(requirement.trim(), plan.clarifications);
-        }}
-      />
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1 rounded-sm border border-line bg-bg p-2 text-xs text-muted">
+          <span data-testid="plan-search-receipt">
+            {searchReceiptText(plan.searchStatus, plan.searchCount)}
+          </span>
+          {plan.usedReference ? (
+            <span data-testid="plan-reference-receipt">
+              参考卷：已用于提炼结构（不复用原题）
+            </span>
+          ) : null}
+        </div>
+        <BlueprintCard
+          blueprint={plan.blueprint}
+          onChange={(blueprint) => {
+            setPlan((current) =>
+              current.status === "ready"
+                ? { ...current, blueprint, summary: summarizeBlueprint(blueprint) }
+                : current,
+            );
+          }}
+          onConfirm={() => {
+            beginGeneration(requirement.trim(), plan.clarifications, plan.blueprint);
+          }}
+          onSkip={() => {
+            beginGeneration(requirement.trim(), plan.clarifications);
+          }}
+        />
+      </div>
     ) : plan.status === "loading" ? (
       <p className="m-0 text-sm text-muted" data-testid="plan-loading" aria-live="polite">
         正在规划结构…
@@ -356,6 +418,14 @@ export function App(): JSX.Element {
     ) : (
       clarifySlot
     );
+
+  const webSearchDisabled = runtimeMode !== "live";
+  const webSearchHint =
+    runtimeMode === "live"
+      ? "仅在当前 live 模式生效；服务端还要配置搜索端点与 Key。"
+      : runtimeMode === null
+        ? "未读到服务端运行模式：联网参考只在 live 模式可用，暂不可勾选。"
+        : "当前为离线演示模式，联网参考不会生效。";
 
   const terminalText = TERMINAL_TEXT[state.status];
   const terminalTone =
@@ -398,6 +468,8 @@ export function App(): JSX.Element {
               onReset={() => {
                 reset();
                 setRequirement("");
+                setReference("");
+                setWebSearch(false);
                 setPublished(null);
                 setClarify({ status: "idle" });
                 setPlan({ status: "idle" });
@@ -407,6 +479,12 @@ export function App(): JSX.Element {
               preStepSlot={preStepSlot}
               planFirst={planFirst}
               onPlanFirstChange={setPlanFirst}
+              reference={reference}
+              onReferenceChange={setReference}
+              webSearch={webSearch}
+              onWebSearchChange={setWebSearch}
+              webSearchDisabled={webSearchDisabled}
+              webSearchHint={webSearchHint}
             />
           </div>
           {state.status === "done" ? (

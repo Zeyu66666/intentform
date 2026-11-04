@@ -39,6 +39,9 @@ export default defineConfig({
     },
     proxy: {
       "/api": { target: proxyTarget, changeOrigin: false },
+      // 生成页要读服务端当前 llmMode（联网参考开关只在 live 可用）。
+      // `/healthz` 是公开只读接口，不带 cookie、不涉密钥。
+      "/healthz": { target: proxyTarget, changeOrigin: false },
       // 学生页 JSON 也在 `/f/:slug` 上（双形态：JSON 与 document 同路径）。
       // 浏览器直接打开 `/f/abc` 时 `Accept` 含 `text/html`，那是**页面导航**，
       // 必须由 dev server 自己吐 index.html（交给前端路由），不能反代到服务端；

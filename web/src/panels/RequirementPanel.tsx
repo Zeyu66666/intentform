@@ -6,7 +6,13 @@
  * 回放当场未命中（见 `packages/schema/src/presets.ts` 顶部注释）。
  */
 
-import { FORM_KINDS, GENERATE_PRESETS, LIMITS, type FormKind } from "@intentform/schema";
+import {
+  FORM_KINDS,
+  GENERATE_PRESETS,
+  LIMITS,
+  PLAN_REFERENCE_MAX_CHARS,
+  type FormKind,
+} from "@intentform/schema";
 
 import { FORM_KIND_LABELS } from "../dashboard/model";
 import type { RunStatus } from "../stream/generate-machine";
@@ -34,6 +40,16 @@ export interface RequirementPanelProps {
    */
   readonly planFirst: boolean;
   readonly onPlanFirstChange: (value: boolean) => void;
+  /** 教师粘贴的参考试卷文本（只进规划阶段，不复制原题）。 */
+  readonly reference: string;
+  readonly onReferenceChange: (value: string) => void;
+  /** 请求级联网参考开关；服务端还会按模式与配置再判一次。 */
+  readonly webSearch: boolean;
+  readonly onWebSearchChange: (value: boolean) => void;
+  /** 非 live 模式禁用开关（离线模式永不外呼）。 */
+  readonly webSearchDisabled: boolean;
+  /** 禁用/可用原因，直接显示在开关下方。 */
+  readonly webSearchHint: string;
 }
 
 const STATUS_TEXT: Record<RunStatus, string> = {
@@ -65,6 +81,12 @@ export function RequirementPanel({
   preStepSlot = null,
   planFirst,
   onPlanFirstChange,
+  reference,
+  onReferenceChange,
+  webSearch,
+  onWebSearchChange,
+  webSearchDisabled,
+  webSearchHint,
 }: RequirementPanelProps): JSX.Element {
   const length = requirement.length;
   const overLimit = length > LIMITS.requirementMaxChars;
@@ -124,6 +146,38 @@ export function RequirementPanel({
       </section>
 
       <section className="flex flex-col gap-1">
+        <details className="rounded-sm border border-line bg-surface">
+          <summary className="cursor-pointer px-2 py-1 text-xs font-semibold text-muted">
+            参考试卷（可选）
+          </summary>
+          <div className="flex flex-col gap-1 p-2 pt-0">
+            <p className="m-0 text-xs text-muted">
+              粘贴一份同类型试卷。只提取题型比例、难度梯度与命题风格，<strong>不会复制原题</strong>。
+            </p>
+            <textarea
+              data-testid="plan-reference"
+              value={reference}
+              rows={4}
+              disabled={streaming}
+              maxLength={PLAN_REFERENCE_MAX_CHARS}
+              aria-label="参考试卷文本"
+              placeholder="例：一、选择题（每题 5 分）……"
+              onChange={(event) => {
+                onReferenceChange(event.target.value);
+              }}
+              className="w-full resize-y rounded-sm border border-line bg-bg p-2 text-sm disabled:opacity-60"
+            />
+            <div className="flex justify-between text-xs text-muted">
+              <span>最多 {PLAN_REFERENCE_MAX_CHARS} 字</span>
+              <span>
+                {reference.length} / {PLAN_REFERENCE_MAX_CHARS}
+              </span>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section className="flex flex-col gap-1">
         <h3 className="m-0 text-xs font-semibold text-muted">表单类型</h3>
         <div role="group" aria-label="表单类型" className="flex gap-1">
           {FORM_KINDS.map((value) => {
@@ -170,6 +224,25 @@ export function RequirementPanel({
         </label>
         <p className="m-0 text-xs text-muted">
           {planFirst ? "先规划结构，确认后逐字段生成" : "跳过蓝图，直接逐字段生成（不会出现蓝图对照）"}
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-1">
+        <label className="flex min-h-[44px] items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            data-testid="web-search"
+            className="size-4 accent-accent"
+            checked={webSearch}
+            disabled={streaming || webSearchDisabled}
+            onChange={(event) => {
+              onWebSearchChange(event.target.checked);
+            }}
+          />
+          联网参考
+        </label>
+        <p className="m-0 text-xs text-muted" data-testid="web-search-hint">
+          {webSearchHint}
         </p>
       </section>
 
