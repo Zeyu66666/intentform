@@ -361,7 +361,8 @@ const PAGE_HELPERS = `
   function setSelectAt(selector, index, value) {
     var el = document.querySelectorAll(selector)[index];
     if (el === undefined) return { ok: false, reason: 'missing ' + selector + '[' + index + ']' };
-    el.value = value;
+    var descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    descriptor.set.call(el, value);
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return { ok: true, value: el.value };
   }
@@ -827,6 +828,24 @@ async function main() {
         },
         "蓝图标题改动保留在输入框里",
         10_000,
+      );
+      // 标题改动触发一次 React 重渲染：若配额题型只改了 DOM、没进 state，
+      // 受控 select 会在这时被 state 覆写回原值。这里重读一遍作为真证据。
+      const quotaRowsAfterTitle = await page.evaluate(`
+        return Array.prototype.map.call(document.querySelectorAll('[data-testid=plan-quota]'), function (row) {
+          return {
+            point: row.querySelector('[data-testid=plan-quota-kp]').selectedOptions[0].textContent.trim(),
+            type: row.querySelector('[data-testid=plan-quota-type]').value,
+            count: row.querySelector('[data-testid=plan-quota-count]').value,
+          };
+        });
+      `);
+      must(
+        quotaRowsAfterTitle.length === 2 &&
+          quotaRowsAfterTitle[0].type === "short" &&
+          quotaRowsAfterTitle[1].type === "single" &&
+          quotaRowsAfterTitle.every((row) => row.point === "立体几何" && row.count === "1"),
+        `配额题型没有进入 React 状态（重渲染后丢失）：${JSON.stringify(quotaRowsAfterTitle)}`,
       );
       const planConfirmDisabled = await page.evaluate(
         "var el = byTestId('plan-confirm'); return el === null ? null : el.disabled;",
