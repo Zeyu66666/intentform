@@ -16,7 +16,15 @@
 
 import { z } from "zod";
 
-import { FIELD_TYPES, FORM_KINDS, LIMITS, type FieldType, type FormKind } from "./constants.ts";
+import {
+  DIFFICULTY_LEVELS,
+  FIELD_TYPES,
+  FORM_KINDS,
+  LIMITS,
+  type DifficultyLevel,
+  type FieldType,
+  type FormKind,
+} from "./constants.ts";
 import type { FormItem } from "./types.ts";
 
 export interface BlueprintSection {
@@ -73,6 +81,10 @@ export interface FormBlueprint {
    * 每条都必须落在已声明知识点与题型容量之内。
    */
   readonly quotas?: readonly BlueprintQuota[] | undefined;
+  /** 难度分区；旧蓝图没有此字段时，生成器按旧规则兼容。 */
+  readonly difficultyMix?: Readonly<Partial<Record<DifficultyLevel, number>>> | undefined;
+  /** 参考卷/搜索提炼出的命题风格备注，不保存原始参考文本。 */
+  readonly styleNotes?: string | undefined;
 }
 
 /** 题型的中文说法：摘要与界面共用一份。 */
@@ -95,6 +107,15 @@ const nonSectionTypes = FIELD_TYPES.filter((type) => type !== "section");
  * 模型多写一个不存在的题型（"essay"）时必须报错，而不是静默丢掉再把差额
  * 算成"少出题"——那是把模型的错记成产品的偏差。
  */
+const difficultyMixSchema = z
+  .object({
+    basic: z.number().int().min(0).max(LIMITS.fieldsMax).default(0),
+    standard: z.number().int().min(0).max(LIMITS.fieldsMax).default(0),
+    comprehensive: z.number().int().min(0).max(LIMITS.fieldsMax).default(0),
+    advanced: z.number().int().min(0).max(LIMITS.fieldsMax).default(0),
+  })
+  .strict();
+
 const typeMixSchema = z
   .object({
     single: z.number().int().min(0).max(LIMITS.fieldsMax).default(0),
@@ -145,6 +166,8 @@ export const blueprintSchema = z
       )
       .max(20),
     quotas: z.array(quotaSchema).max(LIMITS.fieldsMax).optional(),
+    difficultyMix: difficultyMixSchema.optional(),
+    styleNotes: z.string().trim().max(500).optional(),
   })
   .superRefine((blueprint, ctx) => {
     const sectionSum = blueprint.sections.reduce((sum, section) => sum + section.count, 0);
@@ -214,6 +237,18 @@ export const blueprintSchema = z
         path: ["quotas"],
         message: `配额总题量 ${String(quotaSum)} 超过总题量 ${String(blueprint.totalCount)}`,
       });
+    }
+
+    if (blueprint.difficultyMix !== undefined) {
+      let difficultySum = 0;
+      for (const level of DIFFICULTY_LEVELS) difficultySum += blueprint.difficultyMix[level] ?? 0;
+      if (difficultySum !== blueprint.totalCount) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["difficultyMix"],
+          message: `难度分布之和 ${String(difficultySum)} ≠ 总题量 ${String(blueprint.totalCount)}`,
+        });
+      }
     }
   });
 

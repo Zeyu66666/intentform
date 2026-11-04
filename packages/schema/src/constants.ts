@@ -30,6 +30,23 @@ export const FIELD_TYPES = [
 export type FieldType = (typeof FIELD_TYPES)[number];
 
 /**
+ * 试卷难度层次：从基础巩固逐步过渡到压轴综合。
+ *
+ * 它**不是** `FormItem` 的字段——逐题难度既不可靠也无法逐行校验；它只是蓝图上的
+ * 分区约束，告诉生成器「这一卷要按什么顺序难起来」。题目本身仍然只带 `bloom`。
+ */
+export const DIFFICULTY_LEVELS = ["basic", "standard", "comprehensive", "advanced"] as const;
+
+export type DifficultyLevel = (typeof DIFFICULTY_LEVELS)[number];
+
+export const DIFFICULTY_LABELS: Readonly<Record<DifficultyLevel, string>> = {
+  basic: "基础",
+  standard: "提升",
+  comprehensive: "综合",
+  advanced: "压轴",
+};
+
+/**
  * 参与自动判分的题型（计划 §2.1 范围说明）。
  * `short` 只收集文本、看板标「待批阅」；`scale` 是收集型字段。R6 的分值合计只统计这四个。
  */

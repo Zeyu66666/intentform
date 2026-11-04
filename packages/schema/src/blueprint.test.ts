@@ -111,16 +111,34 @@ describe("blueprintSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("量表没有知识点字段，不能作为配额题型", () => {
-    const result = blueprintSchema.safeParse(
+
+  it("接受难度分布与风格备注；旧蓝图不强制补字段", () => {
+    const parsed = blueprintSchema.parse(
       blueprintJson({
-        typeMix: { single: 3, fill: 2, short: 2, scale: 1 },
-        quotas: [{ knowledgePoint: "kp-open", type: "scale", count: 1 }],
+        difficultyMix: { basic: 2, standard: 2, comprehensive: 2, advanced: 2 },
+        styleNotes: "压轴题包含参数讨论",
       }),
+    );
+    expect(parsed.difficultyMix?.advanced).toBe(2);
+    expect(parsed.styleNotes).toBe("压轴题包含参数讨论");
+    expect(blueprintSchema.parse(blueprintJson()).difficultyMix).toBeUndefined();
+  });
+
+  it("难度分布之和不等于总题量 → 拒绝", () => {
+    const result = blueprintSchema.safeParse(
+      blueprintJson({ difficultyMix: { basic: 4, standard: 2, comprehensive: 1, advanced: 0 } }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it("难度分布拒绝未知键", () => {
+    const result = blueprintSchema.safeParse(
+      blueprintJson({ difficultyMix: { basic: 8, standard: 0, comprehensive: 0, advanced: 0, easy: 0 } }),
     );
     expect(result.success).toBe(false);
   });
 });
+
 
 describe("summarizeBlueprint", () => {
   it("拼成一句人话：8 题 / 单选 4 · 填空 2 · 简答 2 / 共 40 分 / 2 个知识点", () => {

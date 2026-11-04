@@ -13,6 +13,7 @@ import {
   loginRequestSchema,
   patchFormPayloadOf,
   patchFormRequestSchema,
+  planRequestSchema,
   publishRequestSchema,
   submitRequestSchema,
   suggestPatchRequestSchema,
@@ -297,5 +298,25 @@ describe("单题建议作用域（P18）", () => {
     for (const fieldOp of ["setStem", "setOptions", "setAnswer", "setExplanation", "setScore", "setRequired", "setMeta"]) {
       expect(ITEM_SCOPE_PATCH_OPS_SET.has(fieldOp)).toBe(true);
     }
+  });
+});
+
+describe("planRequestSchema · 参考卷与联网参考", () => {
+  it("接受参考卷文本和请求级联网开关", () => {
+    const parsed = planRequestSchema.parse({
+      requirement: "出一份高三数学试卷",
+      reference: "参考卷：基础题后是参数综合题，但不得照抄。",
+      webSearch: true,
+    });
+    expect(parsed.reference).toContain("参考卷");
+    expect(parsed.webSearch).toBe(true);
+  });
+
+  it("拒绝过长参考卷", () => {
+    const result = planRequestSchema.safeParse({
+      requirement: "出一份试卷",
+      reference: "x".repeat(20_001),
+    });
+    expect(result.success).toBe(false);
   });
 });

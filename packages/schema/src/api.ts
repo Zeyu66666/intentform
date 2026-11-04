@@ -819,8 +819,21 @@ export const CLARIFICATIONS_MAX = 8;
  * 规划请求：与澄清请求同形（需求 + 可选品类 + 可选补答）。
  * 补答先进需求，再拿去规划——两步看到的是同一段需求，否则蓝图和成品的口径会岔开。
  */
+export const PLAN_REFERENCE_MAX_CHARS = 20_000;
+
 export const planRequestSchema = clarifyRequestSchema.extend({
   clarifications: z.array(clarificationSchema).max(CLARIFICATIONS_MAX).optional(),
+  /**
+   * 教师粘贴的参考试卷原文。**只用于规划阶段**提炼结构与风格；
+   * 生成阶段收不到它（见 `buildUserPrompt` 的参数形状），从结构上防照抄。
+   */
+  reference: z
+    .string()
+    .trim()
+    .max(PLAN_REFERENCE_MAX_CHARS, `参考试卷最多 ${String(PLAN_REFERENCE_MAX_CHARS)} 字`)
+    .optional(),
+  /** 本次请求是否允许联网参考；服务端还会检查模式与搜索配置，任一不满足就不搜。 */
+  webSearch: z.boolean().optional(),
 });
 
 export type PlanRequest = z.infer<typeof planRequestSchema>;
