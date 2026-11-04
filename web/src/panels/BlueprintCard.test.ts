@@ -36,4 +36,32 @@ describe("BlueprintCard 的知识点标签", () => {
     expect(markup).toContain("开口方向");
     expect(markup).not.toContain("kp_op");
   });
+
+  it("配额行显示知识点中文名与题型，内部 id 只作为 option value", () => {
+    const blueprint = {
+      title: "立体几何测验",
+      kind: "quiz",
+      sections: [{ title: "全部", count: 2 }],
+      totalCount: 2,
+      typeMix: { single: 1, short: 1 },
+      totalScore: 10,
+      knowledgePoints: [{ id: "kp_solid", name: "立体几何" }],
+      quotas: [{ knowledgePoint: "kp_solid", type: "short", count: 1 }],
+    } as const satisfies FormBlueprint;
+
+    const markup = renderToStaticMarkup(
+      createElement(BlueprintCard, {
+        blueprint,
+        onConfirm: () => undefined,
+        onSkip: () => undefined,
+        onChange: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain("按知识点指定题目");
+    expect(markup).toContain("plan-quota");
+    expect(markup).toContain("立体几何");
+    expect(markup).toContain("简答");
+    expect(markup).not.toContain(">kp_solid<");
+  });
 });

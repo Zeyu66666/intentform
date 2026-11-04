@@ -17,10 +17,16 @@ import {
 
 import {
   addKnowledgePoint,
+  addQuota,
   addSection,
+  quotaRemaining,
   removeKnowledgePoint,
+  removeQuota,
   removeSection,
   withKnowledgeName,
+  withQuotaCount,
+  withQuotaKnowledgePoint,
+  withQuotaType,
   withSectionCount,
   withSectionTitle,
   withTitle,
@@ -47,6 +53,9 @@ export function BlueprintCard({
   const checked = parseBlueprint(blueprint);
   const summary = checked.ok ? summarizeBlueprint(checked.blueprint) : checked.message;
   const valid = checked.ok;
+  const quotas = blueprint.quotas ?? [];
+  const quotaTypes = FIELD_TYPES.filter((type) => type !== "section");
+  const canAddQuota = blueprint.knowledgePoints.length > 0 && addQuota(blueprint) !== blueprint;
 
   return (
     <section
@@ -191,6 +200,108 @@ export function BlueprintCard({
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {blueprint.kind === "survey" ? null : (
+        <div className="flex flex-col gap-1" data-testid="plan-quotas">
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs font-medium text-muted">按知识点指定题目</span>
+            <button
+              type="button"
+              data-testid="plan-quota-add"
+              disabled={!canAddQuota}
+              title={canAddQuota ? undefined : "先加知识点，并确认对应题型还有余量"}
+              className="rounded-sm border border-line px-2 py-1 text-xs text-muted disabled:opacity-40"
+              onClick={() => {
+                onChange(addQuota(blueprint));
+              }}
+            >
+              加指定
+            </button>
+          </div>
+          {blueprint.knowledgePoints.length === 0 ? (
+            <p className="m-0 text-xs text-muted">先在上方添加知识点，才能指定题目。</p>
+          ) : null}
+          {quotas.map((quota, index) => {
+            const remaining = quotaRemaining(blueprint, quota.type, index);
+            return (
+              <div
+                key={`quota-${String(index)}`}
+                className="flex flex-col gap-1 rounded-sm border border-line p-1"
+                data-testid="plan-quota"
+              >
+                <div className="flex items-center gap-1">
+                  <select
+                    className={`${INPUT} min-w-0 flex-1`}
+                    data-testid="plan-quota-kp"
+                    aria-label={`第 ${String(index + 1)} 条指定知识点`}
+                    value={quota.knowledgePoint}
+                    onChange={(event) => {
+                      onChange(withQuotaKnowledgePoint(blueprint, index, event.target.value));
+                    }}
+                  >
+                    {blueprint.knowledgePoints.map((point) => (
+                      <option key={point.id} value={point.id}>
+                        {point.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    data-testid="plan-quota-remove"
+                    aria-label={`删除第 ${String(index + 1)} 条指定`}
+                    className="rounded-sm border border-line px-2 py-1 text-xs text-muted"
+                    onClick={() => {
+                      onChange(removeQuota(blueprint, index));
+                    }}
+                  >
+                    删
+                  </button>
+                </div>
+                <div className="flex items-center gap-1">
+                  <select
+                    className={`${INPUT} min-w-0 flex-1`}
+                    data-testid="plan-quota-type"
+                    aria-label={`第 ${String(index + 1)} 条指定题型`}
+                    value={quota.type}
+                    onChange={(event) => {
+                      onChange(withQuotaType(blueprint, index, event.target.value as FieldType));
+                    }}
+                  >
+                    {quotaTypes.map((type) => (
+                      <option
+                        key={type}
+                        value={type}
+                        disabled={
+                          type !== quota.type && quotaRemaining(blueprint, type, index) === 0
+                        }
+                      >
+                        {FIELD_TYPE_LABELS[type]}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className={`${INPUT} w-16 text-right tabular-nums`}
+                    data-testid="plan-quota-count"
+                    aria-label={`第 ${String(index + 1)} 条指定题量`}
+                    inputMode="numeric"
+                    min={1}
+                    max={remaining}
+                    value={String(quota.count)}
+                    onChange={(event) => {
+                      onChange(withQuotaCount(blueprint, index, Number(event.target.value)));
+                    }}
+                  />
+                  <span className="text-xs text-muted">道</span>
+                </div>
+              </div>
+            );
+          })}
+          {quotas.length === 0 && blueprint.knowledgePoints.length > 0 ? (
+            <p className="m-0 text-xs text-muted">未指定；所有题只受题型分布约束。</p>
+          ) : null}
+          <p className="m-0 text-xs text-muted">只钉住这里的组合；其余题仍按题型分布自由安排。</p>
         </div>
       )}
 
