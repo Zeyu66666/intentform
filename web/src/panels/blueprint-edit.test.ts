@@ -237,6 +237,22 @@ describe("知识点 × 题型配额", () => {
     expectValid(changed);
   });
 
+  it("改知识点或题型时不制造重复组合", () => {
+    const two: FormBlueprint = {
+      ...BASE,
+      knowledgePoints: [
+        { id: "kp_vertex", name: "顶点坐标" },
+        { id: "kp_open", name: "开口方向" },
+      ],
+      quotas: [
+        { knowledgePoint: "kp_vertex", type: "single", count: 1 },
+        { knowledgePoint: "kp_open", type: "single", count: 1 },
+      ],
+    };
+    expect(withQuotaKnowledgePoint(two, 1, "kp_vertex")).toBe(two);
+    expect(withQuotaType(two, 1, "single")).toBe(two);
+  });
+
   it("删除配额按位置生效", () => {
     const two: FormBlueprint = { ...BASE, quotas: [
       { knowledgePoint: "kp_vertex", type: "single", count: 1 },

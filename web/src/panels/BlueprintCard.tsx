@@ -19,6 +19,7 @@ import {
   addKnowledgePoint,
   addQuota,
   addSection,
+  quotaPairFree,
   quotaRemaining,
   removeKnowledgePoint,
   removeQuota,
@@ -242,7 +243,14 @@ export function BlueprintCard({
                     }}
                   >
                     {blueprint.knowledgePoints.map((point) => (
-                      <option key={point.id} value={point.id}>
+                      <option
+                        key={point.id}
+                        value={point.id}
+                        disabled={
+                          point.id !== quota.knowledgePoint &&
+                          !quotaPairFree(blueprint, point.id, quota.type, index)
+                        }
+                      >
                         {point.name}
                       </option>
                     ))}
@@ -274,7 +282,9 @@ export function BlueprintCard({
                         key={type}
                         value={type}
                         disabled={
-                          type !== quota.type && quotaRemaining(blueprint, type, index) === 0
+                          type !== quota.type &&
+                          (quotaRemaining(blueprint, type, index) === 0 ||
+                            !quotaPairFree(blueprint, quota.knowledgePoint, type, index))
                         }
                       >
                         {FIELD_TYPE_LABELS[type]}

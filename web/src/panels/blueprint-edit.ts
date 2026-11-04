@@ -226,6 +226,19 @@ export function removeKnowledgePoint(blueprint: FormBlueprint, index: number): F
   };
 }
 
+/** 这个「知识点 + 题型」组合是否还没被别的条目占用。 */
+export function quotaPairFree(
+  blueprint: FormBlueprint,
+  knowledgePoint: string,
+  type: FieldType,
+  exceptIndex = -1,
+): boolean {
+  return !(blueprint.quotas ?? []).some(
+    (quota, index) =>
+      index !== exceptIndex && quota.knowledgePoint === knowledgePoint && quota.type === type,
+  );
+}
+
 /** 某题型还能再指定几道；`exceptIndex` 用于编辑单条配额时排除它自己。 */
 export function quotaRemaining(
   blueprint: FormBlueprint,
@@ -246,10 +259,7 @@ export function addQuota(blueprint: FormBlueprint): FormBlueprint {
   for (const point of blueprint.knowledgePoints) {
     for (const type of NON_SECTION_TYPES) {
       if (quotaRemaining(blueprint, type) === 0) continue;
-      const duplicated = (blueprint.quotas ?? []).some(
-        (quota) => quota.knowledgePoint === point.id && quota.type === type,
-      );
-      if (duplicated) continue;
+      if (!quotaPairFree(blueprint, point.id, type)) continue;
       return {
         ...blueprint,
         quotas: [...(blueprint.quotas ?? []), { knowledgePoint: point.id, type, count: 1 }],
@@ -270,7 +280,11 @@ export function withQuotaKnowledgePoint(
   knowledgePoint: string,
 ): FormBlueprint {
   const quota = blueprint.quotas?.[index];
-  if (quota === undefined || blueprint.knowledgePoints.every((point) => point.id !== knowledgePoint)) {
+  if (
+    quota === undefined ||
+    blueprint.knowledgePoints.every((point) => point.id !== knowledgePoint) ||
+    !quotaPairFree(blueprint, knowledgePoint, quota.type, index)
+  ) {
     return blueprint;
   }
   return {
@@ -288,6 +302,7 @@ export function withQuotaType(
 ): FormBlueprint {
   const quota = blueprint.quotas?.[index];
   if (quota === undefined || type === "section" || type === quota.type) return blueprint;
+  if (!quotaPairFree(blueprint, quota.knowledgePoint, type, index)) return blueprint;
   const remaining = quotaRemaining(blueprint, type, index);
   if (remaining === 0) return blueprint;
   const count = Math.min(quota.count, remaining);
