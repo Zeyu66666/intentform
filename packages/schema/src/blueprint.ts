@@ -31,6 +31,23 @@ export interface BlueprintKnowledgePoint {
   readonly name: string;
 }
 
+/** 非分节题型；配额只能落在这六种上。 */
+export type QuotaType = Exclude<FieldType, "section">;
+
+/**
+ * 「某知识点出几道某题型」的部分分配。
+ *
+ * 它不替代 `typeMix`：`typeMix` 仍是整卷每种题型的总数，配额只是从对应题型里
+ * 占位。例如「立体几何 · 简答 · 1」表示 2 道简答里必须有一道是立体几何，
+ * 另一道仍可自由分配。
+ */
+export interface BlueprintQuota {
+  /** 必须是 `knowledgePoints[].id` 之一。 */
+  readonly knowledgePoint: string;
+  readonly type: QuotaType;
+  readonly count: number;
+}
+
 export interface FormBlueprint {
   readonly title: string;
   readonly kind: FormKind;
@@ -46,6 +63,11 @@ export interface FormBlueprint {
    * 不共用一套 id 就没法判断"蓝图承诺的知识点，成品真的覆盖了吗"。
    */
   readonly knowledgePoints: readonly BlueprintKnowledgePoint[];
+  /**
+   * 可选的部分分配。旧蓝图与旧回放没有这个字段，语义等同「不指定」。
+   * 每条都必须落在已声明知识点与题型容量之内。
+   */
+  readonly quotas?: readonly BlueprintQuota[] | undefined;
 }
 
 /** 题型的中文说法：摘要与界面共用一份。 */
@@ -79,6 +101,16 @@ const typeMixSchema = z
   })
   .strict();
 
+const quotaTypeSchema = z.enum(["single", "multi", "fill", "number", "short", "scale"]);
+
+const quotaSchema = z
+  .object({
+    knowledgePoint: z.string().regex(LIMITS.idPattern, "配额的知识点 id 需匹配 ^[a-z0-9_-]{3,32}$"),
+    type: quotaTypeSchema,
+    count: z.number().int().min(1, "配额题量至少为 1").max(LIMITS.fieldsMax),
+  })
+  .strict();
+
 /**
  * 契约本体。跨字段自洽性用 `superRefine` 表达——它不是"额外的业务校验"，
  * 而是蓝图这个概念的定义：对不上账的蓝图根本不算蓝图。
@@ -107,6 +139,7 @@ export const blueprintSchema = z
         }),
       )
       .max(20),
+    quotas: z.array(quotaSchema).max(LIMITS.fieldsMax).optional(),
   })
   .superRefine((blueprint, ctx) => {
     const sectionSum = blueprint.sections.reduce((sum, section) => sum + section.count, 0);
@@ -131,6 +164,50 @@ export const blueprintSchema = z
         code: z.ZodIssueCode.custom,
         path: ["totalScore"],
         message: "问卷没有分值语义，totalScore 必须是 0",
+      });
+    }
+
+    const quotas = blueprint.quotas ?? [];
+    const knownPoints = new Set(blueprint.knowledgePoints.map((point) => point.id));
+    const seenQuotas = new Set<string>();
+    const typeSums = new Map<QuotaType, number>();
+    let quotaSum = 0;
+    quotas.forEach((quota, index) => {
+      if (!knownPoints.has(quota.knowledgePoint)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["quotas", index, "knowledgePoint"],
+          message: `配额引用了不存在的知识点 ${quota.knowledgePoint}`,
+        });
+      }
+      const key = `${quota.knowledgePoint}\u0000${quota.type}`;
+      if (seenQuotas.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["quotas", index],
+          message: `同一个知识点与题型只能有一条配额：${quota.knowledgePoint} · ${FIELD_TYPE_LABELS[quota.type]}`,
+        });
+      }
+      seenQuotas.add(key);
+      typeSums.set(quota.type, (typeSums.get(quota.type) ?? 0) + quota.count);
+      quotaSum += quota.count;
+    });
+
+    for (const [type, sum] of typeSums) {
+      const capacity = blueprint.typeMix[type] ?? 0;
+      if (sum > capacity) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["quotas"],
+          message: `配额里${FIELD_TYPE_LABELS[type]}共 ${String(sum)} 道，超过题型分布 ${String(capacity)} 道`,
+        });
+      }
+    }
+    if (quotaSum > blueprint.totalCount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["quotas"],
+        message: `配额总题量 ${String(quotaSum)} 超过总题量 ${String(blueprint.totalCount)}`,
       });
     }
   });
@@ -159,6 +236,13 @@ export function summarizeBlueprint(blueprint: FormBlueprint): string {
   return `${String(blueprint.totalCount)} 题 / ${mix}${score} / ${points}`;
 }
 
+export interface BlueprintQuotaMismatch {
+  readonly knowledgePoint: string;
+  readonly type: QuotaType;
+  readonly planned: number;
+  readonly actual: number;
+}
+
 export interface BlueprintDeviation {
   /** 实际题量 − 蓝图题量（分节不算）。负数是少出了题。 */
   readonly countDelta: number;
@@ -170,7 +254,9 @@ export interface BlueprintDeviation {
   readonly missingKnowledgePoints: readonly string[];
   /** 成品里出现、蓝图没提的知识点。 */
   readonly extraKnowledgePoints: readonly string[];
-  /** 四项全对（题量、总分、题型、知识点）——「结构完全匹配」的唯一来源。 */
+  /** 指定了配额但实际题数对不上的组合；只列有差值的条目。 */
+  readonly quotaMismatches: readonly BlueprintQuotaMismatch[];
+  /** 五项全对（题量、总分、题型、知识点、配额）——「结构完全匹配」的唯一来源。 */
   readonly isExact: boolean;
 }
 
@@ -216,6 +302,26 @@ export function compareWithBlueprint(
   const missingKnowledgePoints = [...plannedPoints].filter((point) => !actualPoints.has(point));
   const extraKnowledgePoints = [...actualPoints].filter((point) => !plannedPoints.has(point));
 
+  const actualQuotas = new Map<string, number>();
+  for (const item of items) {
+    const id = knowledgePointOf(item);
+    if (id === undefined) continue;
+    const key = `${id}\u0000${item.type}`;
+    actualQuotas.set(key, (actualQuotas.get(key) ?? 0) + 1);
+  }
+  const quotaMismatches: BlueprintQuotaMismatch[] = [];
+  for (const quota of blueprint.quotas ?? []) {
+    const actual = actualQuotas.get(`${quota.knowledgePoint}\u0000${quota.type}`) ?? 0;
+    if (actual !== quota.count) {
+      quotaMismatches.push({
+        knowledgePoint: quota.knowledgePoint,
+        type: quota.type,
+        planned: quota.count,
+        actual,
+      });
+    }
+  }
+
   const countDelta = items.length - blueprint.totalCount;
   const scoreDelta = form.totalScore - blueprint.totalScore;
   const isExact =
@@ -223,7 +329,8 @@ export function compareWithBlueprint(
     scoreDelta === 0 &&
     Object.keys(typeMixDelta).length === 0 &&
     missingKnowledgePoints.length === 0 &&
-    extraKnowledgePoints.length === 0;
+    extraKnowledgePoints.length === 0 &&
+    quotaMismatches.length === 0;
 
   return {
     countDelta,
@@ -231,6 +338,7 @@ export function compareWithBlueprint(
     typeMixDelta,
     missingKnowledgePoints,
     extraKnowledgePoints,
+    quotaMismatches,
     isExact,
   };
 }

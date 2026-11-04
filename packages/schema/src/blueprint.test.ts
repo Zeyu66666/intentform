@@ -76,6 +76,40 @@ describe("blueprintSchema", () => {
     );
     expect(result.success).toBe(false);
   });
+
+  it("接受知识点 + 题型的配额；缺省时 quotas 不存在", () => {
+    const withQuotas = blueprintSchema.parse(
+      blueprintJson({ quotas: [{ knowledgePoint: "kp-open", type: "short", count: 1 }] }),
+    );
+    expect(withQuotas.quotas).toEqual([{ knowledgePoint: "kp-open", type: "short", count: 1 }]);
+    expect(blueprintSchema.parse(blueprintJson()).quotas).toBeUndefined();
+  });
+
+  it("配额指向不存在的知识点 → 拒绝", () => {
+    const result = blueprintSchema.safeParse(
+      blueprintJson({ quotas: [{ knowledgePoint: "kp-missing", type: "short", count: 1 }] }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it("同一知识点 + 题型的配额重复 → 拒绝", () => {
+    const result = blueprintSchema.safeParse(
+      blueprintJson({
+        quotas: [
+          { knowledgePoint: "kp-open", type: "short", count: 1 },
+          { knowledgePoint: "kp-open", type: "short", count: 1 },
+        ],
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it("配额超过该题型总数 → 拒绝", () => {
+    const result = blueprintSchema.safeParse(
+      blueprintJson({ quotas: [{ knowledgePoint: "kp-open", type: "short", count: 3 }] }),
+    );
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("summarizeBlueprint", () => {
@@ -205,5 +239,49 @@ describe("compareWithBlueprint", () => {
       objectives: schema.meta.objectives,
     });
     expect(deviation.countDelta).toBe(-8);
+  });
+
+  it("配额未兑现：列出 (知识点, 题型) 的计划数与实际数，并判为不精确", () => {
+    const withQuota = blueprintSchema.parse(
+      blueprintJson({ quotas: [{ knowledgePoint: "kp-open", type: "short", count: 1 }] }),
+    );
+    const schema = quiz([
+      {
+        id: "q-one",
+        type: "single",
+        title: "a",
+        score: 5,
+        options: [{ id: "o1", text: "x" }, { id: "o2", text: "y" }],
+        answer: "o1",
+        knowledgePoint: "kp-open",
+      },
+    ]);
+    const deviation = compareWithBlueprint(withQuota, {
+      items: schema.items,
+      totalScore: schema.meta.totalScore ?? 0,
+      objectives: schema.meta.objectives,
+    });
+    expect(deviation.quotaMismatches).toEqual([
+      { knowledgePoint: "kp-open", type: "short", planned: 1, actual: 0 },
+    ]);
+    expect(deviation.isExact).toBe(false);
+  });
+
+  it("配额兑现后不再产生配额差异", () => {
+    const withQuota = blueprintSchema.parse(
+      blueprintJson({ quotas: [{ knowledgePoint: "kp-open", type: "short", count: 1 }] }),
+    );
+    const schema = quiz(
+      [
+        { id: "q-seven", type: "short", title: "g", score: 5, maxLength: 100, knowledgePoint: "kp-open" },
+      ],
+      [{ id: "kp-open", name: "开口方向" }],
+    );
+    const deviation = compareWithBlueprint(withQuota, {
+      items: schema.items,
+      totalScore: schema.meta.totalScore ?? 0,
+      objectives: schema.meta.objectives,
+    });
+    expect(deviation.quotaMismatches).toEqual([]);
   });
 });
