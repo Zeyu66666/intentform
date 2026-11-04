@@ -139,7 +139,8 @@ export async function searchWeb(
     options.fetchImpl ??
     ((url, init) =>
       fetch(url, {
-        method: init.method,
+        // 字面量而不是 `init.method`：搜索契约固定为 POST，也让静态检查能看懂。
+        method: "POST",
         headers: init.headers,
         body: init.body,
         signal: init.signal,
