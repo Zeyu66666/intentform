@@ -52,6 +52,8 @@ export interface StreamInput {
   readonly kind?: "quiz" | "survey";
   /** 完全覆写消息（蓝图链路用自己的提示词）；缺省按需求 + 版本 + 蓝图组装。 */
   readonly messages?: readonly ChatMessage[];
+  /** 参考卷原文（只有规划链路会带）；进回放键，避免带参考与不带参考命中同一录像。 */
+  readonly reference?: string | undefined;
 }
 
 export interface DeltaSource {
@@ -189,6 +191,7 @@ export function createRecordSource(
         model: config.model,
         promptVersion,
         schemaVersion: SCHEMA_VERSION,
+        reference: input.reference,
       });
       const meta = createFixtureMeta(chunks, {
         requirement: input.requirement,
@@ -234,6 +237,7 @@ export function createReplaySource(
         model: config.model,
         promptVersion,
         schemaVersion: SCHEMA_VERSION,
+        reference: input.reference,
       });
       const fixture = await readFixture(config.fixtureDir, hash);
 

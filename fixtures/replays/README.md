@@ -17,14 +17,19 @@ fixtures/replays/
 ## 2. `<hash>` 怎么算
 
 ```
-key     = normalize(requirement) + "\u0000" + model + "\u0000" + promptVersion + "\u0000" + "v" + schemaVersion
+key     = normalize(requirement) + "\u0000" + [refHash + "\u0000"] + model + "\u0000" + promptVersion + "\u0000" + "v" + schemaVersion
+refHash = sha256(normalize(reference)) 的**前 16 位小写十六进制**；没有参考卷时连同分隔符整段省略
 <hash>  = sha256(key) 的**完整 64 位小写十六进制**
 ```
+
+- `reference` 是教师粘贴的参考试卷原文，**只有规划阶段（`plan.v2`）会带**；生成阶段拿不到它。
+- 没有参考卷时**不插空段**，所以旧需求（以及所有生成阶段）的回放键与升级前逐字节相同。
+- `refHash` 只取 16 位，是因为它不承担防撞职责（外层 `key` 仍是完整 SHA-256）；它只是把「同一需求 + 不同参考卷」区分成不同的键。参考卷内容规范化后完全一致（含空白差异）就是同一份参考。
 
 - `normalize(requirement)`：`NFC` → 换行统一为 `\n` → 行内连续空格/制表符/全角空格折叠为一个半角空格 → 每行去首尾空白 → 连续 3 行以上空行折叠为 1 个空行 → 整体去首尾空白。
   **先规范化再入 hash**：否则教师多打一个空格就换一个键，回放必然未命中（`AGENTS.md` §7）。
 - `model` 用请求里真正发给上游的模型名（如 `deepseek-chat`），不是"chat 模型"这类别名。
-- `promptVersion` 是 `prompts/*.md` 文件名里的版本号（如 `generate.v1`），不是 commit hash。
+- `promptVersion` 是提示词版本号（生成 `generate.v4`、蓝图 `plan.v2`），不是 commit hash。
 - `schemaVersion` 取 `@intentform/schema` 的 `SCHEMA_VERSION`，前面加 `v`。FormSchema 形状变了，旧 fixture 的合法性不能复用。
 - **不截断 hash**。截断到 16 位看起来好看，但一旦两条 fixture 撞前缀，回放会静默播放错误的流。
 
@@ -55,7 +60,7 @@ key     = normalize(requirement) + "\u0000" + model + "\u0000" + promptVersion +
 {
   "recordedAt": "2026-10-26T09:12:33.000Z",
   "model": "deepseek-chat",
-  "promptVersion": "generate.v1",
+  "promptVersion": "generate.v4",
   "schemaVersion": 1,
   "requirementHash": "<64 位 hash，等于文件名>",
   "requirementPreview": "规范化后需求的前 80 个字符",
@@ -76,7 +81,7 @@ key     = normalize(requirement) + "\u0000" + model + "\u0000" + promptVersion +
 
 ## 5. 命名与预算
 
-- 仓库里的 fixture 上限 **6 条** = 3 个「预置需求」× 两段（`plan.v1` 蓝图 + `generate.v3` 生成）。
+- 仓库里的 fixture 上限 **6 条** = 3 个「预置需求」× 两段（`plan.v2` 蓝图 + `generate.v4` 生成）。
   两段各有独立回放键，缺一段两阶段就跑不起来。加第 4 条需求要先改计划（上限同步改 8）。
 - 每条 fixture 的 `.ndjson` 不得大于 256 KB；超了说明录了一段超长输出，应当拆需求而不是放宽上限。
 - fixture 与需求文本必须一一对应：`requirementPreview` 改不了 hash，改动需求文本必然要重录。

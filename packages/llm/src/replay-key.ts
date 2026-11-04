@@ -41,6 +41,19 @@ export interface ReplayKeyInput {
   /** prompt 文件名里的版本号（`generate.v1`），不是 commit hash。 */
   readonly promptVersion: string;
   readonly schemaVersion: SchemaVersion;
+  /**
+   * 教师参考试卷原文。只有规划阶段会带它；没有参考时**不产生额外分隔段**，
+   * 因此旧需求的回放键与旧公式逐字节相同。
+   */
+  readonly reference?: string | undefined;
+}
+
+/** 参考卷指纹：规范化后取 sha256 前 16 位；空/纯空白视为没有参考。 */
+function referenceFingerprint(reference: string | undefined): string {
+  if (reference === undefined) return "";
+  const normalized = normalizeRequirement(reference);
+  if (normalized === "") return "";
+  return createHash("sha256").update(normalized, "utf8").digest("hex").slice(0, 16);
 }
 
 /**
@@ -85,12 +98,12 @@ export function requirementPreview(normalizedRequirement: string): string {
 /** 拼出参与 sha256 的原文。导出是为了让「键怎么拼」在测试与文档里有同一处证据。 */
 export function replayKeyMaterial(input: ReplayKeyInput): string {
   const normalized = normalizeRequirement(input.requirement);
-  return [
-    normalized,
-    input.model,
-    input.promptVersion,
-    `v${input.schemaVersion}`,
-  ].join(REPLAY_KEY_SEPARATOR);
+  const parts = [normalized];
+  const reference = referenceFingerprint(input.reference);
+  // 没有参考卷时**不插空段**：旧需求的键必须与升级前逐字节相同。
+  if (reference !== "") parts.push(reference);
+  parts.push(input.model, input.promptVersion, `v${input.schemaVersion}`);
+  return parts.join(REPLAY_KEY_SEPARATOR);
 }
 
 /** 完整 64 位小写十六进制。Node 的 `digest("hex")` 天然是小写。 */

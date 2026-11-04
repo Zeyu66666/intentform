@@ -78,3 +78,27 @@ describe("requirementPreview", () => {
     expect(requirementPreview(long).length).toBe(80);
   });
 });
+
+describe("replayKey · 参考卷指纹", () => {
+  const requirement = "出一份高三数学试卷";
+  const base = { requirement, model: MODEL, promptVersion: "generate.v4", schemaVersion: SCHEMA_VERSION };
+
+  it("没有参考卷时与旧公式逐字节相同", () => {
+    const expected = createHash("sha256")
+      .update(
+        [normalizeRequirement(requirement), MODEL, "generate.v4", `v${String(SCHEMA_VERSION)}`].join("\u0000"),
+        "utf8",
+      )
+      .digest("hex");
+    expect(replayKey(base)).toBe(expected);
+  });
+
+  it("加参考卷换键；空白差异不换键", () => {
+    const withRef = replayKey({ ...base, reference: "参考卷：立体几何 1 单选 1 简答" });
+    const sameRef = replayKey({ ...base, reference: "  参考卷：立体几何  1 单选 1 简答  " });
+    const otherRef = replayKey({ ...base, reference: "参考卷：函数与导数" });
+    expect(withRef).not.toBe(replayKey(base));
+    expect(withRef).toBe(sameRef);
+    expect(withRef).not.toBe(otherRef);
+  });
+});
