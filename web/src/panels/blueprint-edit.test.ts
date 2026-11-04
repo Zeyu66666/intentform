@@ -17,6 +17,7 @@ import {
   removeKnowledgePoint,
   removeQuota,
   removeSection,
+  withDifficultyCount,
   withKnowledgeId,
   withKnowledgeName,
   withQuotaCount,
@@ -48,6 +49,15 @@ function sumSections(blueprint: FormBlueprint): number {
 
 function sumTypes(blueprint: FormBlueprint): number {
   return Object.values(blueprint.typeMix).reduce((sum, count) => sum + (count ?? 0), 0);
+}
+
+function sumDifficulty(blueprint: FormBlueprint): number {
+  const mix = blueprint.difficultyMix;
+  if (mix === undefined) return 0;
+  return (["basic", "standard", "comprehensive", "advanced"] as const).reduce(
+    (sum, level) => sum + (mix[level] ?? 0),
+    0,
+  );
 }
 
 function expectValid(blueprint: FormBlueprint): void {
@@ -288,5 +298,35 @@ describe("知识点 × 题型配额", () => {
     const renamed = withKnowledgeId(one, 0, "kp_open");
     expect(renamed.quotas?.[0]?.knowledgePoint).toBe("kp_open");
     expectValid(renamed);
+  });
+});
+
+describe("难度分布编辑", () => {
+  const withDifficulty: FormBlueprint = {
+    ...BASE,
+    difficultyMix: { basic: 2, standard: 2, comprehensive: 1, advanced: 0 },
+  };
+
+  it("改难度题量后总题量跟着变，章节与题型按比例重分", () => {
+    const next = withDifficultyCount(withDifficulty, "advanced", 3);
+    expect(next.difficultyMix?.advanced).toBe(3);
+    expect(next.totalCount).toBe(8);
+    expect(sumDifficulty(next)).toBe(next.totalCount);
+    expect(sumSections(next)).toBe(next.totalCount);
+    expect(sumTypes(next)).toBe(next.totalCount);
+    expectValid(next);
+  });
+
+  it("改章节题量时难度按原比例重分，不丢档", () => {
+    const next = withSectionCount(withDifficulty, 0, 4);
+    expect(next.totalCount).toBe(6);
+    expect(sumDifficulty(next)).toBe(6);
+    expectValid(next);
+  });
+
+  it("没有难度字段的旧蓝图不会被凭空补上", () => {
+    const next = withTypeCount(BASE, "single", 3);
+    expect(next.difficultyMix).toBeUndefined();
+    expectValid(next);
   });
 });

@@ -11,10 +11,12 @@
  */
 
 import {
+  DIFFICULTY_LEVELS,
   FIELD_TYPES,
   LIMITS,
   QUOTA_TYPES,
   type BlueprintQuota,
+  type DifficultyLevel,
   type FieldType,
   type FormBlueprint,
   type FormKind,
@@ -72,10 +74,22 @@ function fitQuotas(
   return fitted;
 }
 
+/** 难度四档按原比例重分到新的总题量；原分布全 0 时整卷落到第一档。 */
+function redistributeDifficulty(
+  mix: Readonly<Partial<Record<DifficultyLevel, number>>>,
+  totalCount: number,
+): Readonly<Partial<Record<DifficultyLevel, number>>> {
+  const counts = distribute(totalCount, DIFFICULTY_LEVELS.map((level) => mix[level] ?? 0));
+  return Object.fromEntries(
+    DIFFICULTY_LEVELS.map((level, index) => [level, counts[index] ?? 0]),
+  ) as Partial<Record<DifficultyLevel, number>>;
+}
+
 function withSectionsAndMix(
   blueprint: FormBlueprint,
   sections: readonly { readonly title: string; readonly count: number }[],
   typeCounts: Readonly<Partial<Record<FieldType, number>>>,
+  difficultyCounts?: Readonly<Partial<Record<DifficultyLevel, number>>>,
 ): FormBlueprint {
   const sum = sections.reduce((acc, section) => acc + clampCount(section.count), 0);
   const totalCount = Math.max(1, sum);
@@ -83,6 +97,12 @@ function withSectionsAndMix(
   if (sum === 0 && adjusted[0] !== undefined) {
     adjusted[0] = { ...adjusted[0], count: 1 };
   }
+  const difficulty =
+    difficultyCounts !== undefined
+      ? difficultyCounts
+      : blueprint.difficultyMix === undefined
+        ? undefined
+        : redistributeDifficulty(blueprint.difficultyMix, totalCount);
   return {
     ...blueprint,
     sections: adjusted,
@@ -92,6 +112,7 @@ function withSectionsAndMix(
     ...(blueprint.quotas === undefined
       ? {}
       : { quotas: fitQuotas(blueprint.quotas, typeCounts) }),
+    ...(difficulty === undefined ? {} : { difficultyMix: difficulty }),
   };
 }
 
@@ -101,6 +122,29 @@ function sectionWeights(blueprint: FormBlueprint): number[] {
 
 function mixWeights(blueprint: FormBlueprint): number[] {
   return NON_SECTION_TYPES.map((type) => blueprint.typeMix[type] ?? 0);
+}
+
+/** 改难度题量：总题量跟着变，章节与题型按原比例重分。 */
+export function withDifficultyCount(
+  blueprint: FormBlueprint,
+  level: DifficultyLevel,
+  value: number,
+): FormBlueprint {
+  if (!DIFFICULTY_LEVELS.includes(level) || blueprint.difficultyMix === undefined) return blueprint;
+  const next = { ...blueprint.difficultyMix, [level]: Math.max(0, clampCount(value)) } as Partial<
+    Record<DifficultyLevel, number>
+  >;
+  const total = Math.max(1, DIFFICULTY_LEVELS.reduce((sum, entry) => sum + (next[entry] ?? 0), 0));
+  const sectionCounts = distribute(total, sectionWeights(blueprint));
+  const sections = blueprint.sections.map((section, index) => ({
+    ...section,
+    count: sectionCounts[index] ?? 0,
+  }));
+  const typeCounts = distribute(total, mixWeights(blueprint));
+  const typeMix = Object.fromEntries(
+    NON_SECTION_TYPES.map((type, index) => [type, typeCounts[index] ?? 0]),
+  ) as Partial<Record<FieldType, number>>;
+  return withSectionsAndMix(blueprint, sections, typeMix, next);
 }
 
 /** 改章节题量：总和变新的 `totalCount`，题型按原比例重分。 */
