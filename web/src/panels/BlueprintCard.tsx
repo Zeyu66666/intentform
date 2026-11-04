@@ -7,11 +7,14 @@
  */
 
 import {
+  DIFFICULTY_LABELS,
+  DIFFICULTY_LEVELS,
   FIELD_TYPE_LABELS,
   FIELD_TYPES,
   QUOTA_TYPES,
   parseBlueprint,
   summarizeBlueprint,
+  type DifficultyLevel,
   type FieldType,
   type FormBlueprint,
 } from "@intentform/schema";
@@ -25,6 +28,7 @@ import {
   removeKnowledgePoint,
   removeQuota,
   removeSection,
+  withDifficultyCount,
   withKnowledgeName,
   withQuotaCount,
   withQuotaKnowledgePoint,
@@ -152,6 +156,28 @@ export function BlueprintCard({
           ))}
         </div>
       </div>
+
+      {blueprint.difficultyMix === undefined ? null : (
+        <div className="flex flex-col gap-1" data-testid="plan-difficulty">
+          <span className="text-xs font-medium text-muted">难度分布（基础 → 压轴）</span>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+            {DIFFICULTY_LEVELS.map((level) => (
+              <label key={level} className="flex items-center justify-between gap-1 text-xs text-muted">
+                <span className="shrink-0">{DIFFICULTY_LABELS[level]}</span>
+                <input
+                  className={`${INPUT} w-16 text-right tabular-nums`}
+                  inputMode="numeric"
+                  aria-label={`${DIFFICULTY_LABELS[level]}难度数量`}
+                  value={String(blueprint.difficultyMix?.[level] ?? 0)}
+                  onChange={(event) => {
+                    onChange(withDifficultyCount(blueprint, level as DifficultyLevel, Number(event.target.value)));
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs text-muted">
