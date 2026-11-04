@@ -2,7 +2,7 @@
  * 两阶段蓝图的**第一阶段**：让模型先把结构说清楚（省赛 R-06）。
  *
  * 两个刻意的设计：
- * 1. **独立 prompt 版本 `plan.v1`**：它与生成是两条提示词，回放键因此也是两个。
+ * 1. **独立 prompt 版本 `plan.v2`**：它与生成是两条提示词，回放键因此也是两个。
  *    合用一个版本号会让"蓝图改了"和"生成改了"共用一次换键，录像互相覆盖。
  * 2. **不合法就重试一次，再不行明确报错**。绝不降级成"没有蓝图也生成"——
  *    那会让两阶段在失败时静默退化成单阶段，证据链就断在这里。
@@ -145,7 +145,7 @@ export async function planForm(deps: PlanDeps, options: PlanOptions): Promise<Fo
   const clock = deps.clock ?? Date.now;
   // mock 不调模型，也不用生成脚本那几条"字段行"——蓝图有自己的确定性实现。
   if (deps.source === undefined && deps.config.mode === "mock") {
-    return withKind(mockBlueprint(options.requirement), options.kind);
+    return withKind(mockBlueprint(options.requirement, options.reference), options.kind);
   }
   const source = deps.source ?? resolveSource(deps.config, clock);
   let lastMessage = "模型没有返回可解析的蓝图";
@@ -186,8 +186,11 @@ export async function planForm(deps: PlanDeps, options: PlanOptions): Promise<Fo
  *
  * 它**不是**模型输出，界面会标「内置假数据」；写在这里是为了让没有 Key 的机器
  * 也能把两阶段跑通（回放模式则走录像，不经过这里）。
+ *
+ * 参考卷只记录「收到了多少字」：离线模式没有模型，声称解析了原文就是伪造结论。
+ * 这段 styleNotes 的作用是让回执链路（参考卷 → 蓝图 → 界面）在浏览器闭环里可验。
  */
-export function mockBlueprint(requirement: string): FormBlueprint {
+export function mockBlueprint(requirement: string, reference?: string): FormBlueprint {
   const kind = inferFormKind(requirement);
   const countMatch = /(\d+)\s*(?:道|题)/u.exec(requirement);
   const totalCount = Math.min(LIMITS.fieldsMax, Math.max(1, Number(countMatch?.[1] ?? 5)));
@@ -249,6 +252,12 @@ export function mockBlueprint(requirement: string): FormBlueprint {
           advanced: levels[3] ?? 0,
         };
 
+  const trimmedReference = reference?.trim() ?? "";
+  const styleNotes =
+    trimmedReference === ""
+      ? undefined
+      : `mock 内置蓝图：已收到参考卷（${String(trimmedReference.length)} 字），离线模式不解析原文，仅用于验证参考回执。`;
+
   return {
     title: requirement.trim().slice(0, LIMITS.formTitleMax) || "未命名需求",
     kind,
@@ -258,5 +267,6 @@ export function mockBlueprint(requirement: string): FormBlueprint {
     totalScore,
     knowledgePoints,
     ...(difficultyMix === undefined ? {} : { difficultyMix }),
+    ...(styleNotes === undefined ? {} : { styleNotes }),
   };
 }

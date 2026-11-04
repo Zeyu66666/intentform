@@ -124,6 +124,18 @@ describe("planForm", () => {
     expect(first.totalScore).toBe(20);
   });
 
+  it("mock 带参考卷：styleNotes 如实只说「收到」，不回显原文", async () => {
+    const blueprint = await planForm(
+      { config: MOCK_CONFIG },
+      { requirement: "出 5 道单选题", reference: "教师参考卷-唯一标记-GAMMA" },
+    );
+    expect(blueprint.styleNotes).toContain("参考卷");
+    expect(blueprint.styleNotes).toContain("不解析原文");
+    expect(blueprint.styleNotes).not.toContain("教师参考卷-唯一标记-GAMMA");
+    const without = await planForm({ config: MOCK_CONFIG }, { requirement: "出 5 道单选题" });
+    expect(without.styleNotes).toBeUndefined();
+  });
+
   it("mock 问卷：总分恒为 0", async () => {
     const blueprint = await planForm({ config: MOCK_CONFIG }, { requirement: "做个 6 道题的学情问卷" });
     expect(blueprint.kind).toBe("survey");
