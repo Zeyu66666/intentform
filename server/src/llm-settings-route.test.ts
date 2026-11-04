@@ -124,6 +124,51 @@ describe("POST /api/settings/llm", () => {
     expect(mock.json.hasApiKey).toBe(true);
   });
 
+  it("搜索端点与搜索 Key：只回 hasSearchKey，Key 不出现在响应里", async () => {
+    server = await startTestServer();
+    seedTeacher(server.db);
+    const cookie = await login(server);
+
+    const searchKey = "search-route-key-not-real";
+    const saved = await call<LlmSettingsResponse>(server, "POST", "/api/settings/llm", {
+      cookie,
+      body: {
+        mode: "mock",
+        baseUrl: "https://api.example.com/v1",
+        model: "model-x",
+        searchBaseUrl: "https://search.example.test/api",
+        searchApiKey: searchKey,
+      },
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.json).toMatchObject({
+      searchBaseUrl: "https://search.example.test/api",
+      hasSearchKey: true,
+    });
+    expect(saved.text).not.toContain(searchKey);
+    expect(saved.text).not.toContain('"searchApiKey"');
+
+    const read = await call<LlmSettingsResponse>(server, "GET", "/api/settings/llm", { cookie });
+    expect(read.json.searchBaseUrl).toBe("https://search.example.test/api");
+    expect(read.json.hasSearchKey).toBe(true);
+    expect(read.text).not.toContain(searchKey);
+
+    // 非法搜索端点：400，且旧值不变。
+    const bad = await call(server, "POST", "/api/settings/llm", {
+      cookie,
+      body: {
+        mode: "mock",
+        baseUrl: "https://api.example.com/v1",
+        model: "model-x",
+        searchBaseUrl: "ftp://search.example.test",
+      },
+    });
+    expect(bad.status).toBe(400);
+    const after = await call<LlmSettingsResponse>(server, "GET", "/api/settings/llm", { cookie });
+    expect(after.json.searchBaseUrl).toBe("https://search.example.test/api");
+    expect(after.json.hasSearchKey).toBe(true);
+  });
+
   it("ADMIN_EMAIL 非空时只有该邮箱能写，其他教师 403", async () => {
     server = await startTestServer(createTestEnv({ ADMIN_EMAIL: "admin@example.com" }));
     const admin = seedTeacher(server.db, "admin@example.com");

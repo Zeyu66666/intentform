@@ -25,6 +25,8 @@ export interface RouteContext {
     readonly updateSettings?: (
       input: import("./llm-runtime.ts").LlmSettingsInput,
     ) => import("./llm-runtime.ts").LlmPublicSettings;
+    /** 搜索凭据（只给 `/api/plan` 用；Key 不进响应）。 */
+    readonly search?: () => import("./llm-runtime.ts").LlmSearchSettings;
   };
   readonly req: IncomingMessage;
   readonly res: ServerResponse;

@@ -18,6 +18,7 @@ import {
 import { planForm } from "@intentform/llm";
 
 import { describeZodError, readJsonBody, sendApiError, sendJson, type RouteContext } from "./http.ts";
+import { runWebSearch } from "./search.ts";
 
 export const PLAN_PATH = "/api/plan";
 
@@ -49,7 +50,7 @@ export async function handlePlan(ctx: RouteContext): Promise<void> {
     sendApiError(ctx.res, "bad_request", describeZodError(parsed.error));
     return;
   }
-  const { requirement, kind, clarifications } = parsed.data;
+  const { requirement, kind, clarifications, reference, webSearch } = parsed.data;
   // 补答先拼进需求：规划与生成看到的是同一段需求，否则两步的口径会岔开。
   const composed = composeRequirement(requirement, clarifications ?? []);
   if (composed.length > LIMITS.requirementMaxChars) {
@@ -57,10 +58,28 @@ export async function handlePlan(ctx: RouteContext): Promise<void> {
     return;
   }
 
+  // 联网参考：四道闸全过才外呼。离线模式（mock/replay/record）零调用，
+  // 回执恒为 off——这不是优化，是「评审机器上不产生任何外部请求」的保证。
+  const credentials = ctx.llm.search?.() ?? { baseUrl: "", apiKey: "" };
+  const search = await runWebSearch(
+    {
+      mode: ctx.llm.config.mode,
+      webSearch: webSearch === true,
+      credentials,
+      requirement: composed,
+    },
+    { logger: ctx.llm.logger },
+  );
+
   try {
     const blueprint = await planForm(
       { config: ctx.llm.config, logger: ctx.llm.logger },
-      { requirement: composed, ...(kind === undefined ? {} : { kind }) },
+      {
+        requirement: composed,
+        ...(kind === undefined ? {} : { kind }),
+        ...(reference === undefined ? {} : { reference }),
+        ...(search.results.length === 0 ? {} : { searchResults: search.results }),
+      },
     );
     const response: PlanResponse = {
       ok: true,
@@ -68,11 +87,17 @@ export async function handlePlan(ctx: RouteContext): Promise<void> {
       blueprint,
       summary: summarizeBlueprint(blueprint),
       requirement: composed,
+      searchStatus: search.status,
+      searchCount: search.results.length,
     };
-    sendJson(ctx.res, 200, response);
+    sendJson(ctx.res, 200, response, {
+      "x-intentform-search": search.status === "off" ? "off" : "on",
+    });
   } catch (error) {
     // 蓝图不合法是模型的问题，不是请求的问题：502（上游给不出可用结构）。
     const message = error instanceof Error ? error.message : "蓝图生成失败";
-    sendApiError(ctx.res, "internal", message);
+    sendApiError(ctx.res, "internal", message, {
+      "x-intentform-search": search.status === "off" ? "off" : "on",
+    });
   }
 }

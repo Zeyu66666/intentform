@@ -65,6 +65,8 @@ export function corsHeadersFor(req: IncomingMessage, env: ServerEnv): Record<str
     "access-control-allow-credentials": "true",
     "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "access-control-allow-headers": `content-type, ${CSRF_HEADER}`,
+    // `/api/plan` 的联网参考回执放在响应头里；跨端口开发时浏览器默认读不到自定义头。
+    "access-control-expose-headers": "x-intentform-search",
     "access-control-max-age": "600",
     vary: "origin",
   };

@@ -58,8 +58,69 @@ describe("createLlmRuntime", () => {
   it("公开设置不含 Key 字段", () => {
     const runtime = liveRuntime();
     const settings = runtime.publicSettings();
-    expect(Object.keys(settings).sort()).toEqual(["baseUrl", "hasApiKey", "mode", "model"]);
+    expect(Object.keys(settings).sort()).toEqual([
+      "baseUrl",
+      "hasApiKey",
+      "hasSearchKey",
+      "mode",
+      "model",
+      "searchBaseUrl",
+    ]);
     expect(JSON.stringify(settings)).not.toContain(TEST_KEY);
+  });
+
+  it("搜索配置来自环境变量，且只通过 searchSettings 取 Key", () => {
+    const runtime = createLlmRuntime(resolveLlmRuntimeConfig("mock", {}, {}), {
+      SEARCH_BASE_URL: "https://search.example.test/v1/search",
+      SEARCH_API_KEY: TEST_KEY,
+    });
+    expect(runtime.publicSettings().searchBaseUrl).toBe("https://search.example.test/v1/search");
+    expect(runtime.publicSettings().hasSearchKey).toBe(true);
+    expect(JSON.stringify(runtime.publicSettings())).not.toContain(TEST_KEY);
+    expect(runtime.searchSettings()).toEqual({
+      baseUrl: "https://search.example.test/v1/search",
+      apiKey: TEST_KEY,
+    });
+  });
+
+  it("更新搜索配置：省略保持、空串清空、非法端点不写入", () => {
+    const runtime = liveRuntime();
+    const saved = runtime.update({
+      mode: "mock",
+      baseUrl: "https://api.example.com/v1",
+      model: "m",
+      searchBaseUrl: "https://search.example.test/api/",
+      searchApiKey: TEST_KEY,
+    });
+    expect(saved.searchBaseUrl).toBe("https://search.example.test/api");
+    expect(saved.hasSearchKey).toBe(true);
+
+    // 省略 = 保持原值。
+    const kept = runtime.update({ mode: "mock", baseUrl: "https://api.example.com/v1", model: "m" });
+    expect(kept.searchBaseUrl).toBe("https://search.example.test/api");
+    expect(kept.hasSearchKey).toBe(true);
+
+    // 非法端点：抛错且旧配置不变。
+    expect(() =>
+      runtime.update({
+        mode: "mock",
+        baseUrl: "https://api.example.com/v1",
+        model: "m",
+        searchBaseUrl: "ftp://search.example.test",
+      }),
+    ).toThrow();
+    expect(runtime.publicSettings().searchBaseUrl).toBe("https://search.example.test/api");
+
+    // 空串 = 清空。
+    const cleared = runtime.update({
+      mode: "mock",
+      baseUrl: "https://api.example.com/v1",
+      model: "m",
+      searchBaseUrl: "",
+      searchApiKey: "",
+    });
+    expect(cleared.searchBaseUrl).toBe("");
+    expect(cleared.hasSearchKey).toBe(false);
   });
 
   it("切到 live 但没 Key 时抛错，旧配置和下一次重试的输入都保持原样", () => {

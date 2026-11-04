@@ -47,8 +47,18 @@ export const LLM_MODE_LABELS: Readonly<Record<LlmModeName, string>> = {
   mock: "内置演示数据（mock，不联网）",
 };
 
+/** 搜索端点只接受 http/https；空串表示「不配置搜索」。 */
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /**
- * 网页修改全局模型设置。**API Key 只提交给服务端、只存内存、永不回显**；
+ * 网页修改全局模型设置。**API Key / 搜索 Key 只提交给服务端、只存内存、永不回显**；
  * 留空表示保持原 Key 不变，避免每次改端点都要重新输一遍。
  */
 export const llmSettingsRequestSchema = z.object({
@@ -56,6 +66,18 @@ export const llmSettingsRequestSchema = z.object({
   baseUrl: z.string().trim().url("API 端点必须是合法 URL").max(300),
   model: z.string().trim().min(1, "模型名不能为空").max(120),
   apiKey: z.string().trim().max(300).optional(),
+  /**
+   * 联网参考搜索端点（仅 live 模式使用）。空串 = 不配置；省略 = 保持原值。
+   * 供应商差异由教师侧代理适配，这里只要一个能收 `{query, limit}` 的 HTTP 端点。
+   */
+  searchBaseUrl: z
+    .string()
+    .trim()
+    .max(300)
+    .refine((value) => value === "" || isHttpUrl(value), "搜索端点必须是 http/https URL")
+    .optional(),
+  /** 搜索 Key；与 `apiKey` 同语义：省略 = 保持，空串 = 清空。 */
+  searchApiKey: z.string().trim().max(300).optional(),
 });
 
 export type LlmSettingsRequest = z.infer<typeof llmSettingsRequestSchema>;
@@ -67,6 +89,10 @@ export interface LlmSettingsResponse {
   readonly model: string;
   /** 只回「有没有 Key」，绝不回 Key 本身。 */
   readonly hasApiKey: boolean;
+  /** 搜索端点；空串表示未配置联网参考。 */
+  readonly searchBaseUrl: string;
+  /** 只回「有没有搜索 Key」，绝不回 Key 本身。 */
+  readonly hasSearchKey: boolean;
   /** 当前登录教师是否允许改全局设置（由服务端 `ADMIN_EMAIL` 决定）。 */
   readonly canEdit: boolean;
 }
@@ -838,6 +864,17 @@ export const planRequestSchema = clarifyRequestSchema.extend({
 
 export type PlanRequest = z.infer<typeof planRequestSchema>;
 
+/**
+ * 联网参考回执。
+ *
+ * - `off`：四道闸有任一不满足（非 live / 未勾选 / 端点或 Key 未配置），**零外呼**；
+ * - `used`：搜索成功且拿到至少一条可用结果；
+ * - `empty`：搜索成功但没有可用结果（供应商返回空/字段全不合规）；
+ * - `failed`：超时、网络错误、HTTP 非 2xx 或响应不是约定 JSON。规划照常继续。
+ */
+export const PLAN_SEARCH_STATUSES = ["off", "used", "empty", "failed"] as const;
+export type PlanSearchStatus = (typeof PLAN_SEARCH_STATUSES)[number];
+
 export interface PlanResponse {
   readonly ok: true;
   readonly kind: FormKind;
@@ -847,4 +884,8 @@ export interface PlanResponse {
   readonly summary: string;
   /** 实际送给模型的需求（拼过补答）；与生成时用的那一串**逐字节相同**。 */
   readonly requirement: string;
+  /** 本次是否真的联网参考（离线模式恒为 `off`）。 */
+  readonly searchStatus: PlanSearchStatus;
+  /** 实际送入规划提示的搜索结果条数（`off`/`failed` 时为 0）。 */
+  readonly searchCount: number;
 }

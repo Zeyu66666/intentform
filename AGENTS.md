@@ -58,7 +58,7 @@
 
 | 项 | 红线 |
 |---|---|
-| 密钥 | 启动时只从服务端 `.env` / 进程环境读取；`.env` 永不入库，只提交 `.env.example`。**唯一例外（A-24）**：已登录教师可在网页「模型设置」提交 API Key 供当前进程使用；Key 只存内存，不写 `.env`、不落库、不进日志，任何响应只回 `hasApiKey`，重启后回到启动配置；`ADMIN_EMAIL` 非空时只有该邮箱可写 |
+| 密钥 | 启动时只从服务端 `.env` / 进程环境读取；`.env` 永不入库，只提交 `.env.example`。**唯一例外（A-24）**：已登录教师可在网页「模型设置」提交 API Key 供当前进程使用；Key 只存内存，不写 `.env`、不落库、不进日志，任何响应只回 `hasApiKey`，重启后回到启动配置；`ADMIN_EMAIL` 非空时只有该邮箱可写。**搜索 Key（P24）同 A-24 规则**：与模型 Key 同一路由/同一内存生命周期，只回 `hasSearchKey`，不进日志与响应；搜索只在 `live ∧ 请求勾选 ∧ 端点非空 ∧ Key 非空` 时外呼，离线模式零外呼 |
 | 日志 | 不记录 Key、密码、`Authorization`、完整答卷；AI 辅助评分不得记录学生答案或模型原文 |
 | SQL | 只用 better-sqlite3 预编译语句，禁止字符串拼接 |
 | XSS | 禁止 `dangerouslySetInnerHTML`，唯一例外是 KaTeX 输出（`trust:false`、`strict`） |

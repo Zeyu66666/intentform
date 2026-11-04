@@ -121,17 +121,23 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
   // 上游配置在启动期解析：缺 Key / 非法 LLM_TIMEOUT_MS 现在就抛，而不是等第一次生成。
   const llmConfig = resolveLlmRuntimeConfig(config.llmMode, env);
   const llmRuntime = createLlmRuntime(llmConfig, env);
+  const secretsOf = (): readonly string[] => {
+    const searchKey = llmRuntime.searchSettings().apiKey;
+    return [
+      ...(llmRuntime.config.apiKey === null ? [] : [llmRuntime.config.apiKey]),
+      ...(searchKey === "" ? [] : [searchKey]),
+    ];
+  };
   let logger = createLogger({
-    secrets: llmConfig.apiKey === null ? [] : [llmConfig.apiKey],
+    secrets: secretsOf(),
     verbose: env["LLM_LOG_VERBOSE"] === "1",
   });
   const log: LlmLogger = (level, message, detail) => {
     logger(level, message, detail);
   };
   const refreshLogger = (): void => {
-    const key = llmRuntime.config.apiKey;
     logger = createLogger({
-      secrets: key === null ? [] : [key],
+      secrets: secretsOf(),
       verbose: env["LLM_LOG_VERBOSE"] === "1",
     });
   };
@@ -154,6 +160,7 @@ export function startServer(env: NodeJS.ProcessEnv = process.env): ReturnType<ty
     },
     logger: log,
     settings: () => llmRuntime.publicSettings(),
+    search: () => llmRuntime.searchSettings(),
     updateSettings: (input: Parameters<typeof llmRuntime.update>[0]) => {
       const next = llmRuntime.update(input);
       refreshLogger();

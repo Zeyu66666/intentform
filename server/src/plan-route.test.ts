@@ -7,7 +7,12 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { GENERATE_PRESETS, LIMITS, type PlanResponse } from "@intentform/schema";
+import {
+  GENERATE_PRESETS,
+  LIMITS,
+  PLAN_REFERENCE_MAX_CHARS,
+  type PlanResponse,
+} from "@intentform/schema";
 
 import { call, startTestServer, type TestServer } from "./testing/harness.ts";
 
@@ -38,7 +43,45 @@ describe("POST /api/plan", () => {
     expect(response.json.blueprint.knowledgePoints).toEqual([
       { id: "kp_mock_1", name: "顶点坐标" },
     ]);
+    expect(response.json.blueprint.difficultyMix).toEqual({
+      basic: 2,
+      standard: 2,
+      comprehensive: 1,
+      advanced: 0,
+    });
     expect(response.json.summary).toContain("5 题");
+    // mock 是离线模式：即使请求没勾联网，回执也必须是 off。
+    expect(response.json.searchStatus).toBe("off");
+    expect(response.json.searchCount).toBe(0);
+  });
+
+  it("离线模式勾选联网也只回 off，且响应头回执 off", async () => {
+    const app = await boot();
+    const response = await call<PlanResponse>(app, "POST", "/api/plan", {
+      body: { requirement: "出 5 道单选题", webSearch: true },
+    });
+    expect(response.status).toBe(200);
+    expect(response.json.searchStatus).toBe("off");
+    expect(response.json.searchCount).toBe(0);
+    expect(response.headers.get("x-intentform-search")).toBe("off");
+  });
+
+  it("教师参考卷可以随规划提交；超长 400", async () => {
+    const app = await boot();
+    const accepted = await call<PlanResponse>(app, "POST", "/api/plan", {
+      body: {
+        requirement: "参照这份卷子出一份 5 题数学测验",
+        reference: "一、选择题（每题 5 分）\n1. 已知函数 f(x)=x^2，求顶点。",
+      },
+    });
+    expect(accepted.status).toBe(200);
+    // 参考卷只用于规划，不会回显到响应里（避免把原文带出服务端）。
+    expect(accepted.text).not.toContain("已知函数 f(x)=x^2");
+
+    const tooLong = await call(app, "POST", "/api/plan", {
+      body: { requirement: "出 5 题", reference: "题".repeat(PLAN_REFERENCE_MAX_CHARS + 1) },
+    });
+    expect(tooLong.status).toBe(400);
   });
 
   it("同一需求两次调用结果一致（确定性）", async () => {

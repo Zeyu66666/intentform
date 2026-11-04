@@ -40,6 +40,8 @@ function viewOf(ctx: RouteContext, email: string): LlmSettingsResponse | undefin
     baseUrl: settings.baseUrl,
     model: settings.model,
     hasApiKey: settings.hasApiKey,
+    searchBaseUrl: settings.searchBaseUrl,
+    hasSearchKey: settings.hasSearchKey,
     canEdit: canEdit(ctx, email),
   };
 }
@@ -72,12 +74,14 @@ export async function handleUpdateLlmSettings(ctx: RouteContext): Promise<void> 
   }
 
   try {
-    const { mode, baseUrl, model, apiKey } = parsed.data;
+    const { mode, baseUrl, model, apiKey, searchBaseUrl, searchApiKey } = parsed.data;
     const settings = ctx.llm.updateSettings({
       mode,
       baseUrl,
       model,
       ...(apiKey === undefined ? {} : { apiKey }),
+      ...(searchBaseUrl === undefined ? {} : { searchBaseUrl }),
+      ...(searchApiKey === undefined ? {} : { searchApiKey }),
     });
     const response: LlmSettingsResponse = {
       ok: true,
@@ -85,6 +89,8 @@ export async function handleUpdateLlmSettings(ctx: RouteContext): Promise<void> 
       baseUrl: settings.baseUrl,
       model: settings.model,
       hasApiKey: settings.hasApiKey,
+      searchBaseUrl: settings.searchBaseUrl,
+      hasSearchKey: settings.hasSearchKey,
       canEdit: true,
     };
     sendJson(ctx.res, 200, response);

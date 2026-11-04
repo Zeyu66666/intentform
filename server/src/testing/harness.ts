@@ -62,6 +62,7 @@ export async function startTestServer(env: ServerEnv = createTestEnv()): Promise
     },
     logger: silentLogger,
     settings: () => runtime.publicSettings(),
+    search: () => runtime.searchSettings(),
     updateSettings: (input: Parameters<typeof runtime.update>[0]) => runtime.update(input),
   };
   const app = createApiApp({ db, env, llm });
@@ -128,6 +129,8 @@ export interface ApiResponse<T> {
   readonly json: T;
   readonly setCookies: readonly string[];
   readonly contentType: string | null;
+  /** 原始响应头（断言自定义回执头用，例如 `x-intentform-search`）。 */
+  readonly headers: Headers;
 }
 
 export async function call<T = unknown>(
@@ -167,6 +170,7 @@ export async function call<T = unknown>(
     json,
     setCookies: response.headers.getSetCookie(),
     contentType: response.headers.get("content-type"),
+    headers: response.headers,
   };
 }
 
