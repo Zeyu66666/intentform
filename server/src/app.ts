@@ -17,6 +17,7 @@ import { handleSupplementItem } from "./supplement-route.ts";
 import { handleSubmissions, handleSubmissionsCsv } from "./analytics-route.ts";
 import { handleClarify } from "./clarify-route.ts";
 import { handlePlan } from "./plan-route.ts";
+import { handleExtractReference } from "./reference-route.ts";
 import { checkCsrf, corsHeadersFor } from "./csrf.ts";
 import type { Db } from "./db/index.ts";
 import { isMutatingMethod, type ServerEnv } from "./env.ts";
@@ -65,6 +66,14 @@ export const ROUTES: readonly RouteDef[] = [
     pattern: "/api/plan",
     handler: handlePlan,
     rateLimit: { name: "plan", limitPerWindow: (env) => env.rateGeneratePerMin },
+  },
+  // 参考试卷上传：不调模型，但解析 PDF/DOCX 是本地 CPU 活；与生成共用配额，
+  // 避免它成为绕过限流的解压入口。
+  {
+    method: "POST",
+    pattern: "/api/reference/extract",
+    handler: handleExtractReference,
+    rateLimit: { name: "reference", limitPerWindow: (env) => env.rateGeneratePerMin },
   },
 
   { method: "GET", pattern: "/api/settings/llm", handler: handleGetLlmSettings },

@@ -107,6 +107,8 @@ export const API_PATHS = {
   clarify: "/api/clarify",
   /** 两阶段蓝图（省赛 R-06）：只回结构，不写库。 */
   plan: "/api/plan",
+  /** 上传参考试卷（.docx / .pdf）并提取纯文本；只读，不写库。 */
+  referenceExtract: "/api/reference/extract",
   forms: "/api/forms",
   form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   /**
@@ -862,6 +864,45 @@ export const CLARIFICATIONS_MAX = 8;
  * 补答先进需求，再拿去规划——两步看到的是同一段需求，否则蓝图和成品的口径会岔开。
  */
 export const PLAN_REFERENCE_MAX_CHARS = 20_000;
+
+/* --------------------------- 参考试卷文件上传 --------------------------- */
+
+/** 单个上传文件的上限：10 MiB。超过就 413，不先读进内存再验。 */
+export const REFERENCE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
+/** base64 体积上限，供 Zod 在 JSON 解析后挡住异常载荷。 */
+export const REFERENCE_UPLOAD_MAX_BASE64_CHARS = Math.ceil(REFERENCE_UPLOAD_MAX_BYTES / 3) * 4;
+
+export const REFERENCE_FILE_KINDS = ["docx", "pdf"] as const;
+export type ReferenceFileKind = (typeof REFERENCE_FILE_KINDS)[number];
+
+/**
+ * 上传请求：文件内容走 base64 放进 JSON。
+ *
+ * 不用 multipart 是为了不引表单解析依赖；代价是体积膨胀 1/3，所以上限同时卡
+ * 解码后的字节数与 base64 字符数。文件名只用于展示与判扩展名，不参与落盘。
+ */
+export const referenceExtractRequestSchema = z.object({
+  filename: z.string().trim().min(1, "缺少文件名").max(255, "文件名过长"),
+  data: z
+    .string()
+    .min(1, "文件内容为空")
+    .max(REFERENCE_UPLOAD_MAX_BASE64_CHARS, "文件超过 10 MiB"),
+});
+
+export type ReferenceExtractRequest = z.infer<typeof referenceExtractRequestSchema>;
+
+export interface ReferenceExtractResponse {
+  readonly ok: true;
+  readonly filename: string;
+  readonly kind: ReferenceFileKind;
+  /** 提取出的纯文本；已按 `PLAN_REFERENCE_MAX_CHARS` 截断。 */
+  readonly text: string;
+  readonly charCount: number;
+  readonly truncated: boolean;
+  /** 可恢复的提示（如 PDF 部分字体无法映射）。不阻断使用。 */
+  readonly warnings: readonly string[];
+}
 
 export const planRequestSchema = clarifyRequestSchema.extend({
   clarifications: z.array(clarificationSchema).max(CLARIFICATIONS_MAX).optional(),
