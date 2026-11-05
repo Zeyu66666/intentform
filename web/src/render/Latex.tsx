@@ -47,10 +47,13 @@ export interface MathTextProps {
 /**
  * 行内混排：普通文本 + `$...$` 公式。
  *
- * 外层 `whitespace-pre-line` 是简答题干的必需品：多问题干（「（1）……\n（2）……」）
- * 在 HTML 里默认会把换行折成空格，四道 18 分的简答会挤成一整行。`pre-line` 只保留
- * 换行，其余连续空白照旧折叠，不会把教师手打的缩进放大。放在这里而不是逐个页面加，
- * 是因为学生页、编辑器、打印页和预览都走这一个入口。
+ * 换行必须变成**结构**而不是只靠 CSS：`white-space: pre-line` 在普通浏览器里能保留
+ * 换行，但打印、导出 Word 与 SSR 测试都不该各自赌一次 CSS 是否生效。这里把文本段
+ * 按 `\n` 切开，逐段插入 `<br />`——打印页与 DOM 看到的是同一条换行，多问题干
+ * （「（1）……\n（2）……」）不会挤成一整行。
+ *
+ * 外层仍保留 `whitespace-pre-line`：它负责折叠行内连续空格，`<br />` 负责换行，
+ * 两者分工，不重复。
  */
 export function MathText({ text }: MathTextProps): JSX.Element {
   const segments = useMemo(() => splitMath(text), [text]);
@@ -59,11 +62,22 @@ export function MathText({ text }: MathTextProps): JSX.Element {
     <span className="whitespace-pre-line">
       {segments.map((segment, index) =>
         segment.kind === "text" ? (
-          <Fragment key={`t${String(index)}`}>{segment.text}</Fragment>
+          <Fragment key={`t${String(index)}`}>{withLineBreaks(segment.text)}</Fragment>
         ) : (
           <MathSpan key={`m${String(index)}`} tex={segment.tex} />
         ),
       )}
     </span>
   );
+}
+
+/** 文本段内的换行渲染成 `<br />`；`\r\n` 与单独的 `\r` 都按一个换行处理。 */
+function withLineBreaks(text: string): readonly JSX.Element[] {
+  const lines = text.split(/\r\n|\r|\n/u);
+  return lines.map((line, index) => (
+    <Fragment key={`l${String(index)}`}>
+      {index === 0 ? null : <br />}
+      {line}
+    </Fragment>
+  ));
 }

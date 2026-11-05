@@ -79,16 +79,12 @@ describe("buildPrintSheet", () => {
     expect(short).not.toHaveProperty("answer");
   });
 
-  it("作答位：填空按答案个数、简答给 4 行、选择题 0 行", () => {
+  it("不再生成作答横线：题目行里没有 blanks 字段", () => {
     const rows = buildPrintSheet(quiz(), { withAnswers: false });
-    const blanks = Object.fromEntries(
-      rows
-        .filter((row) => row.kind === "question")
-        .map((row) => [row.id, row.kind === "question" ? row.blanks : 0]),
-    );
-    expect(blanks["q-single"]).toBe(0);
-    expect(blanks["q-fill"]).toBe(2);
-    expect(blanks["q-short"]).toBe(4);
+    for (const row of rows) {
+      if (row.kind !== "question") continue;
+      expect(row).not.toHaveProperty("blanks");
+    }
   });
 
   it("选项带 A/B 字母，顺序与 schema 一致", () => {

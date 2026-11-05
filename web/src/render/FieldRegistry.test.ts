@@ -47,9 +47,9 @@ describe("EditField 的公式渲染", () => {
 
     const markup = renderToStaticMarkup(createElement(EditField, { item }));
 
-    // 没有 `whitespace-pre-line`，HTML 会把两个 \n 折成空格，四道 18 分简答挤成一整行。
+    // 换行必须落成 `<br />`：只靠 CSS 的 `pre-line` 在打印与导出路径上不可断言。
     expect(markup).toContain("whitespace-pre-line");
-    expect(markup).toContain("\n（1）");
-    expect(markup).toContain("\n（2）");
+    expect(markup).toContain("<br/>（1）");
+    expect(markup).toContain("<br/>（2）");
   });
 });

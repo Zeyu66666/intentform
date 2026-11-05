@@ -30,8 +30,6 @@ export interface PrintQuestionRow {
   readonly type: FormItem["type"];
   readonly title: string;
   readonly options: readonly PrintOption[];
-  /** 填空/简答留几行作答位；分节与纯选择题是 0。 */
-  readonly blanks: number;
   readonly score?: number;
   /** 只有 `withAnswers` 为真时才存在。 */
   readonly answer?: string;
@@ -73,23 +71,6 @@ function answerTextOf(item: FormItem): string {
   }
 }
 
-function blanksOf(item: FormItem): number {
-  switch (item.type) {
-    case "fill":
-      // 空位个数在教师侧是已知的（答案数组长度）；没有答案就给 1 行。
-      return item.answer === undefined ? 1 : Math.max(1, item.answer.length);
-    case "short":
-      return 4;
-    case "number":
-      return 1;
-    case "single":
-    case "multi":
-    case "scale":
-    case "section":
-      return 0;
-  }
-}
-
 export function buildPrintSheet(
   schema: FormSchema,
   options: { readonly withAnswers: boolean },
@@ -117,7 +98,6 @@ export function buildPrintSheet(
         item.type === "single" || item.type === "multi"
           ? item.options.map((option, index) => ({ letter: optionLetter(index), text: option.text }))
           : [],
-      blanks: blanksOf(item),
       ...("score" in item && item.score !== undefined ? { score: item.score } : {}),
     };
     if (!options.withAnswers) {

@@ -22,10 +22,31 @@ import { describeFailure, isUnauthorized } from "../api/failures";
 import { Link } from "../Link";
 import { MathText } from "../render/Latex";
 import { TYPE_LABELS } from "../render/FieldRegistry";
+import { buildDocx, DOCX_MIME, docxFilename } from "./docx";
 import { buildPrintSheet, printHeaderText } from "./sheet";
 import { routeToPath } from "../router";
 
 const PAGE = "mx-auto w-full max-w-[800px] px-3 py-4";
+
+/**
+ * 把刚生成的字节交给浏览器下载。
+ *
+ * `URL.revokeObjectURL` 放到下一个任务：同一 tick 里撤销会让部分 Chromium
+ * 版本拿不到数据，表现为「点了没反应」。
+ */
+function downloadWord(schema: FormSchema, rows: ReturnType<typeof buildPrintSheet>): void {
+  const blob = new Blob([buildDocx(schema, rows)], { type: DOCX_MIME });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = docxFilename(schema.meta.title);
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 0);
+}
 
 type LoadState =
   | { readonly status: "loading" }
@@ -121,6 +142,16 @@ export function PrintPage({ formId }: { readonly formId: string }): JSX.Element 
         >
           打印
         </button>
+        <button
+          type="button"
+          data-testid="print-docx"
+          className="min-h-[44px] rounded-sm border border-line px-3 text-sm text-ink"
+          onClick={() => {
+            downloadWord(schema, rows);
+          }}
+        >
+          下载 Word
+        </button>
         {isSurvey ? <span className="text-xs text-muted">问卷没有标准答案</span> : null}
         <Link
           href={routeToPath({ name: "edit", formId })}
@@ -132,7 +163,9 @@ export function PrintPage({ formId }: { readonly formId: string }): JSX.Element 
 
       <article data-testid="print-sheet" className="print-sheet rounded-md border border-line bg-surface p-4 print:border-0 print:p-0">
         <header className="mb-3 border-b border-line pb-2 text-center">
-          <h1 className="m-0 text-xl font-semibold">{schema.meta.title}</h1>
+          <h1 className="m-0 text-xl font-semibold">
+            <MathText text={schema.meta.title} />
+          </h1>
           <p className="m-0 mt-1 text-sm text-muted">{printHeaderText(schema)}</p>
           <p className="m-0 mt-2 text-sm text-muted">姓名 __________　　班级 __________　　学号 __________</p>
         </header>
@@ -140,9 +173,13 @@ export function PrintPage({ formId }: { readonly formId: string }): JSX.Element 
         {rows.map((row) =>
           row.kind === "section" ? (
             <section key={row.id} className="print-section mt-3">
-              <h2 className="m-0 border-b border-line pb-1 text-lg font-semibold">{row.title}</h2>
+              <h2 className="m-0 border-b border-line pb-1 text-lg font-semibold">
+                <MathText text={row.title} />
+              </h2>
               {row.description === undefined ? null : (
-                <p className="m-0 mt-1 text-sm text-muted">{row.description}</p>
+                <p className="m-0 mt-1 text-sm text-muted">
+                  <MathText text={row.description} />
+                </p>
               )}
             </section>
           ) : (
@@ -165,18 +202,6 @@ export function PrintPage({ formId }: { readonly formId: string }): JSX.Element 
                     </li>
                   ))}
                 </ol>
-              )}
-
-              {row.blanks === 0 ? null : (
-                <div className="mt-1 flex flex-col gap-2">
-                  {Array.from({ length: row.blanks }, (_, index) => (
-                    <span
-                      key={String(index)}
-                      aria-hidden="true"
-                      className="block h-6 border-b border-line"
-                    />
-                  ))}
-                </div>
               )}
 
               {row.answer === undefined && row.explanation === undefined ? null : (
