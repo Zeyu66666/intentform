@@ -102,6 +102,16 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
      updated_at               TEXT NOT NULL
    )`,
 
+  // 表单逻辑删除（2026-11-05）：form_versions 的 DELETE 触发器禁止物理删版本，
+  // 而版本又是历史提交的判分依据，所以「删除表单」只能是墓碑：forms / versions /
+  // submissions 原样保留，所有在线查询用 NOT EXISTS 过滤掉 tombstone 过的 id。
+  // 学生短链因此也自然失效——`findPublishedFormBySlug` 同样带这条过滤。
+  `CREATE TABLE IF NOT EXISTS form_deletions (
+     form_id    TEXT PRIMARY KEY REFERENCES forms(id) ON DELETE CASCADE,
+     teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+     deleted_at TEXT NOT NULL
+   )`,
+
   `CREATE TABLE IF NOT EXISTS usage_daily (
      teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
      day        TEXT NOT NULL,

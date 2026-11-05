@@ -27,6 +27,7 @@ import { handleAiGrade } from "./ai-grade-route.ts";
 import { handleGetLlmSettings, handleUpdateLlmSettings } from "./llm-settings-route.ts";
 import {
   handleCreateForm,
+  handleDeleteForm,
   handleGetForm,
   handleListForms,
   handlePatchForm,
@@ -71,6 +72,8 @@ export const ROUTES: readonly RouteDef[] = [
   { method: "POST", pattern: "/api/forms", handler: handleCreateForm },
   { method: "GET", pattern: "/api/forms", handler: handleListForms },
   { method: "GET", pattern: "/api/forms/:id", handler: handleGetForm },
+  // 逻辑删除：写 tombstone，不删版本/提交（历史判分依据必须留着）。
+  { method: "DELETE", pattern: "/api/forms/:id", handler: handleDeleteForm },
   // 省赛附加 A-18：表单级展示设置（提交后是否展示答案解析）。不进版本快照。
   { method: "GET", pattern: "/api/forms/:id/settings", handler: handleGetFormSettings },
   { method: "POST", pattern: "/api/forms/:id/settings", handler: handleUpdateFormSettings },

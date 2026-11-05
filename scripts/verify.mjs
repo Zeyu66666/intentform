@@ -1574,6 +1574,52 @@ async function vc17LlmSettings(request, ctx) {
   must(restored.json.mode === "mock", "VC17 未还原到 mock");
 }
 
+/**
+ * VC18：删除表单（2026-11-05）。
+ *
+ * 验收的是「删除」的对外语义而不是物理行：列表不再返回、详情 404、学生短链 404、
+ * 提交统计 404；重复删除仍是 404。版本行是否保留由 `forms-route.test.ts` 直接查库钉住。
+ */
+async function vc18DeleteForm(request, ctx) {
+  const created = await request("POST", "/api/forms", {
+    cookie: ctx.cookie,
+    json: { title: QUIZ_SCHEMA.meta.title, kind: "quiz", schema: QUIZ_SCHEMA },
+  });
+  must(created.status === 201, `VC18 建表单失败（${String(created.status)}）：${firstLine(created.text)}`);
+  const formId = created.json.form.id;
+  const versionId = created.json.version.id;
+
+  const published = await request("POST", `/api/forms/${formId}/publish`, {
+    cookie: ctx.cookie,
+    json: { versionId },
+  });
+  must(published.status === 200, `VC18 发布失败（${String(published.status)}）：${firstLine(published.text)}`);
+  const slug = published.json.slug;
+
+  const deleted = await request("DELETE", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(deleted.status === 200, `VC18 删除失败（${String(deleted.status)}）：${firstLine(deleted.text)}`);
+  must(deleted.json.ok === true && deleted.json.formId === formId, `VC18 删除响应不对：${firstLine(deleted.text)}`);
+
+  const list = await request("GET", "/api/forms", { cookie: ctx.cookie });
+  must(list.status === 200, `VC18 列表读取失败（${String(list.status)}）`);
+  must(
+    !(list.json.forms ?? []).some((form) => form.id === formId),
+    `VC18 删除后列表仍返回该表单：${firstLine(list.text)}`,
+  );
+
+  const detail = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(detail.status === 404, `VC18 删除后详情应 404，实际 ${String(detail.status)}`);
+
+  const fill = await request("GET", `/f/${slug}`);
+  must(fill.status === 404, `VC18 删除后学生短链应 404，实际 ${String(fill.status)}`);
+
+  const submissions = await request("GET", `/api/forms/${formId}/submissions`, { cookie: ctx.cookie });
+  must(submissions.status === 404, `VC18 删除后提交统计应 404，实际 ${String(submissions.status)}`);
+
+  const again = await request("DELETE", `/api/forms/${formId}`, { cookie: ctx.cookie });
+  must(again.status === 404, `VC18 重复删除应 404，实际 ${String(again.status)}`);
+}
+
 // ── 主流程 ────────────────────────────────────────────────────────────────
 const CHECKS = [
   ["VC1 发布快照：改草稿不影响已发布版本的收集页", vc1Snapshot],
@@ -1593,6 +1639,7 @@ const CHECKS = [
   ["VC15 覆盖矩阵补题：按知识点×层级回一题、不写库、越界 422", vc15SupplementItem],
   ["VC16 AI 辅助评分：默认关闭、只回建议、不写人工分", vc16AiGrade],
   ["VC17 模型运行设置：登录后可改、立即生效、Key 只回 hasApiKey", vc17LlmSettings],
+  ["VC18 删除表单：列表/详情/学生短链/提交统计同时下线，重复删除 404", vc18DeleteForm],
 ];
 
 async function main() {

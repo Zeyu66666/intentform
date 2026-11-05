@@ -110,10 +110,21 @@ export function appendVersion(db: Db, version: NewVersion): FormVersionRow {
   return run();
 }
 
+/**
+ * 在线表单的统一定义：存在且没有被逻辑删除。
+ *
+ * 删除表单必须保留版本行（追加式触发器 + 历史判分依据），所以 `forms` 这一行
+ * 不会消失；所有教师侧/学生侧读取都要靠这个条件把墓碑挡在外面。把 SQL 片段
+ * 收在一处，新增查询时漏写一条的概率比到处复制小得多。
+ */
+const NOT_DELETED = "NOT EXISTS (SELECT 1 FROM form_deletions d WHERE d.form_id = forms.id)";
+
 export function listForms(db: Db, teacherId: string): readonly FormRow[] {
   return db
     .prepare<[string], FormRow>(
-      "SELECT * FROM forms WHERE teacher_id = ? ORDER BY updated_at DESC, id DESC",
+      `SELECT * FROM forms
+        WHERE teacher_id = ? AND ${NOT_DELETED}
+        ORDER BY updated_at DESC, id DESC`,
     )
     .all(teacherId);
 }
@@ -121,7 +132,8 @@ export function listForms(db: Db, teacherId: string): readonly FormRow[] {
 export function findForm(db: Db, teacherId: string, formId: string): FormRow | undefined {
   return db
     .prepare<[string, string], FormRow>(
-      "SELECT * FROM forms WHERE id = ? AND teacher_id = ?",
+      `SELECT * FROM forms
+        WHERE id = ? AND teacher_id = ? AND ${NOT_DELETED}`,
     )
     .get(formId, teacherId);
 }
@@ -129,22 +141,51 @@ export function findForm(db: Db, teacherId: string, formId: string): FormRow | u
 /**
  * 只查归属，不带 `teacher_id` 条件——**仅供区分 403 与 404**。
  * 返回值一律不经过响应体：调用方只能拿它决定「存在但不是你的」还是「不存在」。
+ *
+ * 已删除的表单对所有人都是「不存在」：墓碑告诉我们的不是「它是别人的」，
+ * 而是「它已经不在线上了」，回 403 会泄漏「这个 id 曾经存在」。
  */
 export function findFormOwnerId(db: Db, formId: string): string | undefined {
   const row = db
-    .prepare<[string], { teacher_id: string }>("SELECT teacher_id FROM forms WHERE id = ?")
+    .prepare<[string], { teacher_id: string }>(
+      `SELECT teacher_id FROM forms WHERE id = ? AND ${NOT_DELETED}`,
+    )
     .get(formId);
   return row?.teacher_id;
 }
 
-/** 学生端入口：只认已发布（`published_version_id` 非空）的表单。 */
+/** 学生端入口：只认已发布（`published_version_id` 非空）且未删除的表单。 */
 export function findPublishedFormBySlug(db: Db, slug: string): FormRow | undefined {
   return db
     .prepare<[string], FormRow>(
       `SELECT * FROM forms
-        WHERE slug = ? AND status = 'published' AND published_version_id IS NOT NULL`,
+        WHERE slug = ? AND status = 'published' AND published_version_id IS NOT NULL
+          AND ${NOT_DELETED}`,
     )
     .get(slug);
+}
+
+/**
+ * 逻辑删除。
+ *
+ * 归属条件写在 INSERT ... SELECT 里而不是「先 findForm 再 insert」：两个老师
+ * 同时点删除时，只有 owner 那一行能产生 tombstone，affected rows 就是答案。
+ * 重复删除不报错也不新增行（主键冲突 DO NOTHING），由调用方按 0 行回 404。
+ */
+export function softDeleteForm(
+  db: Db,
+  teacherId: string,
+  formId: string,
+  deletedAt: string,
+): boolean {
+  const result = db
+    .prepare(
+      `INSERT INTO form_deletions (form_id, teacher_id, deleted_at)
+       SELECT id, teacher_id, ? FROM forms WHERE id = ? AND teacher_id = ?
+       ON CONFLICT(form_id) DO NOTHING`,
+    )
+    .run(deletedAt, formId, teacherId);
+  return result.changes > 0;
 }
 
 export function findVersion(
@@ -192,6 +233,7 @@ export function publishVersion(db: Db, input: PublishInput): boolean {
               updated_at = ?
         WHERE id = ?
           AND teacher_id = ?
+          AND ${NOT_DELETED}
           AND EXISTS (
                 SELECT 1 FROM form_versions v
                  WHERE v.id = ? AND v.form_id = forms.id

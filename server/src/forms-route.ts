@@ -26,6 +26,7 @@ import {
   validateForm,
   VERSION_CONFLICT_MESSAGE,
   type CreateFormResponse,
+  type DeleteFormResponse,
   type FormDetailResponse,
   type FormKind,
   type FormSchema,
@@ -57,6 +58,7 @@ import {
   pushRedo,
   redoDepth,
   setDraftVersion,
+  softDeleteForm,
   updateFormTitle,
   type FormRow,
   type FormVersionRow,
@@ -183,6 +185,31 @@ export async function handleListForms(ctx: RouteContext): Promise<void> {
   if (teacher === undefined) return;
   const rows = listForms(ctx.db, teacher.id);
   const response: ListFormsResponse = { ok: true, forms: rows.map(toFormSummary) };
+  sendJson(ctx.res, 200, response);
+}
+
+/**
+ * `DELETE /api/forms/:id` —— 逻辑删除。
+ *
+ * 不物理删行：版本是历史提交的判分依据，`form_versions` 的触发器也不允许删。
+ * 写一条 tombstone 后，列表/详情/学生页/提交统计会同时看不到它，效果与删除一致；
+ * 数据库里仍能回答「这条历史提交当年是哪张卷子」。
+ */
+export async function handleDeleteForm(ctx: RouteContext): Promise<void> {
+  const formId = ctx.params["id"];
+  if (formId === undefined) {
+    sendApiError(ctx.res, "not_found", "表单不存在");
+    return;
+  }
+  const form = requireOwnedForm(ctx, formId);
+  if (form === undefined) return;
+  const deleted = softDeleteForm(ctx.db, form.teacher_id, form.id, new Date().toISOString());
+  if (!deleted) {
+    // 并发下另一个请求先删掉了：对客户端仍是「它已经不在了」。
+    sendApiError(ctx.res, "not_found", "表单不存在");
+    return;
+  }
+  const response: DeleteFormResponse = { ok: true, formId: form.id };
   sendJson(ctx.res, 200, response);
 }
 

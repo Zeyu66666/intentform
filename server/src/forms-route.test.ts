@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type {
   CreateFormResponse,
+  DeleteFormResponse,
   FormDetailResponse,
   ListFormsResponse,
   PatchFormResponse,
@@ -96,6 +97,76 @@ describe("GET /api/forms 与详情", () => {
     expect(forbidden.json).toMatchObject({ error: "forbidden" });
 
     const missing = await call(app, "GET", "/api/forms/f_doesnotexist", { cookie });
+    expect(missing.status).toBe(404);
+  });
+});
+
+describe("DELETE /api/forms/:id", () => {
+  it("删除后列表、详情、学生短链与提交统计都看不到它，版本行仍在", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    const published = await call<PublishResponse>(
+      app,
+      "POST",
+      `/api/forms/${created.form.id}/publish`,
+      { body: { versionId: created.version.id }, cookie },
+    );
+    expect(published.status).toBe(200);
+
+    const deleted = await call<DeleteFormResponse>(
+      app,
+      "DELETE",
+      `/api/forms/${created.form.id}`,
+      { cookie },
+    );
+    expect(deleted.status).toBe(200);
+    expect(deleted.json).toEqual({ ok: true, formId: created.form.id });
+
+    const list = await call<ListFormsResponse>(app, "GET", "/api/forms", { cookie });
+    expect(list.json.forms).toHaveLength(0);
+
+    const detail = await call(app, "GET", `/api/forms/${created.form.id}`, { cookie });
+    expect(detail.status).toBe(404);
+
+    const fill = await call(app, "GET", `/f/${published.json.slug}`);
+    expect(fill.status).toBe(404);
+
+    const submissions = await call(
+      app,
+      "GET",
+      `/api/forms/${created.form.id}/submissions`,
+      { cookie },
+    );
+    expect(submissions.status).toBe(404);
+
+    // 物理行没有被删：历史提交仍能指回当时的版本。这是逻辑删除的验收点。
+    const versions = app.db
+      .prepare<[string], { c: number }>("SELECT COUNT(*) AS c FROM form_versions WHERE form_id = ?")
+      .get(created.form.id);
+    expect(versions?.c).toBe(1);
+
+    const again = await call(app, "DELETE", `/api/forms/${created.form.id}`, { cookie });
+    expect(again.status).toBe(404);
+  });
+
+  it("别人的表单 403，表单不会被删", async () => {
+    const { app, cookie } = await boot();
+    const created = await createForm(app, cookie);
+    seedTeacher(app.db, "intruder@example.com");
+    const intruderCookie = await login(app, "intruder@example.com");
+
+    const denied = await call(app, "DELETE", `/api/forms/${created.form.id}`, {
+      cookie: intruderCookie,
+    });
+    expect(denied.status).toBe(403);
+
+    const detail = await call(app, "GET", `/api/forms/${created.form.id}`, { cookie });
+    expect(detail.status).toBe(200);
+  });
+
+  it("不存在的表单 404", async () => {
+    const { app, cookie } = await boot();
+    const missing = await call(app, "DELETE", "/api/forms/f_doesnotexist", { cookie });
     expect(missing.status).toBe(404);
   });
 });

@@ -109,6 +109,11 @@ export const API_PATHS = {
   plan: "/api/plan",
   forms: "/api/forms",
   form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
+  /**
+   * 逻辑删除表单。路径与 `form` 相同，方法不同；单独命名是为了让前端调用点
+   * 一眼看出这是破坏性操作，而不是又一次读取详情。
+   */
+  deleteForm: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
   publish: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/publish`,
   /**
    * 表单级展示设置（省赛附加 A-18）：目前只有「提交后向学生展示答案解析」。
@@ -266,6 +271,17 @@ export interface CreateFormResponse {
 export interface ListFormsResponse {
   readonly ok: true;
   readonly forms: readonly FormSummary[];
+}
+
+/**
+ * 删除表单的响应。
+ *
+ * 这是**逻辑删除**：版本行与历史提交仍留在库里（判分依据不能消失），但表单、
+ * 学生短链与教师侧的所有读取都不再返回它。因此响应只回 id，不回被删掉的数据。
+ */
+export interface DeleteFormResponse {
+  readonly ok: true;
+  readonly formId: string;
 }
 
 /** 教师侧详情：带完整 Schema（含答案），所以这个接口必须登录且校验归属。 */
