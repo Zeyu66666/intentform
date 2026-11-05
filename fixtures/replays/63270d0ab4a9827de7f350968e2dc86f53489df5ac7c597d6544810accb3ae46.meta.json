@@ -1,15 +1,15 @@
 {
-  "recordedAt": "2026-11-05T03:18:24.574Z",
+  "recordedAt": "2026-11-05T06:20:22.287Z",
   "model": "deepseek-chat",
-  "promptVersion": "generate.v5",
+  "promptVersion": "generate.v7",
   "schemaVersion": 1,
-  "requirementHash": "ddc0aa32e5d85c2ece225cb6e3a5ea3d57d1e3b2c1159a302807ce35cac147fb",
+  "requirementHash": "63270d0ab4a9827de7f350968e2dc86f53489df5ac7c597d6544810accb3ae46",
   "requirementPreview": "出一份初二数学《二次函数》的入门测验，8 道题：4 道单选、2 道填空、2 道简答，覆盖开口方向、顶点坐标、对称轴三个知识点，难度偏基础，每题 5 分。",
-  "chunks": 1396,
-  "totalMs": 6094,
+  "chunks": 1530,
+  "totalMs": 6519,
   "usage": {
-    "promptTokens": 1255,
-    "completionTokens": 1396
+    "promptTokens": 1416,
+    "completionTokens": 1530
   },
   "upstream": "openai-compatible:api.deepseek.com",
   "mode": "record"
