@@ -20,7 +20,8 @@ function render(overrides: Partial<RequirementPanelProps> = {}): string {
     planFirst: true,
     onPlanFirstChange: () => undefined,
     reference: "",
-    onReferenceChange: () => undefined,
+    referenceUpload: { status: "idle" },
+    onReferenceFileChange: () => undefined,
     webSearch: false,
     onWebSearchChange: () => undefined,
     webSearchDisabled: true,
@@ -44,14 +45,36 @@ describe("RequirementPanel 的参考卷与联网开关", () => {
     expect(markup).toContain("当前为离线演示模式，联网参考不会生效。");
   });
 
-  it("live 模式可勾选；参考卷是折叠 textarea，标出 20000 字上限", () => {
+  it("live 模式可勾选；参考卷改为上传 .docx/.pdf，标出上限", () => {
     const markup = render({
       webSearchDisabled: false,
       webSearchHint: "仅在当前 live 模式生效；服务端还要配置搜索端点与 Key。",
     });
     expect(inputTag(markup, "web-search")).not.toContain("disabled");
     expect(markup).toContain("参考试卷（可选）");
-    expect(markup).toContain(`最多 ${String(PLAN_REFERENCE_MAX_CHARS)} 字`);
+    expect(inputTag(markup, "reference-file")).toContain('accept=".docx,.pdf');
+    expect(markup).toContain(`提取后最多 ${String(PLAN_REFERENCE_MAX_CHARS)} 字`);
     expect(markup).toContain("不会复制原题");
+  });
+
+  it("解析成功后显示文件名、字数与提取文字；失败显示服务端原因", () => {
+    const ready = render({
+      reference: "一、选择题\n1. 已知函数……",
+      referenceUpload: {
+        status: "ready",
+        filename: "参考卷.pdf",
+        charCount: 15,
+        truncated: false,
+        warnings: [],
+      },
+    });
+    expect(ready).toContain("参考卷.pdf · 15 字");
+    expect(ready).toContain("查看提取的文字");
+    expect(ready).toContain("一、选择题");
+
+    const failed = render({
+      referenceUpload: { status: "error", filename: "扫描件.pdf", message: "没有可提取的文字层" },
+    });
+    expect(failed).toContain("没有可提取的文字层");
   });
 });

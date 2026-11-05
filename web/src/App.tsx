@@ -29,6 +29,7 @@ import { summarizeBlueprint } from "@intentform/schema";
 
 import { createClarifyApi } from "./api/clarify";
 import { createPlanApi } from "./api/plan";
+import { createReferenceApi } from "./api/reference";
 import { describeFailure } from "./api/failures";
 import { createHttpClient } from "./api/http";
 import { readRuntimeMode } from "./api/runtime";
@@ -42,7 +43,7 @@ import {
   toggleOption,
   type ClarifyDrafts,
 } from "./panels/clarify-model";
-import { RequirementPanel } from "./panels/RequirementPanel";
+import { RequirementPanel, type ReferenceUploadState } from "./panels/RequirementPanel";
 import { PreviewPanel, type PreviewMode } from "./panels/PreviewPanel";
 import { TimelinePanel } from "./panels/TimelinePanel";
 import { SaveDraftPanel } from "./publish/SaveDraftPanel";
@@ -148,8 +149,11 @@ export function App(): JSX.Element {
   const [requirement, setRequirement] = useState("");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("edit");
   const [kind, setKind] = useState<FormKind>("quiz");
-  /** 教师粘贴的参考试卷：只随 `/api/plan` 发送，生成请求里没有这个字段。 */
+  /** 从上传文件提取出的参考试卷：只随 `/api/plan` 发送，生成请求里没有这个字段。 */
   const [reference, setReference] = useState("");
+  const [referenceUpload, setReferenceUpload] = useState<ReferenceUploadState>({ status: "idle" });
+  /** 上传解析的序号：连着换文件时，迟到的结果不能覆盖后选的那一份。 */
+  const referenceTokenRef = useRef(0);
   /** 请求级联网开关；服务端四道闸会再判一次。 */
   const [webSearch, setWebSearch] = useState(false);
   /**
@@ -175,6 +179,43 @@ export function App(): JSX.Element {
   const api = useMemo(() => createTeacherApi(createHttpClient()), []);
   const clarifyApi = useMemo(() => createClarifyApi(createHttpClient()), []);
   const planApi = useMemo(() => createPlanApi(createHttpClient()), []);
+  const referenceApi = useMemo(() => createReferenceApi(createHttpClient()), []);
+
+  const handleReferenceFile = useCallback(
+    (file: File | null): void => {
+      const token = referenceTokenRef.current + 1;
+      referenceTokenRef.current = token;
+      if (file === null) {
+        setReference("");
+        setReferenceUpload({ status: "idle" });
+        return;
+      }
+      setReference("");
+      setReferenceUpload({ status: "loading", filename: file.name });
+      void referenceApi.extract(file).then((outcome) => {
+        if (referenceTokenRef.current !== token) return;
+        if (!outcome.ok) {
+          setReferenceUpload({
+            status: "error",
+            filename: file.name,
+            message: describeFailure(outcome.failure, {
+              notFound: "参考试卷解析接口不存在（服务端版本旧或没启动）",
+            }),
+          });
+          return;
+        }
+        setReference(outcome.data.text);
+        setReferenceUpload({
+          status: "ready",
+          filename: outcome.data.filename,
+          charCount: outcome.data.charCount,
+          truncated: outcome.data.truncated,
+          warnings: outcome.data.warnings,
+        });
+      });
+    },
+    [referenceApi],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -469,6 +510,7 @@ export function App(): JSX.Element {
                 reset();
                 setRequirement("");
                 setReference("");
+                setReferenceUpload({ status: "idle" });
                 setWebSearch(false);
                 setSaved(null);
                 setClarify({ status: "idle" });
@@ -480,7 +522,8 @@ export function App(): JSX.Element {
               planFirst={planFirst}
               onPlanFirstChange={setPlanFirst}
               reference={reference}
-              onReferenceChange={setReference}
+              referenceUpload={referenceUpload}
+              onReferenceFileChange={handleReferenceFile}
               webSearch={webSearch}
               onWebSearchChange={setWebSearch}
               webSearchDisabled={webSearchDisabled}

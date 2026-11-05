@@ -11,11 +11,25 @@ import {
   GENERATE_PRESETS,
   LIMITS,
   PLAN_REFERENCE_MAX_CHARS,
+  REFERENCE_UPLOAD_MAX_BYTES,
   type FormKind,
 } from "@intentform/schema";
 
 import { FORM_KIND_LABELS } from "../dashboard/model";
 import type { RunStatus } from "../stream/generate-machine";
+
+/** 参考卷上传的界面状态；文本本身仍在 `reference`，这里只描述文件与解析进度。 */
+export type ReferenceUploadState =
+  | { readonly status: "idle" }
+  | { readonly status: "loading"; readonly filename: string }
+  | {
+      readonly status: "ready";
+      readonly filename: string;
+      readonly charCount: number;
+      readonly truncated: boolean;
+      readonly warnings: readonly string[];
+    }
+  | { readonly status: "error"; readonly filename: string; readonly message: string };
 
 export interface RequirementPanelProps {
   readonly requirement: string;
@@ -40,9 +54,11 @@ export interface RequirementPanelProps {
    */
   readonly planFirst: boolean;
   readonly onPlanFirstChange: (value: boolean) => void;
-  /** 教师粘贴的参考试卷文本（只进规划阶段，不复制原题）。 */
+  /** 从上传文件提取出的参考试卷文本（只进规划阶段，不复制原题）。 */
   readonly reference: string;
-  readonly onReferenceChange: (value: string) => void;
+  readonly referenceUpload: ReferenceUploadState;
+  /** 选文件 / 清空；`null` 表示移除当前参考卷。 */
+  readonly onReferenceFileChange: (file: File | null) => void;
   /** 请求级联网参考开关；服务端还会按模式与配置再判一次。 */
   readonly webSearch: boolean;
   readonly onWebSearchChange: (value: boolean) => void;
@@ -82,7 +98,8 @@ export function RequirementPanel({
   planFirst,
   onPlanFirstChange,
   reference,
-  onReferenceChange,
+  referenceUpload,
+  onReferenceFileChange,
   webSearch,
   onWebSearchChange,
   webSearchDisabled,
@@ -150,29 +167,84 @@ export function RequirementPanel({
           <summary className="cursor-pointer px-2 py-1 text-xs font-semibold text-muted">
             参考试卷（可选）
           </summary>
-          <div className="flex flex-col gap-1 p-2 pt-0">
+          <div className="flex flex-col gap-2 p-2 pt-0">
             <p className="m-0 text-xs text-muted">
-              粘贴一份同类型试卷。只提取题型比例、难度梯度与命题风格，<strong>不会复制原题</strong>。
+              上传 .docx 或 .pdf。只提取题型比例、难度梯度与命题风格，<strong>不会复制原题</strong>。
             </p>
-            <textarea
-              data-testid="plan-reference"
-              value={reference}
-              rows={4}
-              disabled={streaming}
-              maxLength={PLAN_REFERENCE_MAX_CHARS}
-              aria-label="参考试卷文本"
-              placeholder="例：一、选择题（每题 5 分）……"
-              onChange={(event) => {
-                onReferenceChange(event.target.value);
-              }}
-              className="w-full resize-y rounded-sm border border-line bg-bg p-2 text-sm disabled:opacity-60"
-            />
-            <div className="flex justify-between text-xs text-muted">
-              <span>最多 {PLAN_REFERENCE_MAX_CHARS} 字</span>
-              <span>
-                {reference.length} / {PLAN_REFERENCE_MAX_CHARS}
-              </span>
-            </div>
+            <label
+              className={`inline-flex min-h-[36px] w-fit cursor-pointer items-center rounded-sm border border-line bg-surface px-2 text-sm text-ink ${
+                streaming || referenceUpload.status === "loading" ? "cursor-not-allowed opacity-60" : "hover:border-accent hover:text-accent"
+              }`}
+            >
+              选择文件
+              <input
+                type="file"
+                data-testid="reference-file"
+                accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                disabled={streaming || referenceUpload.status === "loading"}
+                aria-label="上传参考试卷"
+                onChange={(event) => {
+                  onReferenceFileChange(event.currentTarget.files?.[0] ?? null);
+                  // 允许连续选择同一个文件：不清空 value 时第二次不会触发 change。
+                  event.currentTarget.value = "";
+                }}
+                className="sr-only"
+              />
+            </label>
+
+            {referenceUpload.status === "loading" ? (
+              <p className="m-0 text-xs text-muted" data-testid="reference-loading">
+                正在解析 {referenceUpload.filename}…
+              </p>
+            ) : null}
+
+            {referenceUpload.status === "error" ? (
+              <p className="m-0 text-xs text-danger" data-testid="reference-error" role="alert">
+                {referenceUpload.message}
+              </p>
+            ) : null}
+
+            {referenceUpload.status === "ready" ? (
+              <div className="flex flex-col gap-1" data-testid="reference-ready">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="min-w-0 truncate text-ink">
+                    {referenceUpload.filename} · {referenceUpload.charCount} 字
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="reference-clear"
+                    disabled={streaming}
+                    onClick={() => {
+                      onReferenceFileChange(null);
+                    }}
+                    className="shrink-0 text-muted underline underline-offset-2 disabled:opacity-50"
+                  >
+                    移除
+                  </button>
+                </div>
+                {referenceUpload.warnings.map((warning) => (
+                  <p key={warning} className="m-0 text-xs text-danger">
+                    {warning}
+                  </p>
+                ))}
+                <details>
+                  <summary className="cursor-pointer text-xs text-muted">查看提取的文字</summary>
+                  <pre
+                    data-testid="reference-text"
+                    className="m-0 mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-bg p-2 text-xs text-ink"
+                  >
+                    {reference.slice(0, 4000)}
+                  </pre>
+                </details>
+              </div>
+            ) : null}
+
+            {referenceUpload.status === "idle" ? (
+              <p className="m-0 text-xs text-muted">
+                最多 {Math.floor(REFERENCE_UPLOAD_MAX_BYTES / (1024 * 1024))} MiB，提取后最多{" "}
+                {PLAN_REFERENCE_MAX_CHARS} 字
+              </p>
+            ) : null}
           </div>
         </details>
       </section>
