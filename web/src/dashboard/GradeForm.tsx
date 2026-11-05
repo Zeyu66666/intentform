@@ -47,7 +47,7 @@ export function GradeForm(props: GradeFormProps): JSX.Element {
 
   if (shortItems.length === 0) {
     return (
-      <section className="mt-2 rounded-md border border-line bg-surface p-2" data-testid="grade-panel">
+      <section className="rounded-md border border-line bg-surface p-3" data-testid="grade-panel">
         <p className="m-0 text-sm text-muted">这份表单没有需要人工批改的题，全自动判分。</p>
       </section>
     );
@@ -55,27 +55,29 @@ export function GradeForm(props: GradeFormProps): JSX.Element {
 
   return (
     <section
-      className="mt-2 rounded-md border border-line bg-surface p-2"
+      className="overflow-hidden rounded-md border border-line bg-surface"
       data-testid="grade-panel"
       aria-label="简答批改"
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="m-0 text-base font-semibold text-ink">批改简答</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
+        <div className="min-w-0">
+          <h2 className="m-0 text-base font-semibold text-ink">批改简答</h2>
+          <p className="m-0 mt-1 text-xs text-muted">
+            {`每题独立保存，改错了再改一次即可（覆盖，不累加）。这条提交当前 ${formatScoreNumber(row.score)} 分，` +
+              `还有 ${formatScoreNumber(row.pendingScore)} 分待批改。`}
+          </p>
+        </div>
         <button
           type="button"
           data-testid="grade-close"
-          className="min-h-[44px] rounded-sm border border-line px-2 text-sm text-muted"
+          className="min-h-[44px] rounded-sm border border-line px-3 text-sm text-muted transition-colors hover:border-accent hover:text-accent"
           onClick={onClose}
         >
           收起
         </button>
       </div>
-      <p className="m-0 mt-1 text-xs text-muted">
-        {`每题独立保存，改错了再改一次即可（覆盖，不累加）。这条提交当前 ${formatScoreNumber(row.score)} 分，` +
-          `还有 ${formatScoreNumber(row.pendingScore)} 分待批改。`}
-      </p>
 
-      <ul className="m-0 mt-2 list-none space-y-2 p-0">
+      <ul className="m-0 flex list-none flex-col gap-2 p-3">
         {shortItems.map((item) => (
           <GradeRow
             key={item.itemId}
@@ -164,20 +166,28 @@ function GradeRow({
   };
 
   return (
-    <li className="rounded-sm border border-line p-2" data-testid={`grade-row-${item.itemId}`}>
-      <p className="m-0 text-sm font-medium text-ink">
-        {item.title}
-        <span className="ml-1 text-xs font-normal text-muted">{`（满分 ${formatScoreNumber(item.score)}）`}</span>
-      </p>
-      <p className="m-0 mt-1 whitespace-pre-wrap break-words text-sm text-ink" data-testid={`grade-answer-${item.itemId}`}>
+    <li className="rounded-sm border border-line p-3" data-testid={`grade-row-${item.itemId}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-1">
+        <p className="m-0 text-sm font-medium text-ink">{item.title}</p>
+        <span className="whitespace-nowrap rounded-sm bg-bg px-1 text-xs text-muted">
+          {`满分 ${formatScoreNumber(item.score)} 分`}
+        </span>
+      </div>
+
+      {/* 学生原文单独一块浅底：教师扫读时，答案与题目标题不会糊在一起。 */}
+      <p
+        className="m-0 mt-2 whitespace-pre-wrap break-words rounded-sm border border-line bg-bg p-2 text-sm text-ink"
+        data-testid={`grade-answer-${item.itemId}`}
+      >
         {answerText.trim() === "" ? <span className="text-muted">（未作答）</span> : answerText}
       </p>
+
       {aiEnabled ? (
-        <div className="mt-1 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
             data-testid={`grade-ai-${item.itemId}`}
-            className="min-h-[44px] rounded-sm border border-line px-2 text-sm text-accent disabled:opacity-50"
+            className="min-h-[44px] rounded-sm border border-line px-3 text-sm text-accent transition-colors hover:border-accent disabled:opacity-50"
             disabled={aiBusy}
             onClick={askAi}
           >
@@ -187,16 +197,20 @@ function GradeRow({
         </div>
       ) : null}
       {aiError === null ? null : (
-        <p className="m-0 mt-1 text-xs text-danger" role="alert" data-testid={`grade-ai-error-${item.itemId}`}>
+        <p className="m-0 mt-2 text-xs text-danger" role="alert" data-testid={`grade-ai-error-${item.itemId}`}>
           {aiError}
         </p>
       )}
       {aiSuggestion === null ? null : (
-        <p className="m-0 mt-1 text-xs text-muted" data-testid={`grade-ai-suggestion-${item.itemId}`}>
+        <p
+          className="m-0 mt-2 rounded-sm border border-line bg-bg p-2 text-xs text-ink"
+          data-testid={`grade-ai-suggestion-${item.itemId}`}
+        >
           {`建议 ${formatScoreNumber(aiSuggestion.score)} 分：${aiSuggestion.rationale}`}
         </p>
       )}
-      <div className="mt-1 flex items-center gap-2">
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <label className="text-xs text-muted" htmlFor={`grade-input-${item.itemId}`}>
           得分
         </label>
@@ -211,10 +225,11 @@ function GradeRow({
             setState({ status: "idle" });
           }}
         />
+        <span className="text-xs text-muted">{`/ ${formatScoreNumber(item.score)}`}</span>
         <button
           type="button"
           data-testid={`grade-save-${item.itemId}`}
-          className="min-h-[44px] rounded-sm border border-accent px-3 text-sm text-accent disabled:opacity-50"
+          className="min-h-[44px] rounded-sm bg-accent px-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           disabled={state.status === "saving"}
           onClick={submit}
         >
