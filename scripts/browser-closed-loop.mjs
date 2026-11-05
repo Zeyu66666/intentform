@@ -2651,6 +2651,21 @@ async function main() {
       );
       const afterText = await page.text();
       must(!afterText.includes("高二生物"), `删除后看板仍渲染问卷标题：${afterText.slice(0, 300)}`);
+
+      // 回归：删掉当前表单后看板会选中下一份。删除按钮在同一个树位置被复用，
+      // 若状态没有随表单重置，新表单的按钮会永远停在「删除中…」。
+      const nextDelete = await page.evaluate(`
+        var trigger = byTestId('dash-delete');
+        var confirm = byTestId('dash-delete-confirm');
+        return {
+          trigger: trigger === null ? null : trigger.textContent.trim(),
+          confirm: confirm === null ? null : confirm.textContent.trim()
+        };
+      `);
+      must(
+        nextDelete.trigger === "删除表单" && nextDelete.confirm === null,
+        `删除后下一份表单仍停在忙碌/确认态：${JSON.stringify(nextDelete)}`,
+      );
       artifacts.push(await page.screenshot(nextArtifactName("deleted")));
 
       const fill = await request("GET", `/f/${surveyCollection.slug}`);
