@@ -49,7 +49,7 @@ export interface TeacherApi {
   readonly listForms: () => Promise<ApiResult<ListFormsResponse>>;
   readonly submissions: (formId: string) => Promise<ApiResult<SubmissionsResponse>>;
   /**
-   * 落库一条草稿（生成页的「保存并发布」第一步）。
+   * 落库一条草稿（生成页的「保存为草稿」）。
    * 请求体由 `buildPublishDraft()` 产出，这里只负责发出去。
    */
   readonly createForm: (request: CreateFormRequest) => Promise<ApiResult<CreateFormResponse>>;

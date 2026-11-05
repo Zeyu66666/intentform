@@ -1,7 +1,7 @@
 /**
  * 受限修改页 `/forms/<id>/edit`（省赛 R-03）。
  *
- * 页面结构照 PublishPanel 的两步思路拆：**数据态**（这份表单的哪个版本、加载/失败）
+ * 页面结构照发布面板的两步思路拆：**数据态**（这份表单的哪个版本、加载/失败）
  * 与**编辑态**（用户排的意图和草稿）各自独立，右侧面板只是编辑态的一个视图。
  *
  * 三条必须守住的界面规矩：
@@ -29,6 +29,7 @@ import { SuggestBox } from "./SuggestBox";
 import { SupplementBox } from "./SupplementBox";
 import { parseAddQuery, type AddPrefill } from "./supplement-query";
 import { TYPE_LABELS } from "../render/FieldRegistry";
+import { formatStudentUrl, toPublishedForm } from "../publish/publish-flow";
 import { DASHBOARD_PATH, LOGIN_PATH, routeToPath } from "../router";
 import { toAnswerPayload } from "./answer-input";
 import {
@@ -85,6 +86,8 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 发布按钮的「发布中…」只在发布请求上出现，保存/撤销共用 `busy` 但标签不同。 */
+  const [publishing, setPublishing] = useState(false);
   /** 重做栈是否有一步可退。服务端是唯一事实源，这里只缓存详情/撤销/重做的返回值。 */
   const [redoAvailable, setRedoAvailable] = useState(false);
   /** 覆盖矩阵点进来的补题目标（`?add=1&kp=…&bloom=…`）；处理完就清空。 */
@@ -169,6 +172,22 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
           .filter((item) => item.type !== "section").length;
   const selectedLabel =
     selected === null ? "" : selected.type === "section" ? "分节" : `第 ${String(selectedOrdinal)} 题`;
+  // 已发布过的表单才有学生链接；草稿改过之后链接仍指向已发布那一版，直到再次发布。
+  const studentView =
+    detail.form.slug === undefined
+      ? null
+      : toPublishedForm(
+          detail.form,
+          detail.version,
+          detail.form.slug,
+          preview.meta.totalScore ?? null,
+        );
+  const publishedCurrent = detail.form.publishedVersionId === edit.baseVersionId;
+  const publishBlockedReason = !plan.ok
+    ? "改动预览有错误，先修正再发布"
+    : plan.hasChanges
+      ? "先保存当前改动，再发布"
+      : null;
 
   const handleReload = (): void => {
     setReloadToken((token) => token + 1);
@@ -222,6 +241,47 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
         edit: withSelection(initialEditState(outcome.data.schema, outcome.data.version.id), selected?.id ?? null),
       });
       setNotice({ tone: "success", text: `已生成 v${String(outcome.data.version.n)}`, needsReload: false });
+    });
+  };
+
+  /**
+   * 发布**当前草稿版本**。只在没有未保存改动时可用：有改动先保存，
+   * 否则发布的是旧版本，教师会以为刚改的题已经发出去了。
+   */
+  const handlePublish = (): void => {
+    if (busy || publishBlockedReason !== null || publishedCurrent) return;
+    setBusy(true);
+    setPublishing(true);
+    setNotice(null);
+    void api.publishForm(formId, { versionId: edit.baseVersionId }).then((outcome) => {
+      if (!alive.current) return;
+      setBusy(false);
+      setPublishing(false);
+      if (!outcome.ok) {
+        setNotice(noticeForFailure(outcome.failure));
+        return;
+      }
+      setLoad((current) =>
+        current.status === "ready"
+          ? {
+              ...current,
+              detail: {
+                ...current.detail,
+                form: {
+                  ...current.detail.form,
+                  status: "published",
+                  slug: outcome.data.slug,
+                  publishedVersionId: outcome.data.versionId,
+                },
+              },
+            }
+          : current,
+      );
+      setNotice({
+        tone: "success",
+        text: `已发布 v${String(detail.version.n)}，学生可以开始填写`,
+        needsReload: false,
+      });
     });
   };
 
@@ -304,6 +364,21 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
                 {`${detail.form.title} · 当前草稿 v${String(detail.version.n)} · ${String(questionCount)} 题`}
               </p>
             </div>
+            {studentView === null ? null : (
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted">学生链接</span>
+                <Link
+                  href={studentView.path}
+                  data-testid="edit-student-link"
+                  className="break-all text-accent underline"
+                >
+                  {formatStudentUrl(studentView.path, window.location.origin)}
+                </Link>
+                <span className="text-muted">
+                  {publishedCurrent ? "已发布当前草稿" : "当前草稿未发布"}
+                </span>
+              </div>
+            )}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <div className="flex overflow-hidden rounded-sm border border-line bg-surface">
@@ -523,7 +598,15 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
         </section>
       </main>
 
-      <DiffBar plan={plan} busy={busy} onSave={handleSave} />
+      <DiffBar
+        plan={plan}
+        busy={busy}
+        publishing={publishing}
+        onSave={handleSave}
+        onPublish={handlePublish}
+        publishBlockedReason={publishBlockedReason}
+        alreadyPublished={publishedCurrent}
+      />
     </div>
   );
 }
@@ -607,15 +690,23 @@ function ErrorBlock({ failure }: { readonly failure: ApiFailure }): JSX.Element 
   );
 }
 
-/** Diff 预览条：粘在页面底部，改了什么一眼能看到，再决定按不按保存。 */
+/** Diff 预览条：粘在页面底部，改了什么一眼能看到，再决定保存还是发布。 */
 function DiffBar({
   plan,
   busy,
+  publishing,
   onSave,
+  onPublish,
+  publishBlockedReason,
+  alreadyPublished,
 }: {
   readonly plan: PatchPlan;
   readonly busy: boolean;
+  readonly publishing: boolean;
   readonly onSave: () => void;
+  readonly onPublish: () => void;
+  readonly publishBlockedReason: string | null;
+  readonly alreadyPublished: boolean;
 }): JSX.Element {
   return (
     <footer className="no-print shrink-0 border-t border-line bg-surface">
@@ -627,16 +718,33 @@ function DiffBar({
               {`${String(plan.changes.length)} 条`}
             </span>
           ) : null}
-          <button
-            type="button"
-            data-testid="edit-save"
-            className="ml-auto min-h-[44px] rounded-sm bg-accent px-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            disabled={busy || !plan.ok || !plan.hasChanges}
-            onClick={onSave}
-          >
-            {busy ? "保存中…" : "保存为新草稿"}
-          </button>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="edit-publish"
+              className="min-h-[44px] rounded-sm border border-accent px-3 text-sm text-accent transition-colors hover:bg-accent hover:text-white disabled:opacity-50"
+              disabled={busy || publishBlockedReason !== null || alreadyPublished}
+              onClick={onPublish}
+            >
+              {alreadyPublished ? "已发布" : publishing ? "发布中…" : "发布"}
+            </button>
+            <button
+              type="button"
+              data-testid="edit-save"
+              className="min-h-[44px] rounded-sm bg-accent px-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              disabled={busy || !plan.ok || !plan.hasChanges}
+              onClick={onSave}
+            >
+              {busy && !publishing ? "保存中…" : "保存为新草稿"}
+            </button>
+          </div>
         </div>
+
+        {publishBlockedReason === null ? null : (
+          <p className="m-0 text-xs text-muted" data-testid="edit-publish-hint">
+            {publishBlockedReason}
+          </p>
+        )}
 
         {plan.ok ? (
           plan.changes.length === 0 ? (

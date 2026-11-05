@@ -13,7 +13,7 @@ import type { ApiFailure } from "../api/http";
 import type { PublishDraftFailure } from "./build-draft";
 
 /** 401 时不自动跳转：跳走会把正在展示的时间线/预览整片抹掉，演示当场断掉。 */
-export const PUBLISH_LOGIN_MESSAGE = "登录状态已失效（401）：请先登录，再回来点一次「保存并发布」。";
+export const PUBLISH_LOGIN_MESSAGE = "登录状态已失效（401）：请先登录，再回来重试。";
 
 export type PublishFailureKind =
   /** 本地预检就失败了，根本没有发出请求。 */

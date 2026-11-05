@@ -18,6 +18,7 @@ import type {
   Clarification,
   ClarifyQuestion,
   ClarifySlotId,
+  CreateFormResponse,
   FormBlueprint,
   FormItem,
   FormKind,
@@ -44,8 +45,7 @@ import {
 import { RequirementPanel } from "./panels/RequirementPanel";
 import { PreviewPanel, type PreviewMode } from "./panels/PreviewPanel";
 import { TimelinePanel } from "./panels/TimelinePanel";
-import { PublishPanel } from "./publish/PublishPanel";
-import type { PublishedForm } from "./publish/publish-flow";
+import { SaveDraftPanel } from "./publish/SaveDraftPanel";
 import { readWebConfig } from "./config";
 import { selectPreviewFields, selectUnresolvedErrors, type RunStatus } from "./stream/generate-machine";
 import { createDemoStreamSource, DEMO_NOTICE } from "./stream/demo-source";
@@ -163,10 +163,10 @@ export function App(): JSX.Element {
    */
   const [planFirst, setPlanFirst] = useState(true);
 
-  // 发布结果留在 App：`PublishPanel` 只在 done 之后挂载，把结果存在它自己里面的化，
-  // 下面任何一次重渲染（预览视角切换、时间线更新）都可能把刚拿到的短链弄丢。
-  const [published, setPublished] = useState<PublishedForm | null>(null);
-  /** 发布前就地改过的题：按字段 id 覆盖生成结果，保存/发布时一起带走。 */
+  // 保存结果留在 App：`SaveDraftPanel` 只在 done 之后挂载，把结果存在它自己里面的化，
+  // 下面任何一次重渲染（预览视角切换、时间线更新）都可能把刚拿到的编辑入口弄丢。
+  const [saved, setSaved] = useState<CreateFormResponse | null>(null);
+  /** 保存前就地改过的题：按字段 id 覆盖生成结果，保存时一起带走。 */
   const [fieldEdits, setFieldEdits] = useState<Readonly<Record<string, FormItem>>>({});
   /** 生成蓝图里的知识点，供预览里的「教学标注」下拉使用。 */
   const [objectives, setObjectives] = useState<readonly Objective[]>([]);
@@ -202,7 +202,7 @@ export function App(): JSX.Element {
       clarifications: readonly Clarification[],
       blueprint?: FormBlueprint,
     ): void => {
-      setPublished(null);
+      setSaved(null);
       setFieldEdits({});
       setObjectives(blueprint?.knowledgePoints ?? []);
       setClarify({ status: "idle" });
@@ -470,7 +470,7 @@ export function App(): JSX.Element {
                 setRequirement("");
                 setReference("");
                 setWebSearch(false);
-                setPublished(null);
+                setSaved(null);
                 setClarify({ status: "idle" });
                 setPlan({ status: "idle" });
                 setDrafts(EMPTY_DRAFTS);
@@ -488,13 +488,13 @@ export function App(): JSX.Element {
             />
           </div>
           {state.status === "done" ? (
-            <PublishPanel
+            <SaveDraftPanel
               fields={fieldNodes}
               requirementText={requirement}
               kind={kind}
               api={api}
-              published={published}
-              onPublished={setPublished}
+              saved={saved}
+              onSaved={setSaved}
             />
           ) : null}
         </section>

@@ -627,6 +627,53 @@ async function draftVersionOf(page) {
   );
 }
 
+/**
+ * P25 起的两步发布：生成页「保存为草稿」→ 编辑器「发布」。
+ *
+ * 生成页没有保存按钮时返回 `null`，调用方走 API 兜底（旧构建/旧界面）。
+ * 保存按钮在但后续步骤失败时必须抛错，不能静默改走 API——那会把
+ * 「先保存后发布」这条链路测成假的。
+ */
+async function saveDraftAndPublishViaEditor(page, webBase) {
+  const hasSave = await page.evaluate("return byTestId('save-draft') !== null");
+  if (!hasSave) return null;
+
+  const saved = await page.tap('[data-testid="save-draft"]');
+  must(saved.ok === true, `点不到「保存为草稿」：${JSON.stringify(saved)}`);
+
+  const href = await waitFor(
+    async () => {
+      const value = await page.evaluate(
+        "var a = byTestId('saved-draft-link'); return a === null ? null : a.getAttribute('href');",
+      );
+      return typeof value === "string" && value.length > 0 ? value : null;
+    },
+    "保存草稿后出现「去编辑并发布」入口",
+    20_000,
+  );
+  const formId = /\/forms\/([^/]+)\/edit/.exec(href)?.[1] ?? "";
+  must(formId !== "", `保存后的编辑链接里没有 formId：${href}`);
+
+  await page.goto(`${webBase}${href}`);
+  await waitFor(
+    async () => (await page.evaluate("return byTestId('edit-publish') !== null")),
+    "编辑器出现发布按钮",
+    20_000,
+  );
+  const published = await page.tap('[data-testid="edit-publish"]');
+  must(published.ok === true, `点不到编辑器里的「发布」：${JSON.stringify(published)}`);
+
+  const slug = await waitFor(
+    async () => {
+      const match = /\/f\/([a-z0-9]+)/.exec(await page.text());
+      return match === null ? null : match[1];
+    },
+    "发布后出现学生短链",
+    20_000,
+  );
+  return { formId, slug, href };
+}
+
 async function step(name, body) {
   const startedAt = Date.now();
   process.stdout.write(`[loop] ${name} …\n`);
@@ -699,7 +746,7 @@ async function main() {
     must(cspHeader.includes("style-src-attr 'unsafe-inline'"), `生产首页缺少 KaTeX style 放行：${cspHeader}`);
     must(!cspHeader.includes("script-src 'unsafe-inline'"), `CSP 不得放开脚本内联：${cspHeader}`);
     // 脚本自己在 Node 里也登一次：它要用这份会话去读表单详情（学生页得按 schema 答题）、
-    // 以及在 UI 还没提供「保存并发布」时兜底建表单。浏览器有自己独立的会话 cookie。
+    // 以及在 UI 还没提供保存按钮时兜底建表单。浏览器有自己独立的会话 cookie。
     const nodeLogin = await request("POST", "/api/auth/login", {
       json: { email: DEMO_EMAIL, password: DEMO_PASSWORD },
     });
@@ -1069,42 +1116,28 @@ async function main() {
       };
     });
 
-    // 3) 保存并发布
+    // 3) 先保存草稿，再进编辑器发布
     //
-    // UI 上还没有「保存并发布」按钮时（web 侧由另一位队友在加），这里退回到 API：
-    // 用教师同一份凭据在 Node 侧创建并发布，**表单内容仍来自同一条 mock 生成流**
-    // （mock 是确定性的，节点逐字相同），所以闭环的真实性不受影响，只是操作入口变了。
-    // 按钮一旦上线，脚本会自动改走 UI 路径，不需要再改这里。
-    const publish = await step("保存并发布（取学生短链 slug）", async () => {
-      const hasPublishButton = await page.evaluate(
-        "return buttonLabels().some(function (t) { return /发布/.test(t); })",
-      );
-      let mode = hasPublishButton ? "ui" : "api";
-      if (hasPublishButton) {
-        await page.evaluate("return clickButtonByText('发布')");
-        try {
-          await waitFor(async () => /\/f\/[a-z0-9]+/.test(await page.text()), "发布后页面出现学生短链", 12_000);
-        } catch {
-          // 按钮在、但没把 slug 露出来：不让整个脚本红在这里，退回 API 并把事实记进摘要。
-          mode = "ui-failed-then-api";
-        }
-      }
-
+    // P25 起生成页的按钮是「保存为草稿」，发布入口在编辑器。旧构建没有这个按钮时
+    // 仍退回 API（用教师同一份凭据在 Node 侧创建并发布，表单内容仍来自同一条 mock 流），
+    // 但按钮存在时后续步骤失败必须抛错，不能静默改走 API 把链路测成假的。
+    const publish = await step("保存草稿 → 编辑器发布（取学生短链 slug）", async () => {
+      const viaUi = await saveDraftAndPublishViaEditor(page, webBase);
+      const mode = viaUi === null ? "api" : "ui";
       let formId = "";
       let versionId = "";
       let slug = "";
 
-      if (mode === "ui") {
-        slug = /\/f\/([a-z0-9]+)/.exec(await page.text())?.[1] ?? "";
-        must(slug !== "", "发布成功但页面里没抓到 slug");
+      if (viaUi !== null) {
+        formId = viaUi.formId;
+        slug = viaUi.slug;
         const list = await request("GET", "/api/forms", { cookie });
         must(list.status === 200, `读表单列表失败（${String(list.status)}）`);
-        const matched = (list.json.forms ?? []).find((form) => form.slug === slug);
-        must(matched !== undefined, `表单列表里找不到 slug=${slug} 的那张（UI 发布的 formId 无从得知）`);
-        formId = matched.id;
+        const matched = (list.json.forms ?? []).find((form) => form.id === formId);
+        must(matched !== undefined, `表单列表里找不到刚保存的 formId=${formId}`);
         versionId = matched.publishedVersionId ?? "";
 
-        // 生成页里就地改过的题干必须真的进发布快照——这就是「发布界面能直接改题」的证据。
+        // 生成页里就地改过的题干必须真的进发布快照——这就是「发布前能直接改题」的证据。
         const detail = await request("GET", `/api/forms/${formId}`, { cookie });
         must(detail.status === 200, `读已发布表单失败（${String(detail.status)}）：${detail.text}`);
         const editedItem = (detail.json.schema.items ?? []).find(
@@ -1572,22 +1605,13 @@ async function main() {
       must(generatedText.includes("判定为 问卷"), "时间线没有把表单判成问卷（kind 没有传到生成链路）");
       artifacts.push(await page.screenshot("13-survey-generated.png"));
 
-      // 发布：UI 上的「发布」按钮（与第 3 步同一入口）。
-      must(
-        await page.evaluate("return buttonLabels().some(function (t) { return /发布/.test(t); })"),
-        "问卷生成后没有发布按钮",
-      );
-      await page.evaluate("return clickButtonByText('发布')");
-      await waitFor(
-        async () => /\/f\/[a-z0-9]+/.test(await page.text()),
-        "问卷发布后页面出现学生短链",
-        12_000,
-      );
-      const slug = /\/f\/([a-z0-9]+)/.exec(await page.text())?.[1] ?? "";
-      must(slug !== "", "问卷发布成功但页面里没抓到 slug");
+      // 发布：与第 3 步同一入口（生成页保存草稿 → 编辑器发布）。
+      const surveyPublish = await saveDraftAndPublishViaEditor(page, webBase);
+      must(surveyPublish !== null, "问卷生成后没有「保存为草稿」入口");
+      const slug = surveyPublish.slug;
       const list = await request("GET", "/api/forms", { cookie });
       must(list.status === 200, `读取表单列表失败（${String(list.status)}）`);
-      const surveyForm = (list.json.forms ?? []).find((form) => form.slug === slug);
+      const surveyForm = (list.json.forms ?? []).find((form) => form.id === surveyPublish.formId);
       must(surveyForm !== undefined && surveyForm.kind === "survey", `发布出来的不是问卷：${JSON.stringify(surveyForm)}`);
 
       // 学生端：手机视口填写。问卷字段没有答案/分值，ui 上没有"对错"。

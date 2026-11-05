@@ -285,7 +285,7 @@ export function buildPublishDraft(
     return {
       ok: false,
       reason: "empty-fields",
-      message: "还没有可发布的字段：先生成一份表单，再点「保存并发布」。",
+      message: "还没有可发布的字段：先生成一份表单，再点「保存为草稿」。",
     };
   }
 
