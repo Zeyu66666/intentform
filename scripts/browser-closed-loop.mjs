@@ -1347,6 +1347,20 @@ async function main() {
         statCells.every((cells) => cells[3] === "100%"),
         `全部答对时每题正确率应为 100%，实际 ${JSON.stringify(statCells)}`,
       );
+      // 题干里的 $...$ 必须由 KaTeX 渲染：有 `.katex` 节点，且首格不再残留源码美元符。
+      const itemMath = await page.evaluate(`
+        var rows = Array.prototype.slice.call(document.querySelectorAll('[data-testid=dash-item-stat]'));
+        var firstCells = rows.map(function (row) {
+          var cell = row.querySelector('td');
+          return cell === null ? '' : cell.textContent;
+        });
+        return {
+          hasKatex: rows.some(function (row) { return row.querySelector('.katex') !== null; }),
+          rawDollar: firstCells.some(function (text) { return text.indexOf('$') >= 0; })
+        };
+      `);
+      must(itemMath.hasKatex === true, `每题正确率的题干没有渲染 KaTeX：${JSON.stringify(itemMath)}`);
+      must(itemMath.rawDollar === false, `每题正确率仍显示 $...$ 源码：${JSON.stringify(itemMath)}`);
       const coverage = await coverageMatrixRows(page);
       must(coverage.length > 0, "看板上没有覆盖矩阵行");
       must(
@@ -2428,6 +2442,67 @@ async function main() {
       };
     });
 
+    // 20) 删除表单：破坏性操作必须二次确认；删除后列表、看板与学生链接同时消失。
+    // 这条走真实点击，而不是直接调接口——「按钮藏得太深 / 确认后不跳转」只有 UI 能暴露。
+    const deletedForm = await step("删除表单：二次确认后从看板消失，学生链接 404", async () => {
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/dashboard/${surveyCollection.formId}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('dash-delete') !== null")),
+        "看板出现删除表单按钮",
+        20_000,
+      );
+      const opened = await page.tap('[data-testid="dash-delete"]');
+      must(opened.ok === true, `点不到删除表单：${JSON.stringify(opened)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('dash-delete-confirm') !== null")),
+        "出现二次确认",
+        10_000,
+      );
+      // 确认态本身也是证据：评审能看到按钮从「删除表单」变成「确认删除 / 取消」。
+      artifacts.push(await page.screenshot(nextArtifactName("delete-confirm")));
+      const cancelled = await page.tap('[data-testid="dash-delete-cancel"]');
+      must(cancelled.ok === true, `点不到取消：${JSON.stringify(cancelled)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('dash-delete') !== null")),
+        "取消后回到未确认态",
+        10_000,
+      );
+
+      const confirmedTap = await page.tap('[data-testid="dash-delete"]');
+      must(confirmedTap.ok === true, `第二次点不到删除表单：${JSON.stringify(confirmedTap)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('dash-delete-confirm') !== null")),
+        "再次出现二次确认",
+        10_000,
+      );
+      const confirmed = await page.tap('[data-testid="dash-delete-confirm"]');
+      must(confirmed.ok === true, `点不到确认删除：${JSON.stringify(confirmed)}`);
+
+      const remaining = await waitFor(
+        async () => {
+          const ids = await page.evaluate(
+            "var select = byTestId('dash-form-select'); return select === null ? null : Array.prototype.map.call(select.options, function (option) { return option.value; });",
+          );
+          if (ids === null) return null;
+          return ids.includes(surveyCollection.formId) ? null : ids;
+        },
+        "删除后表单从看板列表消失",
+        20_000,
+      );
+      const afterText = await page.text();
+      must(!afterText.includes("高二生物"), `删除后看板仍渲染问卷标题：${afterText.slice(0, 300)}`);
+      artifacts.push(await page.screenshot(nextArtifactName("deleted")));
+
+      const fill = await request("GET", `/f/${surveyCollection.slug}`);
+      must(fill.status === 404, `删除后学生链接应 404，实际 ${String(fill.status)}`);
+      return {
+        formId: surveyCollection.formId,
+        remainingForms: remaining.length,
+        fillStatus: fill.status,
+      };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -2453,6 +2528,7 @@ async function main() {
       aiGrading,
       llmSettings,
       reference: referenceStep,
+      deletedForm,
       dashboard,
       graded,
       steps,
