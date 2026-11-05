@@ -283,6 +283,22 @@ export interface BlueprintQuotaMismatch {
   readonly actual: number;
 }
 
+/** 某个分节的题量与蓝图对不上。`actualTitle` 是成品里实际的章节标题（可能被模型改写）。 */
+export interface BlueprintSectionMismatch {
+  readonly title: string;
+  readonly planned: number;
+  readonly actual: number;
+  readonly actualTitle?: string;
+}
+
+/** 分节标题已经写明题型，却混进了别的题型（例如「解答题」里出现一道填空题）。 */
+export interface BlueprintSectionTypeMismatch {
+  readonly section: string;
+  readonly itemId: string;
+  readonly type: FieldType;
+  readonly expected: readonly FieldType[];
+}
+
 export interface BlueprintDeviation {
   /** 实际题量 − 蓝图题量（分节不算）。负数是少出了题。 */
   readonly countDelta: number;
@@ -296,7 +312,11 @@ export interface BlueprintDeviation {
   readonly extraKnowledgePoints: readonly string[];
   /** 指定了配额但实际题数对不上的组合；只列有差值的条目。 */
   readonly quotaMismatches: readonly BlueprintQuotaMismatch[];
-  /** 五项全对（题量、总分、题型、知识点、配额）——「结构完全匹配」的唯一来源。 */
+  /** 按顺序比较每个分节的题量；只列对不上的分节。 */
+  readonly sectionMismatches: readonly BlueprintSectionMismatch[];
+  /** 分节标题写明题型但混入其它题型的条目；只列有问题的题。 */
+  readonly sectionTypeMismatches: readonly BlueprintSectionTypeMismatch[];
+  /** 七项全对（题量、总分、题型、知识点、配额、分节题量、分节题型）。 */
   readonly isExact: boolean;
 }
 
@@ -309,6 +329,51 @@ export interface BlueprintSubject {
   readonly items: readonly FormItem[];
   readonly totalScore: number;
   readonly objectives: readonly { readonly id: string; readonly name: string }[];
+}
+
+/** 成品里按 section 节点切出来的分组；第一个 section 之前的题目归入「（未分节）」。 */
+interface ActualSection {
+  readonly title: string;
+  readonly items: readonly FormItem[];
+}
+
+function groupBySection(items: readonly FormItem[]): readonly ActualSection[] {
+  const groups: { title: string; items: FormItem[] }[] = [];
+  for (const item of items) {
+    if (item.type === "section") {
+      groups.push({ title: item.title, items: [] });
+      continue;
+    }
+    const current = groups[groups.length - 1];
+    if (current === undefined) {
+      groups.push({ title: "（未分节）", items: [item] });
+    } else {
+      current.items.push(item);
+    }
+  }
+  return groups;
+}
+
+/**
+ * 从分节标题读出它承诺的题型。只认**明确写了**的标题：
+ * 「选择题」这种单/多不分的标题不猜，避免把合法结构误报成偏差。
+ * 「填空题」允许数值题（数值填空）；「解答题」只放简答。
+ */
+const SECTION_TYPE_PATTERNS: ReadonlyArray<readonly [RegExp, readonly FieldType[]]> = [
+  [/单项选择|单选/u, ["single"]],
+  [/多项选择|多选/u, ["multi"]],
+  [/填空/u, ["fill", "number"]],
+  [/解答|简答|计算|证明|论述/u, ["short"]],
+  [/数值/u, ["number"]],
+  [/量表/u, ["scale"]],
+];
+
+function expectedTypesOfSection(title: string): readonly FieldType[] | undefined {
+  const hits = SECTION_TYPE_PATTERNS.filter(([pattern]) => pattern.test(title)).map(
+    ([, types]) => types,
+  );
+  if (hits.length !== 1) return undefined;
+  return hits[0];
 }
 
 /**
@@ -362,6 +427,38 @@ export function compareWithBlueprint(
     }
   }
 
+  // 分节题量按位置对账：模型即使把章节标题改写了，顺序与每节题量仍应兑现蓝图。
+  const sections = groupBySection(form.items);
+  const sectionMismatches: BlueprintSectionMismatch[] = [];
+  blueprint.sections.forEach((planned, index) => {
+    const actual = sections[index];
+    const actualCount = actual?.items.length ?? 0;
+    if (actualCount === planned.count) return;
+    sectionMismatches.push({
+      title: planned.title,
+      planned: planned.count,
+      actual: actualCount,
+      ...(actual === undefined ? {} : { actualTitle: actual.title }),
+    });
+  });
+
+  // 标题写了题型的（单选题/填空题/解答题），节内不允许混入其它题型。
+  // 2026-11-05 的真实缺陷：一道解析几何填空题落进了「四、解答题」。
+  const sectionTypeMismatches: BlueprintSectionTypeMismatch[] = [];
+  for (const section of sections) {
+    const expected = expectedTypesOfSection(section.title);
+    if (expected === undefined) continue;
+    for (const item of section.items) {
+      if (expected.includes(item.type)) continue;
+      sectionTypeMismatches.push({
+        section: section.title,
+        itemId: item.id,
+        type: item.type,
+        expected,
+      });
+    }
+  }
+
   const countDelta = items.length - blueprint.totalCount;
   const scoreDelta = form.totalScore - blueprint.totalScore;
   const isExact =
@@ -370,7 +467,9 @@ export function compareWithBlueprint(
     Object.keys(typeMixDelta).length === 0 &&
     missingKnowledgePoints.length === 0 &&
     extraKnowledgePoints.length === 0 &&
-    quotaMismatches.length === 0;
+    quotaMismatches.length === 0 &&
+    sectionMismatches.length === 0 &&
+    sectionTypeMismatches.length === 0;
 
   return {
     countDelta,
@@ -379,6 +478,8 @@ export function compareWithBlueprint(
     missingKnowledgePoints,
     extraKnowledgePoints,
     quotaMismatches,
+    sectionMismatches,
+    sectionTypeMismatches,
     isExact,
   };
 }

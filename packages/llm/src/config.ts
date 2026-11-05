@@ -49,9 +49,13 @@ export const DEFAULT_TEMPERATURE = 0;
  * 明确禁止（「section/short/scale 不带 score」），模型只能漏分值或改题型。
  * v5：简答必须带 `bloom` / `knowledgePoint` / `explanation`（参考答案与评分要点），
  * 蓝图题量与分值改成「必须恰好相等，写不下就压缩篇幅」，不再允许「少出题」。
+ * v6：分节必须逐节兑现（包括「解答题里不许放填空题」），quotas 必须命中；
+ * 2026-11-05 的真实卷子里一道解析几何填空题落进了「四、解答题」。
+ * v7：knowledgePoint 必须写 id，不能写中文名称——没有蓝图时模型会写「开口方向」，
+ * 逐行校验直接判 E_KP_UNKNOWN/E_SCHEMA_SHAPE，修复环要重写整行。
  * 升版是强制的：同一份需求在旧版下生成的输出与新版不同，两者不能共用一个回放键。
  */
-export const DEFAULT_PROMPT_VERSION = "generate.v5";
+export const DEFAULT_PROMPT_VERSION = "generate.v7";
 
 export const REPLAY_SPEEDS = ["1x", "2x", "instant"] as const;
 

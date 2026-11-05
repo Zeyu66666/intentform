@@ -201,6 +201,7 @@ describe("compareWithBlueprint", () => {
           options: [{ id: "o1", text: "x" }, { id: "o2", text: "y" }],
           answer: "o1",
         },
+        { id: "sec-app", type: "section", title: "应用" },
         { id: "q-five", type: "fill", title: "e", score: 5, answer: ["x"] },
         { id: "q-six", type: "fill", title: "f", score: 5, answer: ["y"] },
         { id: "q-seven", type: "short", title: "g", score: 5, maxLength: 100 },
@@ -311,5 +312,44 @@ describe("compareWithBlueprint", () => {
       objectives: schema.meta.objectives,
     });
     expect(deviation.quotaMismatches).toEqual([]);
+  });
+
+  it("分节对账：题量按位置比，解答题里混入填空题会被指出", () => {
+    const withSections = blueprintSchema.parse({
+      ...blueprintJson(),
+      sections: [
+        { title: "一、填空题", count: 3 },
+        { title: "二、解答题", count: 2 },
+      ],
+      totalCount: 5,
+      typeMix: { fill: 3, short: 2 },
+      totalScore: 25,
+    });
+    const schema = quiz(
+      [
+        { id: "sec-fill", type: "section", title: "一、填空题" },
+        { id: "q-fill-1", type: "fill", title: "a", score: 5, answer: ["x"] },
+        { id: "q-fill-2", type: "fill", title: "b", score: 5, answer: ["y"] },
+        { id: "sec-answer", type: "section", title: "二、解答题" },
+        { id: "q-short-1", type: "short", title: "c", score: 5, maxLength: 100 },
+        { id: "q-fill-3", type: "fill", title: "d", score: 5, answer: ["z"] },
+      ],
+      [],
+      25,
+    );
+    const deviation = compareWithBlueprint(withSections, {
+      items: schema.items,
+      totalScore: schema.meta.totalScore ?? 0,
+      objectives: schema.meta.objectives,
+    });
+
+    // 填空题计划 3 道、实际只有 2 道；解答题计划 2、实际 2（题量对，但里面混了填空）。
+    expect(deviation.sectionMismatches).toEqual([
+      { title: "一、填空题", planned: 3, actual: 2, actualTitle: "一、填空题" },
+    ]);
+    expect(deviation.sectionTypeMismatches).toEqual([
+      { section: "二、解答题", itemId: "q-fill-3", type: "fill", expected: ["short"] },
+    ]);
+    expect(deviation.isExact).toBe(false);
   });
 });

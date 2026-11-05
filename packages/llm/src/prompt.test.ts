@@ -58,6 +58,22 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("分值合计必须恰好等于 totalScore");
     expect(prompt).not.toContain("写不进去就少出题");
   });
+
+  it("v6：分节逐节兑现，配额不得换题型", () => {
+    const prompt = buildSystemPrompt("generate.v6");
+    // 2026-11-05 的卷子：一道填空题落进了「四、解答题」。
+    expect(prompt).toContain("分节必须逐节兑现");
+    expect(prompt).toContain("填空题不许放进解答题");
+    expect(prompt).toContain("quotas 是硬约束");
+    expect(prompt).toContain("知识点 id 与题型都要匹配");
+  });
+
+  it("v7：knowledgePoint 必须写 id，不能写中文名称", () => {
+    const prompt = buildSystemPrompt("generate.v7");
+    expect(prompt).toContain("knowledgePoint 必须写 id");
+    expect(prompt).toContain("不能写「开口方向」这种中文名称");
+    expect(prompt).toContain("kp_ 前缀 id");
+  });
 });
 
 describe("buildUserPrompt", () => {

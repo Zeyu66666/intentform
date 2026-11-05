@@ -11,6 +11,7 @@
  */
 
 import {
+  FIELD_TYPE_LABELS,
   LIMITS,
   SCHEMA_VERSION,
   compareWithBlueprint,
@@ -334,10 +335,45 @@ export async function* generateForm(
         ),
         objectives: options.blueprint.knowledgePoints.map((point) => ({ id: point.id, name: point.name })),
       });
+      // 偏差不能只说「有偏差」：分节错位（解答题里混进填空题）与配额缺失要指名到题，
+      // 否则教师只能从头翻整份卷子。
+      const notes: string[] = [];
+      if (deviation.sectionMismatches.length > 0) {
+        notes.push(
+          `分节题量：${deviation.sectionMismatches
+            .slice(0, 4)
+            .map((item) => `「${item.title}」计划 ${String(item.planned)} 题、实际 ${String(item.actual)} 题`)
+            .join("；")}`,
+        );
+      }
+      if (deviation.sectionTypeMismatches.length > 0) {
+        notes.push(
+          `分节题型：${deviation.sectionTypeMismatches
+            .slice(0, 4)
+            .map(
+              (item) =>
+                `「${item.section}」里的 ${item.itemId} 是${FIELD_TYPE_LABELS[item.type]}，该节应为${item.expected
+                  .map((type) => FIELD_TYPE_LABELS[type])
+                  .join("/")}`,
+            )
+            .join("；")}`,
+        );
+      }
+      if (deviation.quotaMismatches.length > 0) {
+        notes.push(
+          `配额：${deviation.quotaMismatches
+            .slice(0, 4)
+            .map(
+              (item) =>
+                `${item.knowledgePoint} · ${FIELD_TYPE_LABELS[item.type]} 计划 ${String(item.planned)} 道、实际 ${String(item.actual)} 道`,
+            )
+            .join("；")}`,
+        );
+      }
       yield {
         type: "thinking",
         kind: "summary",
-        delta: `蓝图对照：题量 ${String(options.blueprint.totalCount)} → ${String(itemCount)}（差 ${String(deviation.countDelta)}）；总分差 ${String(deviation.scoreDelta)}；${deviation.isExact ? "题型与知识点完全对上" : "结构与蓝图有偏差"}`,
+        delta: `蓝图对照：题量 ${String(options.blueprint.totalCount)} → ${String(itemCount)}（差 ${String(deviation.countDelta)}）；总分差 ${String(deviation.scoreDelta)}${notes.length === 0 ? "" : `；${notes.join("；")}`}；${deviation.isExact ? "题型、知识点与分节完全对上" : "结构与蓝图有偏差"}`,
       };
     }
 

@@ -1178,9 +1178,9 @@ async function vc12AnswerReview(request, ctx) {
  * VC13：单题修改（省赛附加 A-20 / P18）。
  *
  * 三段：
- * 1. **建议只改这一题**：mock 生成三题以上的卷子（第 2 题是 `q_single`），带
- *    `targetItemId` 请求建议 → `scope` 是 item、ops/changes 全指向第 2 题、建议
- *    本身不写库；采用后第 1/3 题字节不变。
+ * 1. **建议只改这一题**：mock 生成三题以上的卷子（第一道题是 `q_single`），带
+ *    `targetItemId` 请求建议 → `scope` 是 item、ops/changes 全指向这道题、建议
+ *    本身不写库；采用后其余题字节不变。
  * 2. **答案改动进判分口径**：发布改前版本并交一份老答案 → 再 PATCH `setAnswer`
  *    （新版本 v3，**发布指针仍停在 v2**）→ 发布 v3 后用同一份老答案提交，该题判错；
  *    再按 `?versionId=v2` 查历史看板，旧提交得分不变。
@@ -1212,7 +1212,11 @@ async function vc13SingleItemEdit(request, ctx) {
   const storedBefore = initial.json.schema.items.map((item) => JSON.stringify(item));
   const targetIndex = 1;
   const target = initial.json.schema.items[targetIndex];
-  must(target !== undefined && target.type === "single", `VC13 第 2 题应是单选题：${JSON.stringify(target)}`);
+  // 题号只数题目、不数分节：mock 卷第一项是分节，目标题是「第 1 题」。
+  const targetOrdinal = initial.json.schema.items
+    .slice(0, targetIndex + 1)
+    .filter((item) => item.type !== "section").length;
+  must(target !== undefined && target.type === "single", `VC13 目标题应是单选题：${JSON.stringify(target)}`);
 
   // ── 第 1 段：单题建议 ────────────────────────────────────────────────
   const suggested = await request("POST", `/api/forms/${formId}/suggest`, {
@@ -1225,8 +1229,8 @@ async function vc13SingleItemEdit(request, ctx) {
   must(suggested.json.ops.length > 0, "VC13 单题建议不应为空");
   must(suggested.json.ops.every((op) => op.itemId === target.id),
     `VC13 建议越界：${JSON.stringify(suggested.json.ops)}`);
-  must(suggested.json.changes.length > 0 && suggested.json.changes.every((change) => change.where.startsWith(`第 ${String(targetIndex + 1)} 题`)),
-    `VC13 changes 应只含第 ${String(targetIndex + 1)} 题：${JSON.stringify(suggested.json.changes)}`);
+  must(suggested.json.changes.length > 0 && suggested.json.changes.every((change) => change.where.startsWith(`第 ${String(targetOrdinal)} 题`)),
+    `VC13 changes 应只含第 ${String(targetOrdinal)} 题：${JSON.stringify(suggested.json.changes)}`);
 
   // 建议本身不写库：版本号仍停在 v1。
   const afterSuggest = await request("GET", `/api/forms/${formId}`, { cookie: ctx.cookie });
