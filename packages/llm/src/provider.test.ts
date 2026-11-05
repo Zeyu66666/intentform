@@ -220,4 +220,37 @@ describe("streamChatCompletion", () => {
     expect(error).toBeInstanceOf(LlmError);
     expect((error as LlmError).code).toBe("llm_upstream");
   });
+
+  it("finish_reason=length → 明确报截断，不把半份卷子当成功", async () => {
+    const stub = await startStub((res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write(contentDelta('{"type":"section","id":"sec1","title":"半截'));
+      res.write(sseFrame({ choices: [{ delta: {}, finish_reason: "length" }] }));
+      res.end();
+    });
+
+    const error = await collect(configFor(stub)).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(LlmError);
+    expect((error as LlmError).code).toBe("llm_invalid_output");
+    expect((error as LlmError).message).toContain("被截断");
+  });
+
+  it("finish_reason=stop 正常收尾", async () => {
+    const stub = await startStub((res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write(contentDelta("ok"));
+      res.write(sseFrame({ choices: [{ delta: {}, finish_reason: "stop" }] }));
+      res.end();
+    });
+
+    const events = await collect(configFor(stub));
+    const content = events
+      .filter((event): event is Extract<UpstreamEvent, { kind: "content" }> => event.kind === "content")
+      .map((event) => event.delta)
+      .join("");
+    expect(content).toBe("ok");
+  });
 });

@@ -26,7 +26,12 @@ export const DEFAULT_CHAT_MODEL = "deepseek-chat";
 
 export const DEFAULT_TIMEOUT_MS = 60_000;
 
-export const DEFAULT_MAX_TOKENS = 4096;
+/**
+ * 单次输出上限。4096 对「19 题、150 分、每题带解析」的高三卷不够：2026-11-04 有一份
+ * 这样的卷子在 4096 处被截断，只留下 14 题 / 73 分。DeepSeek `deepseek-chat` 的输出
+ * 上限是 8192，取满；再长就该拆卷，而不是继续加。
+ */
+export const DEFAULT_MAX_TOKENS = 8192;
 
 export const DEFAULT_TEMPERATURE = 0;
 
@@ -36,9 +41,11 @@ export const DEFAULT_TEMPERATURE = 0;
  *
  * v2（省赛 R-01）：简答可带 `score`——"8 题 40 分含 2 简答"这类需求以前被 prompt
  * 明确禁止（「section/short/scale 不带 score」），模型只能漏分值或改题型。
- * 升版是强制的：同一份需求在 v1 下生成的输出与 v2 不同，两者不能共用一个回放键。
+ * v5：简答必须带 `bloom` / `knowledgePoint` / `explanation`（参考答案与评分要点），
+ * 蓝图题量与分值改成「必须恰好相等，写不下就压缩篇幅」，不再允许「少出题」。
+ * 升版是强制的：同一份需求在旧版下生成的输出与新版不同，两者不能共用一个回放键。
  */
-export const DEFAULT_PROMPT_VERSION = "generate.v4";
+export const DEFAULT_PROMPT_VERSION = "generate.v5";
 
 export const REPLAY_SPEEDS = ["1x", "2x", "instant"] as const;
 

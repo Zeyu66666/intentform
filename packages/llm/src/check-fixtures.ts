@@ -30,7 +30,7 @@ import { parseBlueprint } from "@intentform/schema";
 import { validateLine } from "./validate-line.ts";
 
 /**
- * 总数上限：每条预置需求**两段录像**（`plan.v2` 蓝图 + `generate.v4` 生成），
+ * 总数上限：每条预置需求**两段录像**（`plan.v2` 蓝图 + `generate.v5` 生成），
  * 3 条需求 = 6 个 fixture。蓝图与生成是两个回放键，缺一段两阶段就跑不起来。
  */
 export const MAX_FIXTURES = 6;

@@ -117,6 +117,20 @@ export function parseUpstreamFrame(payload: string): ParsedFrame {
   const events: UpstreamEvent[] = [];
   const choices = readArray(record, "choices");
   const firstChoice = choices === undefined ? undefined : asRecord(choices[0]);
+
+  // `finish_reason: "length"` 表示上游在 max_tokens 处截断了输出。以前这里不读它，
+  // 半份卷子会被当成「模型只出了 14 题」静默落库：2026-11-04 有一份要求 150 分的
+  // 高三卷因此只存下 14 题 / 73 分，最后一道题的公式还断在 `\begin{cases}` 中间。
+  // 截断是失败，不是少生成一点——明确报错，让教师重试或调高 `LLM_MAX_TOKENS`。
+  const finishReason = firstChoice === undefined ? undefined : readString(firstChoice, "finish_reason");
+  if (finishReason === "length") {
+    throw new LlmError(
+      "llm_invalid_output",
+      "模型输出达到长度上限，内容被截断；请重试，或调高 LLM_MAX_TOKENS 后再生成",
+      { detail: "upstream finish_reason=length (max_tokens reached)" },
+    );
+  }
+
   const delta = firstChoice === undefined ? undefined : asRecord(firstChoice["delta"]);
   if (delta !== undefined) {
     const reasoning = readString(delta, "reasoning_content") ?? readString(delta, "reasoning");
