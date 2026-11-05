@@ -344,7 +344,14 @@ export function mockLines(requirement: string, kind: "quiz" | "survey" = "quiz")
     },
     // 省赛 R-01 之后简答也带分值：它是唯一走「教师人工批改」的题型，mock 里必须有一个，
     // 否则演示链路永远看不到「待批改」这一态（浏览器闭环第 8 步批的就是这一题）。
-    { type: "short", id: "q_short", title: "示例简答题：还有什么想补充的？", required: false, score: 5 },
+    // 多行题干是打印/Word 导出的回归素材：换行必须落成结构，不能只在某个页面恰好生效。
+    {
+      type: "short",
+      id: "q_short",
+      title: "示例简答题：还有什么想补充的？\n（1）写一条建议；\n（2）说明理由。",
+      required: false,
+      score: 5,
+    },
   ];
   return lines.map((line) => `${JSON.stringify(line)}\n`);
 }

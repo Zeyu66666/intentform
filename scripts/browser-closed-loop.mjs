@@ -29,7 +29,17 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -1720,6 +1730,18 @@ async function main() {
       must(!plainText.includes("答案："), `打印页默认不应出现答案：${plainText.slice(0, 200)}`);
       must(!plainText.includes("解析："), "打印页默认不应出现解析");
 
+      // 换行必须是结构（<br>），不是只靠某个页面恰好生效的 CSS；mock 的简答题
+      // 现在带两处换行，卷面上应当出现两个 <br>。
+      const printBreaks = await page.evaluate(
+        "return byTestId('print-sheet').querySelectorAll('br').length",
+      );
+      must(printBreaks >= 2, `打印卷面没有保留题干换行：br=${String(printBreaks)}`);
+      // 题目下面不再画作答横线：旧实现是 `span.border-b`，这里断死它不会回来。
+      const answerRules = await page.evaluate(
+        "return byTestId('print-sheet').querySelectorAll('span.border-b').length",
+      );
+      must(answerRules === 0, `题目下面仍有作答横线：${String(answerRules)} 条`);
+
       const toggled = await page.tap('[data-testid="print-with-answers"]');
       must(toggled.ok === true, `点不到「含答案与解析」：${JSON.stringify(toggled)}`);
       await waitFor(
@@ -1727,6 +1749,35 @@ async function main() {
         "勾选后卷面出现答案",
         5_000,
       );
+
+      // Word 导出在屏幕媒体下点：按钮属于 `.no-print`，进入打印媒体后会被隐藏。
+      // 用 CDP 的下载目录接住文件，再验 ZIP 魔数与大小；这是"真能下载"而不是"按钮存在"。
+      const downloadDir = join(runDir, "downloads");
+      mkdirSync(downloadDir, { recursive: true });
+      await page.cdp.send("Page.setDownloadBehavior", {
+        behavior: "allow",
+        downloadPath: downloadDir,
+      });
+      const docxTap = await page.tap('[data-testid="print-docx"]');
+      must(docxTap.ok === true, `点不到「下载 Word」：${JSON.stringify(docxTap)}`);
+      const docxName = await waitFor(
+        () => {
+          const name = readdirSync(downloadDir).find((entry) => entry.endsWith(".docx"));
+          if (name === undefined) return null;
+          return statSync(join(downloadDir, name)).size > 2_000 ? name : null;
+        },
+        "Word 文件下载完成",
+        15_000,
+      );
+      const docxSource = join(downloadDir, docxName);
+      const docxBytes = readFileSync(docxSource);
+      must(
+        docxBytes.subarray(0, 2).toString("hex") === "504b",
+        `下载的 Word 不是 ZIP 容器：${docxBytes.subarray(0, 4).toString("hex")}`,
+      );
+      const docx = join(EVIDENCE_DIR, "16-print-sheet.docx");
+      copyFileSync(docxSource, docx);
+      artifacts.push(docx);
 
       await page.emulateMedia({ media: "print" });
       const toolbarDisplay = await page.evaluate(
@@ -1738,7 +1789,14 @@ async function main() {
       // PDF 也算产物：它是"打印版真的印得出来"的唯一可打开证据。
       artifacts.push(pdf);
       await page.emulateMedia({});
-      return { pdf, questionCount: (plainText.match(/\n\d+\./g) ?? []).length };
+      return {
+        pdf,
+        docx,
+        docxBytes: docxBytes.byteLength,
+        printBreaks,
+        answerRules,
+        questionCount: (plainText.match(/\n\d+\./g) ?? []).length,
+      };
     });
 
     // 12) 提交后答案解析（省赛附加 A-18）：
@@ -2176,8 +2234,11 @@ async function main() {
       await page.viewport(DESKTOP_VIEWPORT);
       await page.goto(`${webBase}/dashboard/${publish.formId}`);
       await waitFor(
-        async () => (await page.evaluate("return byTestId('dash-ai-grading') !== null")),
-        "看板出现 AI 辅助评分开关",
+        async () =>
+          (await page.evaluate(
+            "var el = byTestId('dash-ai-grading'); return el !== null && el.disabled === false;",
+          )),
+        "AI 辅助评分开关读取完设置并可点",
         20_000,
       );
       const before = await page.evaluate(
