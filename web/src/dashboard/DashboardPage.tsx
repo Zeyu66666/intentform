@@ -289,7 +289,10 @@ function FormHero({
             >
               打印版考卷
             </Link>
-            <DeleteFormAction formId={form.id} api={api} onDeleted={onDeleted} />
+            {/* `key` 必须跟着表单走：删掉当前表单后，看板会自动选中下一份，
+                同一个位置的组件会被 React 复用；没有 key 时 `busy` 会原样留在
+                新表单上，按钮永远显示「删除中…」。 */}
+            <DeleteFormAction key={form.id} formId={form.id} api={api} onDeleted={onDeleted} />
           </div>
         </div>
       </div>
@@ -340,6 +343,10 @@ function DeleteFormAction({
           setError(null);
           void api.deleteForm(formId).then((outcome) => {
             if (outcome.ok) {
+              // 先收掉本地忙碌态，再通知父级：父级可能在同一个位置换成下一份
+              // 表单（`key` 会重建组件，这里是第二道保险）。
+              setBusy(false);
+              setConfirming(false);
               onDeleted(formId);
               return;
             }
