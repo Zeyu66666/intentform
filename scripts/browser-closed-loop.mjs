@@ -489,6 +489,21 @@ class Page {
     await this.cdp.send("Emulation.setEmulatedMedia", { media, features });
   }
 
+  /**
+   * 给 `<input type="file">` 塞一个真实文件路径（CDP 的 DOM 域会派发 change 事件，
+   * 与教师点「选择文件」走同一条 React 路径）。
+   */
+  async setFiles(selector, files) {
+    const document = await this.cdp.send("DOM.getDocument", { depth: -1 });
+    const query = await this.cdp.send("DOM.querySelector", {
+      nodeId: document.root.nodeId,
+      selector,
+    });
+    if (query.nodeId === 0) return { ok: false, reason: `找不到文件输入框 ${selector}` };
+    await this.cdp.send("DOM.setFileInputFiles", { nodeId: query.nodeId, files });
+    return { ok: true };
+  }
+
   /** 真出一份 PDF：打印版考卷的证据不是「看起来像」，而是可打开的成品。 */
   async printToPdf(fileName) {
     const pdf = await this.cdp.send("Page.printToPDF", {
@@ -573,6 +588,69 @@ function buildGeneratedQuiz(nodes) {
     },
     items: nodes,
   };
+}
+
+/**
+ * 构造一份最小 `.docx` 作为「上传参考试卷」的真实文件。
+ *
+ * 只写 `word/document.xml`：服务端提取器只读这一份部件。ZIP 用存储模式，
+ * CRC 填 0（读取器不校验）；目的是给上传路径一个**可打开、可解析**的文件，
+ * 而不是模拟一个假的 File 对象。
+ */
+function makeReferenceDocx(marker) {
+  const escapeXml = (text) =>
+    text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  const paragraphs = [
+    marker,
+    "一、选择题（每题 5 分）",
+    "1. 已知函数 f(x)=x^2，求顶点坐标。",
+  ]
+    .map(
+      (line) =>
+        `<w:p><w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`,
+    )
+    .join("");
+  const xml = `<w:document><w:body>${paragraphs}</w:body></w:document>`;
+  const name = Buffer.from("word/document.xml", "utf8");
+  const data = Buffer.from(xml, "utf8");
+  const local = Buffer.alloc(30 + name.length);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(0x0800, 6);
+  local.writeUInt16LE(0, 8);
+  local.writeUInt16LE(0, 10);
+  local.writeUInt16LE(0x21, 12);
+  local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(name.length, 26);
+  name.copy(local, 30);
+
+  const central = Buffer.alloc(46 + name.length);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(0x0800, 8);
+  central.writeUInt16LE(0, 10);
+  central.writeUInt16LE(0, 12);
+  central.writeUInt16LE(0x21, 14);
+  central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(data.length, 24);
+  central.writeUInt16LE(name.length, 28);
+  central.writeUInt32LE(0, 42);
+  name.copy(central, 46);
+
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length, 12);
+  end.writeUInt32LE(local.length + data.length, 16);
+  return Buffer.concat([local, data, central, end]);
 }
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
@@ -1807,8 +1885,11 @@ async function main() {
       await page.viewport(DESKTOP_VIEWPORT);
       await page.goto(`${webBase}/dashboard/${publish.formId}`);
       await waitFor(
-        async () => (await page.evaluate("return byTestId('dash-show-answers') !== null")),
-        "看板出现「提交后展示答案解析」开关",
+        async () =>
+          (await page.evaluate(
+            "var el = byTestId('dash-show-answers'); return el !== null && el.disabled === false;",
+          )),
+        "看板「提交后展示答案解析」开关读取完设置并可点",
         20_000,
       );
       const toggle = await page.tap('[data-testid="dash-show-answers"]');
@@ -2402,16 +2483,33 @@ async function main() {
       must((searchState.hint ?? "").includes("离线"), `禁用原因没有说明离线：${JSON.stringify(searchState.hint)}`);
 
       const marker = "教师参考-OMEGA";
-      const referenceText = `${marker}\n一、选择题（每题 5 分）\n1. 已知函数 f(x)=x^2，求顶点坐标。`;
+      const referencePath = join(runDir, "reference.docx");
+      writeFileSync(referencePath, makeReferenceDocx(marker));
       const typedRequirement = await page.evaluate(
         `return setValue('#requirement-input', ${JSON.stringify(REQUIREMENT)});`,
       );
-      const typedReference = await page.evaluate(
-        `return setValue('[data-testid="plan-reference"]', ${JSON.stringify(referenceText)});`,
+      must(typedRequirement.ok === true, `需求没填进去：${JSON.stringify(typedRequirement)}`);
+
+      // 展开折叠区（文件输入在 details 里），再用 CDP 塞一个真实文件路径。
+      await page.evaluate(
+        "var input = byTestId('reference-file'); var details = input === null ? null : input.closest('details'); if (details !== null) details.open = true; return true;",
+      );
+      const fileSet = await page.setFiles('[data-testid="reference-file"]', [referencePath]);
+      must(fileSet.ok === true, `参考卷文件没选上：${JSON.stringify(fileSet)}`);
+      await waitFor(
+        async () =>
+          (await page.evaluate(
+            "var el = byTestId('reference-ready'); return el !== null && el.textContent.indexOf('reference.docx') >= 0;",
+          )),
+        "参考卷上传并解析完成",
+        20_000,
+      );
+      const referenceText = await page.evaluate(
+        "var el = byTestId('reference-text'); return el === null ? '' : el.textContent.trim();",
       );
       must(
-        typedRequirement.ok === true && typedReference.ok === true,
-        `需求或参考卷没填进去：${JSON.stringify({ typedRequirement, typedReference })}`,
+        referenceText.includes(marker) && referenceText.includes("已知函数"),
+        `上传的 Word 没有提取出预期文字：${referenceText.slice(0, 120)}`,
       );
       must(await page.evaluate("return clickButtonByText('^生成表单$')"), "没找到「生成表单」按钮");
       await waitFor(
