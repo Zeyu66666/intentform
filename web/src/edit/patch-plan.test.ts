@@ -107,7 +107,9 @@ describe("planPatch", () => {
     expect(plan.ops).toEqual([
       { op: "addItem", index: QUIZ_SCHEMA.items.length, item: expect.objectContaining({ id: added.id }) },
     ]);
-    expect(plan.changes[0]?.where).toBe(`第 ${String(QUIZ_SCHEMA.items.length + 1)} 题`);
+    // 题号只数题目、不数分节：QUIZ_SCHEMA 里有一节「一、选择题」。
+    const questionCount = QUIZ_SCHEMA.items.filter((item) => item.type !== "section").length;
+    expect(plan.changes[0]?.where).toBe(`第 ${String(questionCount + 1)} 题`);
   });
 
   it("连加两题：第二题拿到下一个序号，不会与第一题撞 id", () => {

@@ -430,7 +430,11 @@ export function planPatch(state: EditState): PatchPlan {
     // 没有草稿 = 没碰过这题；`setStem` 相同值时 `applyPatch` 本来也不会记变更，
     // 但在这里先挡掉，省一次无意义的 op。
     if (draft === undefined) continue;
-    const question = `第 ${String(index + 1)} 题`;
+    // 题号只数题目，不数分节：分节后的第一道题仍是「第 1 题」。
+    const question =
+      item.type === "section"
+        ? `分节「${item.title}」`
+        : `第 ${String(schema.items.slice(0, index + 1).filter((node) => node.type !== "section").length)} 题`;
 
     if (draft.stem !== undefined) {
       const title = draft.stem.trim();

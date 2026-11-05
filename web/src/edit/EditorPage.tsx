@@ -60,7 +60,7 @@ const CONFLICT_TEXT = "这份表单已被改动，请刷新后重试" as const;
 const FIRST_VERSION_TEXT = "已经是第一个版本" as const;
 
 /** 页脚与正文共用的宽度：Diff 条要和列表对齐，否则看起来像两个页面的东西。 */
-const PAGE = "mx-auto w-full max-w-4xl" as const;
+const PAGE = "mx-auto w-full max-w-5xl" as const;
 
 type LoadState =
   | { readonly status: "loading" }
@@ -160,6 +160,15 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
   // 上移/下移的落点在这里算一次，面板只负责按 null 禁用按钮。
   const targets = selected === null ? { up: null, down: null } : moveTargets(preview.items, selected.id);
   const selectedIndex = selected === null ? -1 : preview.items.findIndex((item) => item.id === selected.id);
+  // 面板与建议条上的题号：只数题目，不数分节（第一道题永远是「第 1 题」）。
+  const selectedOrdinal =
+    selected === null || selectedIndex < 0
+      ? 0
+      : preview.items
+          .slice(0, selectedIndex + 1)
+          .filter((item) => item.type !== "section").length;
+  const selectedLabel =
+    selected === null ? "" : selected.type === "section" ? "分节" : `第 ${String(selectedOrdinal)} 题`;
 
   const handleReload = (): void => {
     setReloadToken((token) => token + 1);
@@ -276,36 +285,47 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
     });
   };
 
+  const questionCount = preview.items.filter((item) => item.type !== "section").length;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-line bg-surface">
-        <div className={`${PAGE} flex flex-wrap items-baseline gap-2 px-2 py-2`}>
-          <h1 className="m-0 text-lg font-semibold text-ink">编辑表单</h1>
-          <p className="m-0 text-sm text-muted" data-testid="edit-form-meta">
-            {`${detail.form.title} · 当前草稿 v${String(detail.version.n)} · ${String(preview.items.length)} 题`}
-          </p>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              data-testid="edit-undo"
-              className="min-h-[44px] rounded-sm border border-line px-2 text-sm text-ink disabled:opacity-50"
-              disabled={busy}
-              onClick={handleUndo}
+      <header className="no-print border-b border-line bg-surface">
+        <div className={`${PAGE} flex flex-wrap items-center gap-2 px-2 py-3`}>
+          <div className="min-w-0">
+            <Link
+              href={routeToPath({ name: "dashboard", formId })}
+              className="text-sm text-muted transition-colors hover:text-accent"
             >
-              撤销上一步
-            </button>
-            <button
-              type="button"
-              data-testid="edit-redo"
-              className="min-h-[44px] rounded-sm border border-line px-2 text-sm text-ink disabled:opacity-50"
-              disabled={busy || !redoAvailable}
-              onClick={handleRedo}
-            >
-              重做
-            </button>
-            <Link href={routeToPath({ name: "dashboard", formId })} className="text-sm text-muted underline">
-              回看板
+              ← 返回看板
             </Link>
+            <div className="mt-1 flex flex-wrap items-baseline gap-2">
+              <h1 className="m-0 text-lg font-semibold text-ink">编辑表单</h1>
+              <p className="m-0 truncate text-sm text-muted" data-testid="edit-form-meta">
+                {`${detail.form.title} · 当前草稿 v${String(detail.version.n)} · ${String(questionCount)} 题`}
+              </p>
+            </div>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-sm border border-line bg-surface">
+              <button
+                type="button"
+                data-testid="edit-undo"
+                className="min-h-[44px] border-r border-line px-3 text-sm text-ink transition-colors hover:bg-bg disabled:opacity-50"
+                disabled={busy}
+                onClick={handleUndo}
+              >
+                撤销上一步
+              </button>
+              <button
+                type="button"
+                data-testid="edit-redo"
+                className="min-h-[44px] px-3 text-sm text-ink transition-colors hover:bg-bg disabled:opacity-50"
+                disabled={busy || !redoAvailable}
+                onClick={handleRedo}
+              >
+                重做
+              </button>
+            </div>
           </div>
         </div>
         {notice === null ? null : <NoticeLine notice={notice} busy={busy} onReload={handleReload} />}
@@ -336,18 +356,23 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
       />
 
       <main
-        className={`${PAGE} grid min-h-0 flex-1 grid-cols-1 gap-[var(--layout-gap)] overflow-y-auto px-2 py-2 lg:grid-cols-[16rem_minmax(0,1fr)] lg:overflow-hidden`}
+        className={`${PAGE} grid min-h-0 flex-1 grid-cols-1 gap-[var(--layout-gap)] overflow-y-auto px-2 py-2 lg:grid-cols-[18rem_minmax(0,1fr)] lg:overflow-hidden`}
       >
         <section
           aria-label="题目列表"
-          className="flex min-h-0 min-w-0 flex-col gap-1 overflow-y-auto rounded-md border border-line bg-surface p-2"
+          className="flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto rounded-md border border-line bg-surface p-2"
         >
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 className="m-0 text-xs text-muted">题目</h2>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2">
+              <h2 className="m-0 text-sm font-semibold text-ink">题目</h2>
+              <span className="rounded-sm bg-bg px-1 text-xs tabular-nums text-muted">
+                {String(questionCount)}
+              </span>
+            </div>
             <button
               type="button"
               data-testid="edit-add"
-              className="min-h-[44px] rounded-sm border border-accent px-2 text-sm text-accent disabled:opacity-50"
+              className="min-h-[44px] rounded-sm border border-accent px-2 text-sm text-accent transition-colors hover:bg-accent hover:text-white disabled:opacity-50"
               disabled={preview.items.length >= LIMITS.fieldsMax}
               onClick={() => {
                 update(withAddItem);
@@ -359,21 +384,40 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
           <ol className="m-0 flex list-none flex-col gap-1 p-0">
             {preview.items.map((item, index) => {
               const isCurrent = selected !== null && item.id === selected.id;
+              const score = "score" in item ? item.score : undefined;
+              const ordinal = preview.items
+                .slice(0, index + 1)
+                .filter((node) => node.type !== "section").length;
               return (
                 <li key={item.id}>
                   <button
                     type="button"
                     data-testid={`edit-item-${item.id}`}
                     aria-current={isCurrent ? "true" : undefined}
-                    className={`w-full rounded-sm border px-2 py-1 text-left ${
-                      isCurrent ? "border-accent bg-bg" : "border-line bg-surface"
+                    className={`group w-full rounded-sm border px-2 py-2 text-left transition-colors ${
+                      isCurrent
+                        ? "border-line border-l-4 border-l-accent bg-bg"
+                        : "border-line bg-surface hover:border-accent"
                     }`}
                     onClick={() => {
                       update((state) => withSelection(state, item.id));
                     }}
                   >
-                    <span className="block text-xs text-muted">{`第 ${String(index + 1)} 题 · ${TYPE_LABELS[item.type]}`}</span>
-                    <span className="block truncate text-sm text-ink">{item.title}</span>
+                    <span className="flex items-center gap-1 text-xs text-muted">
+                      {item.type === "section" ? (
+                        <span className="rounded-sm bg-bg px-1 text-muted">分节</span>
+                      ) : (
+                        <>
+                          <span className="tabular-nums">{`第 ${String(ordinal)} 题`}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{TYPE_LABELS[item.type]}</span>
+                        </>
+                      )}
+                      {score === undefined ? null : (
+                        <span className="ml-auto tabular-nums text-muted">{`${String(score)} 分`}</span>
+                      )}
+                    </span>
+                    <span className="mt-1 block truncate text-sm text-ink">{item.title}</span>
                   </button>
                 </li>
               );
@@ -411,7 +455,7 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
                 formId={formId}
                 baseVersionId={edit.baseVersionId}
                 scopeItemId={selected.id}
-                scopeLabel={`第 ${String(selectedIndex + 1)} 题`}
+                scopeLabel={selectedLabel}
                 onNotice={(text, tone, needsReload) => {
                   setNotice({ tone, text, needsReload });
                 }}
@@ -435,7 +479,7 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
                 item={selected}
                 draft={draftOf(edit, selected)}
                 hasDraft={edit.drafts[selected.id] !== undefined}
-                index={selectedIndex < 0 ? 0 : selectedIndex}
+                index={selectedOrdinal < 1 ? 0 : selectedOrdinal - 1}
                 objectives={detail.schema.meta.objectives}
                 upTarget={targets.up}
                 downTarget={targets.down}
@@ -511,11 +555,11 @@ function NoticeLine({
   const toneClass = ((): string => {
     switch (notice.tone) {
       case "success":
-        return "text-success";
+        return "border-success text-success";
       case "info":
-        return "text-muted";
+        return "border-line text-muted";
       case "error":
-        return "text-danger";
+        return "border-danger text-danger";
     }
   })();
 
@@ -523,9 +567,9 @@ function NoticeLine({
     <div
       role={notice.tone === "error" ? "alert" : "status"}
       data-testid="edit-notice"
-      className={`${PAGE} flex flex-wrap items-baseline gap-2 px-2 pb-2 text-sm ${toneClass}`}
+      className={`${PAGE} flex flex-wrap items-center gap-2 border-l-4 px-2 py-2 text-sm ${toneClass}`}
     >
-      <span>{notice.text}</span>
+      <span className="min-w-0 flex-1">{notice.text}</span>
       {notice.needsReload ? (
         <button
           type="button"
@@ -574,16 +618,19 @@ function DiffBar({
   readonly onSave: () => void;
 }): JSX.Element {
   return (
-    <footer className="shrink-0 border-t border-line bg-surface">
-      <div className={`${PAGE} flex max-h-40 flex-col gap-1 overflow-y-auto px-2 py-2`} data-testid="edit-diff">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="m-0 text-xs text-muted">
-            {plan.ok ? `改动预览（${String(plan.changes.length)} 条）` : "改动预览"}
-          </h2>
+    <footer className="no-print shrink-0 border-t border-line bg-surface">
+      <div className={`${PAGE} flex max-h-48 flex-col gap-1 overflow-y-auto px-2 py-2`} data-testid="edit-diff">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="m-0 text-sm font-semibold text-ink">改动预览</h2>
+          {plan.ok ? (
+            <span className="rounded-sm bg-bg px-1 text-xs tabular-nums text-muted">
+              {`${String(plan.changes.length)} 条`}
+            </span>
+          ) : null}
           <button
             type="button"
             data-testid="edit-save"
-            className="min-h-[44px] rounded-sm border border-accent px-3 text-sm text-accent disabled:opacity-50"
+            className="ml-auto min-h-[44px] rounded-sm bg-accent px-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             disabled={busy || !plan.ok || !plan.hasChanges}
             onClick={onSave}
           >
@@ -593,7 +640,9 @@ function DiffBar({
 
         {plan.ok ? (
           plan.changes.length === 0 ? (
-            <p className="m-0 text-sm text-muted">还没有改动。</p>
+            <p className="m-0 text-sm text-muted">
+              还没有改动。改一处题干、选项或分值，这里会实时列出差异。
+            </p>
           ) : (
             <ul className="m-0 flex list-none flex-col gap-1 p-0" data-testid="edit-changes">
               {plan.changes.map((change, index) => (
@@ -601,14 +650,14 @@ function DiffBar({
                 // 用下标当 key 在这里是安全的——列表只增不减地整体重渲染。
                 <li
                   key={`${String(index)}-${change.op}-${change.where}`}
-                  className="flex flex-wrap items-baseline gap-1 text-sm"
+                  className="flex flex-wrap items-baseline gap-1 rounded-sm border border-line bg-bg px-2 py-1 text-sm"
                 >
                   <span className="text-muted">{change.where}</span>
-                  <span className="tabular-nums text-ink">{change.before}</span>
-                  <span aria-hidden="true" className="text-muted">
+                  <span className="tabular-nums text-muted">{change.before}</span>
+                  <span aria-hidden="true" className="text-accent">
                     →
                   </span>
-                  <span className="tabular-nums text-ink">{change.after}</span>
+                  <span className="tabular-nums font-medium text-ink">{change.after}</span>
                 </li>
               ))}
             </ul>

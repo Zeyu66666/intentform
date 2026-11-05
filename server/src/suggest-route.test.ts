@@ -126,8 +126,12 @@ describe("POST /api/forms/:id/suggest", () => {
     for (const op of response.json.ops) {
       expect(op.op === "addItem" ? "" : op.itemId).toBe(target.id);
     }
+    // 题号只数题目、不数分节：fixture 第一项是分节，下标 1 的题是「第 1 题」。
+    const targetOrdinal = detail.json.schema.items
+      .slice(0, 2)
+      .filter((item) => item.type !== "section").length;
     for (const change of response.json.changes) {
-      expect(change.where.startsWith("第 2 题")).toBe(true);
+      expect(change.where.startsWith(`第 ${String(targetOrdinal)} 题`)).toBe(true);
     }
     // 建议仍不写库。
     expect(countVersions(app, created.form.id)).toBe(1);

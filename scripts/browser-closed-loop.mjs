@@ -1910,7 +1910,12 @@ async function main() {
       const flipped = await page.tap(`[data-testid="edit-option-${String(nextIndex)}-correct"]`);
       must(flipped.ok === true, `点不到正确项：${JSON.stringify(flipped)}`);
 
-      const expectedWhere = `第 ${String(targetIndex + 1)} 题 · 答案`;
+      // 题号只数题目、不数分节：mock 卷第一项是分节，目标题在 Schema 下标 1，
+      // 但它是第一道题，diff 必须写「第 1 题」。
+      const targetOrdinal = before.schema.items
+        .slice(0, targetIndex + 1)
+        .filter((item) => item.type !== "section").length;
+      const expectedWhere = `第 ${String(targetOrdinal)} 题 · 答案`;
       const diffText = await waitFor(
         async () => {
           const text = await page.evaluate(
@@ -1976,7 +1981,11 @@ async function main() {
         "单题建议卡片列出改动",
         20_000,
       );
-      must(proposal.title.startsWith("仅第 2 题"), `单题卡片标题应写明「仅第 2 题」，实际「${proposal.title}」`);
+      const expectedScope = `仅第 ${String(targetOrdinal)} 题`;
+      must(
+        proposal.title.startsWith(expectedScope),
+        `单题卡片标题应写明「${expectedScope}」，实际「${proposal.title}」`,
+      );
       artifacts.push(await page.screenshot(nextArtifactName("item-suggest")));
 
       const versionBeforeAdopt = await draftVersionOf(page);

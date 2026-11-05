@@ -104,8 +104,11 @@ export function RouteView(): JSX.Element {
   }
 
   const teacher = auth.teacher;
+  // 编辑器要把「题目列表 / 编辑面板 / 底部改动条」锁在一屏里，滚动只发生在中栏；
+  // 其余页面按内容自然增长、由文档滚动。`h-dvh` 只在编辑路由上使用，避免影响看板长页。
+  const fillsViewport = route.name === "edit";
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className={`flex flex-col ${fillsViewport ? "h-dvh" : "min-h-screen"}`}>
       <AppHeader teacher={teacher} pathname={pathname} busy={loggingOut} onLogout={logout} />
       {route.name === "login" ? (
         <main className="mx-auto w-full max-w-6xl px-2 py-3">
@@ -117,7 +120,7 @@ export function RouteView(): JSX.Element {
           </p>
         </main>
       ) : (
-        <div className="min-h-0 flex-1">
+        <div className={fillsViewport ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1"}>
           {route.name === "generate" ? <App /> : null}
           {route.name === "dashboard" ? <DashboardPage formId={route.formId} /> : null}
           {route.name === "edit" ? <EditorPage formId={route.formId} /> : null}

@@ -237,7 +237,8 @@ describe("PATCH /api/forms/:id", () => {
     expect(patched.json.version.parentId).toBe(created.version.id);
     // 总分从 20 变 23（5→8），服务端算的，不是前端传的。
     expect(patched.json.schema.meta.totalScore).toBe(23);
-    expect(patched.json.changes.map((change) => change.where)).toEqual(["第 2 题", "总分"]);
+    // 题号不数分节：fixture 第一项是分节，q-single 是第一道题。
+    expect(patched.json.changes.map((change) => change.where)).toEqual(["第 1 题", "总分"]);
     expect(patched.json.form.title).toBe("判分测试卷（改）");
     expect(patched.json.form.draftVersionId).toBe(patched.json.version.id);
     // 发布指针没动，slug 也没变。
@@ -308,7 +309,7 @@ describe("PATCH /api/forms/:id", () => {
     if (item?.type !== "single") return;
     expect(item.answer).toBe("op2");
     expect(patched.json.changes).toEqual([
-      { op: "setAnswer", itemId: "q-single", where: "第 2 题 · 答案", before: "选项一", after: "选项二" },
+      { op: "setAnswer", itemId: "q-single", where: "第 1 题 · 答案", before: "选项一", after: "选项二" },
     ]);
   });
 

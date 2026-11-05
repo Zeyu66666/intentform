@@ -47,6 +47,48 @@ describe("applyPatch：六种操作", () => {
     ]);
   });
 
+  it("题号只数题目：分节不占号，分节本身用标题定位", () => {
+    const schema = formSchema.parse({
+      meta: { version: 1, kind: "quiz", title: "带分节", objectives: [], totalScore: 10 },
+      items: [
+        { type: "section", id: "sec-1", title: "一、选择题" },
+        {
+          id: "q-single",
+          type: "single",
+          title: "二选一",
+          score: 5,
+          options: [
+            { id: "op1", text: "甲" },
+            { id: "op2", text: "乙" },
+          ],
+          answer: "op1",
+        },
+        { id: "q-short", type: "short", title: "说说看", score: 5, maxLength: 100 },
+      ],
+    });
+
+    const short = apply(schema, [{ op: "setStem", itemId: "q-short", title: "说说看吧" }]);
+    expect(short.ok).toBe(true);
+    if (!short.ok) return;
+    expect(short.changes[0]?.where).toBe("第 2 题");
+
+    const section = apply(schema, [{ op: "setStem", itemId: "sec-1", title: "一、单项选择" }]);
+    expect(section.ok).toBe(true);
+    if (!section.ok) return;
+    expect(section.changes[0]?.where).toBe("分节「一、选择题」");
+
+    const added = apply(schema, [
+      {
+        op: "addItem",
+        index: schema.items.length,
+        item: { id: "q-fill", type: "fill", title: "填空", required: true, score: 2, answer: ["答"] },
+      },
+    ]);
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(added.changes[0]?.where).toBe("第 3 题");
+  });
+
   it("setOptions 换选项，并记一条人话差异", () => {
     const result = apply(quiz(), [
       {

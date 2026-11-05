@@ -193,9 +193,22 @@ const FIELD_LABELS: Partial<Record<PatchOp["op"], string>> = {
   setMaxLength: "字数上限",
 };
 
+/**
+ * 变更预览里的定位文案。题号只数**题目**，不数分节——一份「分节 + 第一道题」的卷子
+ * 里，第一道题必须显示「第 1 题」。分节本身用标题定位，不占用题号。
+ */
 function whereOf(items: readonly FormItem[], itemId: string): string {
   const index = items.findIndex((item) => item.id === itemId);
-  return index < 0 ? `题目 ${itemId}` : `第 ${String(index + 1)} 题`;
+  if (index < 0) return `题目 ${itemId}`;
+  const item = items[index];
+  if (item === undefined) return `题目 ${itemId}`;
+  if (item.type === "section") return `分节「${item.title}」`;
+  return `第 ${String(questionOrdinal(items, index))} 题`;
+}
+
+/** 第 `index` 个节点之前（含自己）有多少道题；分节不计。 */
+function questionOrdinal(items: readonly FormItem[], index: number): number {
+  return items.slice(0, index + 1).filter((item) => item.type !== "section").length;
 }
 
 function fail(opIndex: number, code: PatchErrorCode, message: string): PatchResult {
@@ -388,7 +401,10 @@ export function applyPatch(input: FormSchema, ops: readonly PatchOp[]): PatchRes
       changes.push({
         op: op.op,
         itemId: op.item.id,
-        where: `第 ${String(op.index + 1)} 题`,
+        where:
+          op.item.type === "section"
+            ? `分节「${op.item.title}」`
+            : `第 ${String(questionOrdinal(items, op.index))} 题`,
         before: "（无）",
         after: `新增「${op.item.title}」`,
       });
