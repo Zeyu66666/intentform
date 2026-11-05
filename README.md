@@ -271,8 +271,8 @@ AI 辅助评分（A-23）是**教师侧**的另一个数据出口：只有教师
 | `LLM_API_KEY` | 空 | 仅服务端；`live` / `record` 缺 Key 启动即报错 |
 | `LLM_CHAT_MODEL` | `deepseek-chat` | 生成模型 |
 | `LLM_REASONING_MODEL` | `deepseek-reasoner` | 思考可视化用的推理模型 |
-| `LLM_TIMEOUT_MS` | `60000` | 单次上游超时 |
-| `LLM_MAX_TOKENS` | `8192` | 单次输出上限（长卷需要；超过上限会被明确报错，不静默落库） |
+| `LLM_TIMEOUT_MS` | `180000` | 单次上游超时（长卷需要更长的存活时间） |
+| `LLM_MAX_TOKENS` | `16384` | 单次输出上限；达到上限会以 `llm_invalid_output` 明确报错，不静默落库 |
 | `LLM_TEMPERATURE` | `0` | 生成链路固定 0；确定性靠 record/replay，不靠采样参数 |
 | `LLM_SEED` | 空 | 上游支持固定 seed 时填写 |
 | `LLM_REPLAY_SPEED` | `instant` | `1x` / `2x` / `instant` |

@@ -24,14 +24,20 @@ export const DEFAULT_LLM_BASE_URL = "https://api.deepseek.com/v1";
 
 export const DEFAULT_CHAT_MODEL = "deepseek-chat";
 
-export const DEFAULT_TIMEOUT_MS = 60_000;
+/**
+ * 整条流的最长存活时间。长卷在 16K 输出上限下可能跑一分多钟（实测约 270 token/s），
+ * 60 秒会误杀正常生成；给到 3 分钟，仍能兜住真正卡死的上游。
+ */
+export const DEFAULT_TIMEOUT_MS = 180_000;
 
 /**
  * 单次输出上限。4096 对「19 题、150 分、每题带解析」的高三卷不够：2026-11-04 有一份
- * 这样的卷子在 4096 处被截断，只留下 14 题 / 73 分。DeepSeek `deepseek-chat` 的输出
- * 上限是 8192，取满；再长就该拆卷，而不是继续加。
+ * 这样的卷子在 4096 处被截断，只留下 14 题 / 73 分。8192 仍不够：2026-11-05 用同一
+ * 需求带蓝图实测，在 8192 处仍截断（写到了第 20 题）。上游实际接受更高的上限
+ * （`deepseek-chat` 由 16384 起可正常受理），取 16K 作默认；确实更长的卷子应拆卷或
+ * 显式调高 `LLM_MAX_TOKENS`，而不是无限加默认值。
  */
-export const DEFAULT_MAX_TOKENS = 8192;
+export const DEFAULT_MAX_TOKENS = 16_384;
 
 export const DEFAULT_TEMPERATURE = 0;
 
@@ -212,7 +218,7 @@ export function resolveLlmRuntimeConfig(
     apiKey,
     model,
     timeoutMs: readInteger(env, "LLM_TIMEOUT_MS", DEFAULT_TIMEOUT_MS, 1, 600_000),
-    maxTokens: readInteger(env, "LLM_MAX_TOKENS", DEFAULT_MAX_TOKENS, 1, 32_768),
+    maxTokens: readInteger(env, "LLM_MAX_TOKENS", DEFAULT_MAX_TOKENS, 1, 65_536),
     temperature: readDecimal(env, "LLM_TEMPERATURE", DEFAULT_TEMPERATURE, 0, 2),
     seed,
     promptVersion: options.promptVersion ?? DEFAULT_PROMPT_VERSION,
