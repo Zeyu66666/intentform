@@ -36,7 +36,6 @@ import { csvFileName, csvHref } from "../dashboard/csv";
 import { GradeForm } from "../dashboard/GradeForm";
 import {
   EMPTY_SUBMISSIONS_TEXT,
-  NO_AVERAGE_TEXT,
   UNPUBLISHED_TEXT,
   collectionRateBarWidth,
   collectionRateText,
@@ -44,7 +43,6 @@ import {
   ratePercentText,
   formOptionLabel,
   isPublished,
-  kindLabel,
   needsGrading,
   pickInitialForm,
   rateBarWidth,
@@ -57,6 +55,7 @@ import {
 } from "../dashboard/model";
 import { formatDateTime } from "../format";
 import { Link } from "../Link";
+import { MathText } from "../render/Latex";
 import { LOGIN_PATH, editorAddItemPath, routeToPath } from "../router";
 import { navigate } from "../useRoute";
 
@@ -69,6 +68,8 @@ const SECONDARY_LINK =
   "inline-flex min-h-[44px] items-center justify-center rounded-sm border border-line px-3 text-sm text-ink transition-colors hover:border-accent hover:text-accent";
 const SECONDARY_BUTTON =
   "min-h-[44px] rounded-sm border border-line px-3 text-sm text-ink transition-colors hover:border-accent hover:text-accent disabled:opacity-50";
+const DANGER_BUTTON =
+  "min-h-[44px] rounded-sm border border-danger px-3 text-sm text-danger transition-colors hover:bg-danger hover:text-white disabled:opacity-50";
 
 type FormsState =
   | { readonly status: "loading" }
@@ -133,14 +134,8 @@ export function DashboardPage({ formId }: { readonly formId: string | null }): J
 
   return (
     <main className={PAGE}>
-      <header className="flex flex-wrap items-end justify-between gap-2">
-        <div className="min-w-0">
-          <p className="m-0 text-xs font-medium uppercase tracking-wide text-muted">教学数据</p>
-          <h1 className="m-0 mt-1 text-xl font-semibold tracking-tight text-ink">教师看板</h1>
-          <p className="m-0 mt-1 text-sm text-muted">
-            选中一份表单，查看提交记录、逐题正确率与问卷回收情况。
-          </p>
-        </div>
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="m-0 text-xl font-semibold tracking-tight text-ink">教师看板</h1>
         <div className="flex flex-wrap items-center gap-1">
           <button
             type="button"
@@ -169,9 +164,19 @@ export function DashboardPage({ formId }: { readonly formId: string | null }): J
           <FormHero
             form={selected}
             forms={forms}
+            api={api}
             onSelect={(nextFormId) => {
               setGradingId(null);
               navigate(routeToPath({ name: "dashboard", formId: nextFormId }));
+            }}
+            onDeleted={(deletedId) => {
+              setFormsState((current) =>
+                current.status === "ready"
+                  ? { status: "ready", forms: current.forms.filter((form) => form.id !== deletedId) }
+                  : current,
+              );
+              setGradingId(null);
+              navigate(routeToPath({ name: "dashboard", formId: null }));
             }}
           />
 
@@ -204,75 +209,44 @@ export function DashboardPage({ formId }: { readonly formId: string | null }): J
 function FormHero({
   form,
   forms,
+  api,
   onSelect,
+  onDeleted,
 }: {
   readonly form: FormSummary;
   readonly forms: readonly FormSummary[];
+  readonly api: TeacherApi;
   readonly onSelect: (formId: string) => void;
+  readonly onDeleted: (formId: string) => void;
 }): JSX.Element {
   const path = sharePath(form);
   const published = isPublished(form);
 
   return (
-    <section className="mt-3 overflow-hidden rounded-md border border-line bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-bg px-3 py-2">
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span>我的表单</span>
-          <span className="rounded-sm bg-surface px-1 tabular-nums text-muted">
-            {String(forms.length)}
-          </span>
-        </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <label htmlFor="dashboard-form" className="shrink-0 text-xs text-muted">
-            切换表单
-          </label>
-          <select
-            id="dashboard-form"
-            data-testid="dash-form-select"
-            className="min-h-[44px] w-full max-w-[22rem] rounded-sm border border-line bg-surface px-2 text-sm text-ink"
-            value={form.id}
-            onChange={(event) => {
-              onSelect(event.target.value);
-            }}
+    <section className="mt-3 rounded-md border border-line bg-surface px-3 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <span
+            className={`inline-block rounded-sm border px-1.5 py-0.5 text-xs font-medium ${
+              published ? "border-success text-success" : "border-line text-muted"
+            }`}
           >
-            {forms.map((option) => (
-              <option key={option.id} value={option.id}>
-                {formOptionLabel(option)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-start justify-between gap-3 px-3 py-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1">
-            <span
-              className={`rounded-sm border px-1.5 py-0.5 text-xs font-medium ${
-                published ? "border-success text-success" : "border-line text-muted"
-              }`}
-            >
-              {statusLabel(form.status)}
-            </span>
-            <span className="rounded-sm border border-line px-1.5 py-0.5 text-xs text-muted">
-              {kindLabel(form.kind)}
-            </span>
-          </div>
+            {statusLabel(form.status)}
+          </span>
           <h2 className="m-0 mt-1 break-words text-lg font-semibold tracking-tight text-ink">
-            {form.title}
+            <MathText text={form.title} />
           </h2>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-xs text-muted">学生链接</span>
+          <div className="mt-1 text-sm">
             {path === null ? (
-              <>
-                <span className="text-sm text-muted">{UNPUBLISHED_TEXT}</span>
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <span className="text-muted">{UNPUBLISHED_TEXT}</span>
                 <Link
                   href={routeToPath({ name: "edit", formId: form.id })}
-                  className="text-xs text-accent underline underline-offset-2"
+                  className="text-accent underline underline-offset-2"
                 >
-                  去编辑器发布
+                  去发布
                 </Link>
-              </>
+              </span>
             ) : (
               <Link
                 href={path}
@@ -285,20 +259,115 @@ function FormHero({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1">
-          <Link href={routeToPath({ name: "edit", formId: form.id })} className={PRIMARY_LINK}>
-            编辑题目
-          </Link>
-          <Link
-            href={routeToPath({ name: "print", formId: form.id })}
-            className={SECONDARY_LINK}
-            data-testid="dash-print-link"
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:shrink-0 sm:items-end">
+          <label htmlFor="dashboard-form" className="sr-only">
+            切换表单
+          </label>
+          <select
+            id="dashboard-form"
+            data-testid="dash-form-select"
+            className="min-h-[44px] w-full rounded-sm border border-line bg-surface px-2 text-sm text-ink sm:w-[18rem]"
+            value={form.id}
+            onChange={(event) => {
+              onSelect(event.target.value);
+            }}
           >
-            打印版考卷
-          </Link>
+            {forms.map((option) => (
+              <option key={option.id} value={option.id}>
+                {formOptionLabel(option)}
+              </option>
+            ))}
+          </select>
+          <div className="flex flex-wrap items-center gap-1 sm:justify-end">
+            <Link href={routeToPath({ name: "edit", formId: form.id })} className={PRIMARY_LINK}>
+              编辑题目
+            </Link>
+            <Link
+              href={routeToPath({ name: "print", formId: form.id })}
+              className={SECONDARY_LINK}
+              data-testid="dash-print-link"
+            >
+              打印版考卷
+            </Link>
+            <DeleteFormAction formId={form.id} api={api} onDeleted={onDeleted} />
+          </div>
         </div>
       </div>
     </section>
+  );
+}
+
+/** 删除用就地二次确认，不弹 `window.confirm`：确认按钮与触发按钮在同一位置，误点后能看见「取消」。 */
+function DeleteFormAction({
+  formId,
+  api,
+  onDeleted,
+}: {
+  readonly formId: string;
+  readonly api: TeacherApi;
+  readonly onDeleted: (formId: string) => void;
+}): JSX.Element {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        data-testid="dash-delete"
+        className={DANGER_BUTTON}
+        onClick={() => {
+          setError(null);
+          setConfirming(true);
+        }}
+      >
+        删除表单
+      </button>
+    );
+  }
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <button
+        type="button"
+        data-testid="dash-delete-confirm"
+        className={DANGER_BUTTON}
+        disabled={busy}
+        onClick={() => {
+          if (busy) return;
+          setBusy(true);
+          setError(null);
+          void api.deleteForm(formId).then((outcome) => {
+            if (outcome.ok) {
+              onDeleted(formId);
+              return;
+            }
+            setBusy(false);
+            setError(describeFailure(outcome.failure, { notFound: "这份表单已经不存在" }));
+          });
+        }}
+      >
+        {busy ? "删除中…" : "确认删除"}
+      </button>
+      <button
+        type="button"
+        data-testid="dash-delete-cancel"
+        className={SECONDARY_BUTTON}
+        disabled={busy}
+        onClick={() => {
+          setConfirming(false);
+          setError(null);
+        }}
+      >
+        取消
+      </button>
+      {error === null ? null : (
+        <span className="text-xs text-danger" role="alert" data-testid="dash-delete-error">
+          {error}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -379,51 +448,39 @@ function SettingsRow({
 
   return (
     <section className="mt-3 rounded-md border border-line bg-surface">
-      <SectionHeader title="展示与批改设置" note="改动立即生效，不产生新版本" />
+      <SectionHeader title="展示与批改" />
       <div className="grid gap-2 p-3 md:grid-cols-2">
-        <label className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-sm border border-line p-2 transition-colors hover:bg-bg">
+        <label className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-sm border border-line p-2 transition-colors hover:bg-bg">
           <input
             type="checkbox"
             data-testid="dash-show-answers"
-            className="mt-0.5 size-4 shrink-0 accent-accent"
+            className="size-4 shrink-0 accent-accent"
             checked={enabled === true}
             disabled={enabled === null || busy}
             onChange={(event) => {
               toggle(event.target.checked);
             }}
           />
-          <span className="min-w-0">
-            <span className="block text-sm text-ink">提交后向学生展示答案解析</span>
-            <span className="mt-0.5 block text-xs text-muted">
-              {enabled === null
-                ? "（读取中…）"
-                : enabled
-                  ? "（已开启）学生提交后可查看解析"
-                  : "（默认关闭）学生只看分数"}
-            </span>
+          <span className="text-sm text-ink">提交后展示答案解析</span>
+          <span className="ml-auto text-xs text-muted">
+            {enabled === null ? "（读取中…）" : enabled ? "（已开启）" : "（默认关闭）"}
           </span>
         </label>
 
-        <label className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-sm border border-line p-2 transition-colors hover:bg-bg">
+        <label className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-sm border border-line p-2 transition-colors hover:bg-bg">
           <input
             type="checkbox"
             data-testid="dash-ai-grading"
-            className="mt-0.5 size-4 shrink-0 accent-accent"
+            className="size-4 shrink-0 accent-accent"
             checked={aiEnabled === true}
             disabled={aiEnabled === null || busy}
             onChange={(event) => {
               toggleAi(event.target.checked);
             }}
           />
-          <span className="min-w-0">
-            <span className="block text-sm text-ink">允许 AI 辅助评分</span>
-            <span className="mt-0.5 block text-xs text-muted">
-              {aiEnabled === null
-                ? "（读取中…）"
-                : aiEnabled
-                  ? "（已开启）批改简答时会把该题原文发送给模型"
-                  : "（默认关闭）简答只由教师人工批改"}
-            </span>
+          <span className="text-sm text-ink">AI 辅助评分</span>
+          <span className="ml-auto text-xs text-muted">
+            {aiEnabled === null ? "（读取中…）" : aiEnabled ? "（已开启）" : "（默认关闭）"}
           </span>
         </label>
       </div>
@@ -458,10 +515,9 @@ function FormsError({ failure }: { readonly failure: ApiFailure }): JSX.Element 
 function EmptyForms(): JSX.Element {
   return (
     <section className="mt-3 rounded-md border border-dashed border-line bg-surface px-3 py-6 text-center">
-      <p className="m-0 text-base font-medium text-ink">还没有任何表单</p>
-      <p className="m-0 mt-1 text-sm text-muted">用一句话描述你要出的题，生成第一份表单。</p>
+      <p className="m-0 text-base font-medium text-ink">还没有表单</p>
       <Link href="/" className={`${PRIMARY_LINK} mt-3`}>
-        去生成表单
+        生成表单
       </Link>
     </section>
   );
@@ -482,27 +538,15 @@ function LoadingCard({ text }: { readonly text: string }): JSX.Element {
 /** 小标题带一条底边：几张表连排时，边界靠线而不是靠间距猜。 */
 function SectionHeader({
   title,
-  badge,
-  note,
   action,
 }: {
   readonly title: string;
-  readonly badge?: string;
-  readonly note?: string;
   readonly action?: JSX.Element;
 }): JSX.Element {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
-      <div className="flex min-w-0 items-baseline gap-2">
-        <h2 className="m-0 text-base font-semibold text-ink">{title}</h2>
-        {badge === undefined ? null : (
-          <span className="rounded-sm bg-bg px-1 text-xs tabular-nums text-muted">{badge}</span>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {note === undefined ? null : <p className="m-0 text-xs text-muted">{note}</p>}
-        {action ?? null}
-      </div>
+      <h2 className="m-0 text-base font-semibold text-ink">{title}</h2>
+      {action ?? null}
     </div>
   );
 }
@@ -594,10 +638,10 @@ function StatsGrid({
 }): JSX.Element {
   if (isSurvey) {
     return (
-      <section aria-label="回收概览" className="grid grid-cols-2 gap-2 md:grid-cols-3">
-        <StatCard label="提交数" value={String(stats.count)} hint="回收份数" />
-        <StatCard label="可回收字段" value={String(collectionCount)} hint="逐字段统计填写率" />
-        <StatCard label="当前版本" value={stats.versionLabel} hint="回收统计按此版本" />
+      <section aria-label="回收概览" className="grid grid-cols-3 gap-2">
+        <StatCard label="提交数" value={String(stats.count)} />
+        <StatCard label="可回收字段" value={String(collectionCount)} />
+        <StatCard label="当前版本" value={stats.versionLabel} />
       </section>
     );
   }
@@ -605,19 +649,14 @@ function StatsGrid({
   const pendingRows = rows.filter(needsGrading).length;
   return (
     <section aria-label="提交概览" className="grid grid-cols-2 gap-2 md:grid-cols-4">
-      <StatCard label="提交数" value={String(stats.count)} hint={`当前发布 ${stats.versionLabel}`} />
+      <StatCard label="提交数" value={String(stats.count)} />
       <StatCard
         label="平均分"
         value={stats.averageText}
-        hint={stats.averageIsUnknown ? "还没有人提交，不是 0 分" : "按全部提交计算"}
         muted={stats.averageIsUnknown}
       />
-      <StatCard label="满分" value={stats.maxScoreText} hint="按当前发布版本" />
-      <StatCard
-        label="待批改"
-        value={String(pendingRows)}
-        hint={pendingRows === 0 ? "没有待批改的提交" : "份提交含简答"}
-      />
+      <StatCard label="满分" value={stats.maxScoreText} />
+      <StatCard label="待批改" value={String(pendingRows)} />
     </section>
   );
 }
@@ -625,12 +664,10 @@ function StatsGrid({
 function StatCard({
   label,
   value,
-  hint,
   muted = false,
 }: {
   readonly label: string;
   readonly value: string;
-  readonly hint: string;
   readonly muted?: boolean;
 }): JSX.Element {
   return (
@@ -639,7 +676,6 @@ function StatCard({
       <p className={`m-0 mt-1 text-xl font-semibold tabular-nums ${muted ? "text-muted" : "text-ink"}`}>
         {value}
       </p>
-      <p className="m-0 mt-1 text-xs text-muted">{hint}</p>
     </div>
   );
 }
@@ -648,7 +684,7 @@ function StatCard({
 function CollectionCard({ stats }: { readonly stats: readonly CollectionStat[] }): JSX.Element {
   return (
     <section className="rounded-md border border-line bg-surface" data-testid="dash-collection-stats">
-      <SectionHeader title="回收情况" note="分母 = 提交份数，未填写按未填写计" />
+      <SectionHeader title="回收情况" />
       {stats.length === 0 ? (
         <p className="m-0 px-3 py-3 text-sm text-muted">这份问卷没有可回收字段</p>
       ) : (
@@ -675,7 +711,9 @@ function CollectionCard({ stats }: { readonly stats: readonly CollectionStat[] }
                     className="border-b border-line last:border-0 transition-colors hover:bg-bg"
                     data-testid="dash-collection-stat"
                   >
-                    <td className="px-3 py-2 text-ink">{stat.title}</td>
+                    <td className="px-3 py-2 text-ink">
+                      <MathText text={stat.title} />
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums text-ink">
                       {`${String(stat.answered)}/${String(stat.total)}`}
                     </td>
@@ -731,11 +769,7 @@ function CollectionCard({ stats }: { readonly stats: readonly CollectionStat[] }
 function ItemStatsCard({ stats }: { readonly stats: readonly ItemStat[] }): JSX.Element {
   return (
     <section className="rounded-md border border-line bg-surface" data-testid="dash-item-stats">
-      <SectionHeader
-        title="每题正确率"
-        badge={`${String(stats.length)} 题`}
-        note="分母 = 提交份数，未作答按未答对计"
-      />
+      <SectionHeader title="每题正确率" />
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <caption className="sr-only">每题正确率</caption>
@@ -763,7 +797,7 @@ function ItemStatsCard({ stats }: { readonly stats: readonly ItemStat[] }): JSX.
                 data-testid="dash-item-stat"
               >
                 <td className="px-3 py-2 text-ink">
-                  {stat.title}
+                  <MathText text={stat.title} />
                   <span className="ml-1 whitespace-nowrap rounded-sm bg-bg px-1 text-xs text-muted">{`${String(stat.score)} 分`}</span>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-ink">
@@ -829,8 +863,6 @@ function RecordsCard({
     <section className="rounded-md border border-line bg-surface">
       <SectionHeader
         title={isSurvey ? "回收记录" : "提交记录"}
-        badge={`${String(rows.length)} 条`}
-        note={isSurvey ? "匿名回收，不判分" : "最近提交在最上面"}
         action={
           <a
             href={csvHref(formId)}
@@ -846,11 +878,6 @@ function RecordsCard({
       {stats.isEmpty ? (
         <div className="px-3 py-6 text-center" data-testid="dash-empty">
           <p className="m-0 text-base font-medium text-ink">{EMPTY_SUBMISSIONS_TEXT}</p>
-          <p className="m-0 mt-1 text-sm text-muted">
-            {isSurvey
-              ? "把问卷链接发给填写者后，回收记录会出现在这里。"
-              : `发布后把学生链接发给学生；平均分 ${NO_AVERAGE_TEXT} 表示还没有数据，不是 0 分。`}
-          </p>
           {isSurvey || formPublished ? null : (
             <Link
               href={routeToPath({ name: "edit", formId })}
@@ -975,27 +1002,18 @@ function CoverageCard({
   return (
     <details className="group rounded-md border border-line bg-surface" data-testid="dash-coverage">
       <summary
-        className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-3 transition-colors hover:bg-bg [&::-webkit-details-marker]:hidden"
+        className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-3 transition-colors hover:bg-bg [&::-webkit-details-marker]:hidden"
         data-testid="dash-coverage-toggle"
       >
-        <div className="min-w-0">
-          <h2 className="m-0 text-base font-semibold text-ink">教学覆盖分析</h2>
-          <p className="m-0 mt-1 text-xs text-muted">
-            按知识点 × 认知层次统计，点任一格可直接补题。
-          </p>
-        </div>
-        <span className="text-xs text-accent">
-          <span className="group-open:hidden">展开矩阵</span>
-          <span className="hidden group-open:inline">收起矩阵</span>
+        <h2 className="m-0 text-base font-semibold text-ink">教学覆盖分析</h2>
+        <span aria-hidden="true" className="text-lg leading-none text-muted">
+          <span className="group-open:hidden">+</span>
+          <span className="hidden group-open:inline">−</span>
         </span>
       </summary>
 
       <div className="border-t border-line p-3" data-testid="dash-coverage-matrix">
-        <div className="flex flex-wrap items-baseline justify-between gap-1">
-          <h3 className="m-0 text-sm font-semibold text-ink">知识点 × 认知层次</h3>
-          <p className="m-0 text-xs text-muted">按当前发布版本统计，0 表示尚未覆盖</p>
-        </div>
-        <div className="mt-2 overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] border-collapse text-sm">
             <caption className="sr-only">知识点 × 认知层次覆盖矩阵</caption>
             <thead>

@@ -17,6 +17,7 @@ import type { ApiFailure } from "../api/http";
 import type { TeacherApi } from "../api/teacher";
 import { describeFailure } from "../api/failures";
 import { formatScoreNumber } from "../format";
+import { MathText } from "../render/Latex";
 import { gradeInputValue, parseGradeInput } from "./model";
 
 export interface GradeFormProps {
@@ -60,13 +61,7 @@ export function GradeForm(props: GradeFormProps): JSX.Element {
       aria-label="简答批改"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
-        <div className="min-w-0">
-          <h2 className="m-0 text-base font-semibold text-ink">批改简答</h2>
-          <p className="m-0 mt-1 text-xs text-muted">
-            {`每题独立保存，改错了再改一次即可（覆盖，不累加）。这条提交当前 ${formatScoreNumber(row.score)} 分，` +
-              `还有 ${formatScoreNumber(row.pendingScore)} 分待批改。`}
-          </p>
-        </div>
+        <h2 className="m-0 text-base font-semibold text-ink">批改简答</h2>
         <button
           type="button"
           data-testid="grade-close"
@@ -168,7 +163,9 @@ function GradeRow({
   return (
     <li className="rounded-sm border border-line p-3" data-testid={`grade-row-${item.itemId}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-1">
-        <p className="m-0 text-sm font-medium text-ink">{item.title}</p>
+        <div className="m-0 min-w-0 text-sm font-medium text-ink">
+          <MathText text={item.title} />
+        </div>
         <span className="whitespace-nowrap rounded-sm bg-bg px-1 text-xs text-muted">
           {`满分 ${formatScoreNumber(item.score)} 分`}
         </span>
@@ -179,7 +176,11 @@ function GradeRow({
         className="m-0 mt-2 whitespace-pre-wrap break-words rounded-sm border border-line bg-bg p-2 text-sm text-ink"
         data-testid={`grade-answer-${item.itemId}`}
       >
-        {answerText.trim() === "" ? <span className="text-muted">（未作答）</span> : answerText}
+        {answerText.trim() === "" ? (
+          <span className="text-muted">（未作答）</span>
+        ) : (
+          <MathText text={answerText} />
+        )}
       </p>
 
       {aiEnabled ? (
@@ -193,7 +194,6 @@ function GradeRow({
           >
             {aiBusy ? "评分中…" : "AI 辅助评分"}
           </button>
-          <span className="text-xs text-muted">只给建议，不会自动保存</span>
         </div>
       ) : null}
       {aiError === null ? null : (

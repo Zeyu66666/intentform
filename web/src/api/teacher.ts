@@ -11,6 +11,7 @@ import {
   type AiGradeResponse,
   type CreateFormRequest,
   type CreateFormResponse,
+  type DeleteFormResponse,
   type FormDetailResponse,
   type FormSettingsRequest,
   type FormSettingsResponse,
@@ -55,6 +56,11 @@ export interface TeacherApi {
   readonly createForm: (request: CreateFormRequest) => Promise<ApiResult<CreateFormResponse>>;
   /** 发布某个版本（第二步）：成功后拿到学生短链的 slug。 */
   readonly publishForm: (formId: string, request: PublishRequest) => Promise<ApiResult<PublishResponse>>;
+  /**
+   * 逻辑删除一份表单。成功后列表、详情与学生短链都不再返回它；
+   * 服务端保留版本与历史提交，因此这里没有「恢复」接口配合，删除就是删除。
+   */
+  readonly deleteForm: (formId: string) => Promise<ApiResult<DeleteFormResponse>>;
   /**
    * 给一条提交里的一道简答打分（省赛 R-02）。
    *
@@ -148,6 +154,11 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
       client.request<PublishResponse>(API_PATHS.publish(formId), {
         method: "POST",
         body: request,
+        csrf: true,
+      }),
+    deleteForm: (formId) =>
+      client.request<DeleteFormResponse>(API_PATHS.deleteForm(formId), {
+        method: "DELETE",
         csrf: true,
       }),
     grade: (formId, submissionId, request) =>

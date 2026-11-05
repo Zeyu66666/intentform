@@ -55,6 +55,27 @@ const PATCH_OK = {
   changes: [{ op: "setScore", itemId: "q-single", where: "第 1 题", before: "5 分", after: "8 分" }],
 };
 
+describe("teacherApi.deleteForm", () => {
+  it("DELETE /api/forms/:id，带 CSRF 头且不发送请求体", async () => {
+    const captured: Captured[] = [];
+    const api = apiFor(jsonResponse({ ok: true, formId: "form-1" }), captured);
+
+    const result = await api.deleteForm("form-1");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.formId).toBe("form-1");
+    const [sent] = captured;
+    expect(sent?.url).toBe("/api/forms/form-1");
+    expect(sent?.init.method).toBe("DELETE");
+    expect(sent?.init.credentials).toBe("include");
+    expect(sent?.init.body).toBeUndefined();
+    const headers = sent?.init.headers as Record<string, string>;
+    expect(headers[CSRF_HEADER]).toBe(CSRF_HEADER_VALUE);
+    expect(headers["Content-Type"]).toBeUndefined();
+  });
+});
+
 describe("teacherApi.patchForm", () => {
   it("PATCH /api/forms/:id，带 CSRF 头与请求体", async () => {
     const captured: Captured[] = [];
