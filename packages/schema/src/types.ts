@@ -73,11 +73,32 @@ export const choiceOptionSchema = z.object({
   text: displayTextSchema(LIMITS.optionTextMax),
 });
 
+/**
+ * 题目配图。
+ *
+ * 只存**资产 id**，不存图片字节：版本快照可以重复引用同一张图，而图片本体由
+ * `form_assets` 单独保管、按表单归属鉴权。`assetId` 由服务端生成（`a_` + 16 位
+ * 十六进制），模型不会产出它——目前没有文生图能力，配图由教师在编辑器上传。
+ *
+ * `alt` 是给读屏与图片加载失败时看的说明，不是教学标注，学生端保留。
+ */
+export const itemImageSchema = z.object({
+  assetId: z
+    .string()
+    .regex(/^a_[0-9a-f]{16}$/u, "配图 id 不合法"),
+  alt: displayTextSchema(LIMITS.optionTextMax).optional(),
+});
+
 /** 所有字段共有的部分。`required` 默认 `true`：题默认必答，例外才显式关掉。 */
 const baseFieldSchema = z.object({
   id: fieldIdSchema,
   title: displayTextSchema(LIMITS.titleMax),
   required: z.boolean().default(true),
+  /**
+   * 配图可选：旧版本与模型生成的题都没有这个键。`null` 表示显式移除，
+   * `undefined` 表示「从来没有过」；渲染与比较时统一按 `?? null` 处理。
+   */
+  image: itemImageSchema.nullable().optional(),
 });
 
 /**
@@ -165,6 +186,7 @@ export const sectionFieldSchema = z.object({
   id: fieldIdSchema,
   title: displayTextSchema(LIMITS.titleMax),
   description: optionalDisplayTextSchema(LIMITS.explanationMax),
+  image: itemImageSchema.nullable().optional(),
 });
 
 export const formItemSchema = z.discriminatedUnion("type", [
@@ -213,6 +235,7 @@ export const formSchema = z
 
 export type Objective = DeepReadonly<z.infer<typeof objectiveSchema>>;
 export type ChoiceOption = DeepReadonly<z.infer<typeof choiceOptionSchema>>;
+export type ItemImage = DeepReadonly<z.infer<typeof itemImageSchema>>;
 export type SingleField = DeepReadonly<z.infer<typeof singleFieldSchema>>;
 export type MultiField = DeepReadonly<z.infer<typeof multiFieldSchema>>;
 export type FillField = DeepReadonly<z.infer<typeof fillFieldSchema>>;

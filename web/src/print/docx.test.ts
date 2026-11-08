@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { formSchema, type FormSchema } from "@intentform/schema";
 
-import { buildDocx, docxFilename, latexToOmml } from "./docx";
+import { buildDocx, docxFilename, imageSize, latexToOmml } from "./docx";
 import { buildPrintSheet } from "./sheet";
 
 function quiz(): FormSchema {
@@ -94,6 +94,39 @@ describe("buildDocx", () => {
     expect(raw).toContain("<m:oMath>");
     expect(raw).toContain("<m:f>");
     expect(raw).not.toContain("$\\sqrt{81}$");
+  });
+
+  it("有配图时写入 word/media 与 drawing；PNG 尺寸从文件头读出", () => {
+    const png = new Uint8Array(
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    );
+    expect(imageSize(png, "image/png")).toEqual({ width: 1, height: 1 });
+    const withImage = formSchema.parse({
+      ...quiz(),
+      items: quiz().items.map((item) =>
+        item.id === "q-fill"
+          ? { ...item, image: { assetId: "a_0123456789abcdef", alt: "实验装置" } }
+          : item,
+      ),
+    });
+    const raw = text(
+      buildDocx(
+        withImage,
+        buildPrintSheet(withImage, { withAnswers: false }),
+        new Map([
+          [
+            "a_0123456789abcdef",
+            { bytes: png, mime: "image/png" as const, width: 1, height: 1 },
+          ],
+        ]),
+      ),
+    );
+    expect(raw).toContain("word/media/image0.png");
+    expect(raw).toContain("<w:drawing>");
+    expect(/r:embed="([^"]+)"/u.exec(raw)?.[1]).toBe("rId2");
   });
 
   it("默认不含答案；含答案时出现答案与解析", () => {

@@ -23,7 +23,14 @@
 import { z } from "zod";
 
 import { BLOOM_LEVELS, LIMITS } from "./constants.ts";
-import { choiceOptionSchema, formItemSchema, formSchema, type FormItem, type FormSchema } from "./types.ts";
+import {
+  choiceOptionSchema,
+  formItemSchema,
+  formSchema,
+  itemImageSchema,
+  type FormItem,
+  type FormSchema,
+} from "./types.ts";
 
 /** 字段 id 在 Patch 里是寻址键，规则与 Schema 里一致。 */
 const fieldId = z
@@ -115,6 +122,13 @@ export const patchOpSchema = z.discriminatedUnion("op", [
     itemId: fieldId,
     maxLength: z.number().int().min(1).max(LIMITS.shortMaxLengthCap),
   }),
+  /**
+   * 改配图。`null` 表示移除。
+   *
+   * 只存资产 id（见 `itemImageSchema`），版本仍可完整复现：图片本体不随版本复制，
+   * 但同一个 assetId 指向同一张不可变的图。
+   */
+  z.object({ op: z.literal("setImage"), itemId: fieldId, image: itemImageSchema.nullable() }),
 ]);
 
 export type PatchOp = z.infer<typeof patchOpSchema>;
@@ -177,6 +191,7 @@ const OP_LABELS: Record<PatchOp["op"], string> = {
   setRequired: "改必答",
   setMeta: "改教学标注",
   setMaxLength: "改字数上限",
+  setImage: "改配图",
 };
 
 /**
@@ -191,6 +206,7 @@ const FIELD_LABELS: Partial<Record<PatchOp["op"], string>> = {
   setRequired: "必答",
   setMeta: "标注",
   setMaxLength: "字数上限",
+  setImage: "配图",
 };
 
 /**
@@ -566,6 +582,22 @@ export function applyPatch(input: FormSchema, ops: readonly PatchOp[]): PatchRes
         where: `${where} · ${FIELD_LABELS[op.op] ?? ""}`,
         before: `${String(target.maxLength)} 字`,
         after: `${String(op.maxLength)} 字`,
+      });
+      continue;
+    }
+
+    if (op.op === "setImage") {
+      if (JSON.stringify(target.image ?? null) === JSON.stringify(op.image)) continue;
+      const nextItem: FormItem = { ...target, image: op.image };
+      items = items.map((item, at) => (at === index ? nextItem : item));
+      const describe = (image: FormItem["image"]): string =>
+        image === null || image === undefined ? "（无配图）" : (image.alt ?? "（有配图）");
+      changes.push({
+        op: op.op,
+        itemId: op.itemId,
+        where: `${where} · ${FIELD_LABELS[op.op] ?? ""}`,
+        before: describe(target.image),
+        after: describe(op.image),
       });
       continue;
     }

@@ -43,6 +43,7 @@ import {
   withAnswer,
   withClearItemDraft,
   withExplanation,
+  withImage,
   withMaxLength,
   withMeta,
   withMoveItem,
@@ -555,6 +556,8 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
                 draft={draftOf(edit, selected)}
                 hasDraft={edit.drafts[selected.id] !== undefined}
                 index={selectedOrdinal < 1 ? 0 : selectedOrdinal - 1}
+                formId={formId}
+                api={api}
                 objectives={detail.schema.meta.objectives}
                 upTarget={targets.up}
                 downTarget={targets.down}
@@ -582,6 +585,9 @@ export function EditorPage({ formId }: { readonly formId: string }): JSX.Element
                 }}
                 onMaxLength={(maxLength) => {
                   update((state) => withMaxLength(state, selected.id, maxLength));
+                }}
+                onImage={(image) => {
+                  update((state) => withImage(state, selected.id, image));
                 }}
                 onClear={() => {
                   update((state) => withClearItemDraft(state, selected.id));

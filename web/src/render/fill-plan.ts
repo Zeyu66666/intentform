@@ -24,6 +24,7 @@ import {
   publicView,
   type FormItem,
   type FormSchema,
+  type ItemImage,
   type PublicFormItem,
 } from "@intentform/schema";
 
@@ -59,6 +60,8 @@ interface PlanBase {
   readonly required: boolean;
   /** 只有分节带描述；题干描述走同一字段，保持结构简单。 */
   readonly description: string | null;
+  /** 教师上传的配图；`null` 表示这题没有图。图片不是答案，学生端保留。 */
+  readonly image: ItemImage | null;
 }
 
 /**
@@ -118,6 +121,7 @@ export function toFillRenderPlan(item: PublicFormItem): FillRenderPlan {
         title: item.title,
         required: item.required,
         description: null,
+        image: item.image ?? null,
         control: { kind: "single", options: toFillOptions(item.options) },
       };
 
@@ -128,6 +132,7 @@ export function toFillRenderPlan(item: PublicFormItem): FillRenderPlan {
         title: item.title,
         required: item.required,
         description: null,
+        image: item.image ?? null,
         control: { kind: "multi", options: toFillOptions(item.options) },
       };
 
@@ -139,6 +144,7 @@ export function toFillRenderPlan(item: PublicFormItem): FillRenderPlan {
         title: item.title,
         required: item.required,
         description: null,
+        image: item.image ?? null,
         control: { kind: "text", maxLength: 200, multiline: false },
       };
 
@@ -149,6 +155,7 @@ export function toFillRenderPlan(item: PublicFormItem): FillRenderPlan {
         title: item.title,
         required: item.required,
         description: null,
+        image: item.image ?? null,
         control: { kind: "number" },
       };
 
@@ -159,6 +166,7 @@ export function toFillRenderPlan(item: PublicFormItem): FillRenderPlan {
         title: item.title,
         required: item.required,
         description: null,
+        image: item.image ?? null,
         control: { kind: "text", maxLength: item.maxLength, multiline: true },
       };
 
@@ -169,6 +177,7 @@ export function toFillRenderPlan(item: PublicFormItem): FillRenderPlan {
         title: item.title,
         required: item.required,
         description: null,
+        image: item.image ?? null,
         control: {
           kind: "scale",
           min: item.min,
@@ -185,6 +194,7 @@ export function toFillRenderPlan(item: PublicFormItem): FillRenderPlan {
         title: item.title,
         required: false,
         description: item.description ?? null,
+        image: item.image ?? null,
         control: { kind: "section" },
       };
   }

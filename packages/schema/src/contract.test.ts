@@ -185,6 +185,37 @@ describe("C1：publicView 保留学生作答所需的信息", () => {
     });
   });
 
+  it("保留配图 assetId 与 alt（图片不是答案，学生作答要用）", () => {
+    const result = validateForm({
+      meta: {
+        version: 1,
+        kind: "quiz",
+        title: "几何",
+        objectives: [],
+        totalScore: 5,
+      },
+      items: [
+        {
+          id: "q-img",
+          type: "single",
+          title: "如图，求角 A。",
+          score: 5,
+          options: [
+            { id: "a", text: "30°" },
+            { id: "b", text: "60°" },
+          ],
+          answer: "b",
+          image: { assetId: "a_0123456789abcdef", alt: "三角形 ABC" },
+        },
+      ],
+    });
+    if (!result.ok) throw new Error(`测试数据不合法：${JSON.stringify(result.errors)}`);
+    expect(publicView(result.data).items[0]?.image).toEqual({
+      assetId: "a_0123456789abcdef",
+      alt: "三角形 ABC",
+    });
+  });
+
   it("survey 投影后不带 totalScore", () => {
     const result = validateForm({
       meta: {

@@ -14,6 +14,7 @@ import type {
   ChoiceOption,
   FillField,
   FormItem,
+  ItemImage,
   FormMeta,
   FormSchema,
   MultiField,
@@ -78,6 +79,11 @@ function projectOption(option: ChoiceOption): ChoiceOption {
   return { id: option.id, text: option.text };
 }
 
+/** 配图不是答案，学生端必须保留；`null` 也照原样带过去，渲染层只判一个值。 */
+function projectImage(item: FormItem): { readonly image: ItemImage | null } {
+  return { image: item.image ?? null };
+}
+
 /**
  * 带分值字段共享的元数据。自动判分四种与简答都从 `scoredFieldSchema` 继承 `score`
  * （省赛 R-01 之后），所以这里接受这五型；`scale` / `section` 没有分值字段，进不来。
@@ -99,6 +105,7 @@ function projectItem(item: FormItem): PublicFormItem {
         title: item.title,
         required: item.required,
         options: item.options.map(projectOption),
+        ...projectImage(item),
         ...projectScored(item),
       };
     }
@@ -109,6 +116,7 @@ function projectItem(item: FormItem): PublicFormItem {
         title: item.title,
         required: item.required,
         options: item.options.map(projectOption),
+        ...projectImage(item),
         ...projectScored(item),
       };
     }
@@ -118,6 +126,7 @@ function projectItem(item: FormItem): PublicFormItem {
         type: "fill",
         title: item.title,
         required: item.required,
+        ...projectImage(item),
         ...projectScored(item),
       };
     }
@@ -127,6 +136,7 @@ function projectItem(item: FormItem): PublicFormItem {
         type: "number",
         title: item.title,
         required: item.required,
+        ...projectImage(item),
         ...projectScored(item),
       };
     }
@@ -139,6 +149,7 @@ function projectItem(item: FormItem): PublicFormItem {
         maxLength: item.maxLength,
         // 省赛 R-01：简答的分值对学生可见（"这题 5 分，需老师批改"），
         // 没有分值就不出现这个键——不补 0 冒充。
+        ...projectImage(item),
         ...projectScored(item),
       };
     }
@@ -150,6 +161,7 @@ function projectItem(item: FormItem): PublicFormItem {
         required: item.required,
         min: item.min,
         max: item.max,
+        ...projectImage(item),
         ...(item.labels === undefined ? {} : { labels: item.labels }),
       };
     }
@@ -158,6 +170,7 @@ function projectItem(item: FormItem): PublicFormItem {
         id: item.id,
         type: "section",
         title: item.title,
+        ...projectImage(item),
         ...(item.description === undefined ? {} : { description: item.description }),
       };
     }

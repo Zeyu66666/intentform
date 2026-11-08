@@ -112,6 +112,21 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
      deleted_at TEXT NOT NULL
    )`,
 
+  // 题目配图（2026-11-08）：二进制单独存，版本快照只带 assetId。
+  // 这样同一张图被多个版本引用时不会把 base64 复制进每一行 schema_json。
+  // `mime` 只允许服务端嗅探出的 PNG/JPEG/WebP；`byte_length` 是响应头与排查用的冗余字段。
+  `CREATE TABLE IF NOT EXISTS form_assets (
+     id          TEXT PRIMARY KEY,
+     form_id     TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+     teacher_id  TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+     mime        TEXT NOT NULL,
+     byte_length INTEGER NOT NULL,
+     bytes       BLOB NOT NULL,
+     created_at  TEXT NOT NULL
+   )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_form_assets_form_id ON form_assets(form_id)`,
+
   `CREATE TABLE IF NOT EXISTS usage_daily (
      teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
      day        TEXT NOT NULL,

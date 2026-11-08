@@ -260,6 +260,7 @@ describe("planPatch", () => {
       bloom: null,
       knowledgePoint: null,
       maxLength: 200,
+      image: null,
     });
   });
 

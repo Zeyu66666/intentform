@@ -13,6 +13,7 @@
 import type { PublicFormItem } from "@intentform/schema";
 
 import { MathText } from "../render/Latex";
+import { QuestionImage } from "../render/QuestionImage";
 import { TYPE_LABELS } from "../render/FieldRegistry";
 import { toFillRenderPlan, type FillOption, type FillPlanOf, type FillRenderPlan } from "../render/fill-plan";
 import { choiceValues, stringValue, type AnswerAction, type AnswerState } from "./answers";
@@ -44,6 +45,7 @@ export function StudentField({ item, answers, invalid, dispatch }: StudentFieldP
             <MathText text={plan.description} />
           </p>
         )}
+        <QuestionImage image={plan.image} />
       </section>
     );
   }
@@ -66,6 +68,8 @@ export function StudentField({ item, answers, invalid, dispatch }: StudentFieldP
           {TYPE_LABELS[plan.type]}
         </span>
       </div>
+
+      <QuestionImage image={plan.image} />
 
       {renderControl(plan, answers, dispatch)}
 

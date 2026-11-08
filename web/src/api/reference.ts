@@ -27,7 +27,7 @@ export interface ReferenceApi {
 }
 
 /** 分块 `btoa`：一次 `String.fromCharCode(...bytes)` 会把大文件的参数栈打爆。 */
-function toBase64(buffer: ArrayBuffer): string {
+export function fileToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
   let binary = "";
@@ -48,7 +48,7 @@ export function createReferenceApi(client: HttpClient): ReferenceApi {
       }
       let data: string;
       try {
-        data = toBase64(await file.arrayBuffer());
+        data = fileToBase64(await file.arrayBuffer());
       } catch {
         return {
           ok: false,

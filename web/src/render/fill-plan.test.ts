@@ -134,7 +134,15 @@ describe("toFillRenderPlan · 答案不泄露（硬安全要求）", () => {
 
   it("所有 plan 的键集合是封闭白名单（新增字段必须先想清楚会不会泄题）", () => {
     for (const plan of plans) {
-      expect(Object.keys(plan).sort()).toEqual(["control", "description", "id", "required", "title", "type"]);
+      expect(Object.keys(plan).sort()).toEqual([
+        "control",
+        "description",
+        "id",
+        "image",
+        "required",
+        "title",
+        "type",
+      ]);
     }
   });
 });

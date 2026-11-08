@@ -9,6 +9,7 @@ import {
   API_PATHS,
   type AiGradeRequest,
   type AiGradeResponse,
+  type AssetUploadResponse,
   type CreateFormRequest,
   type CreateFormResponse,
   type DeleteFormResponse,
@@ -38,7 +39,9 @@ import {
   type UndoDraftResponse,
 } from "@intentform/schema";
 
+import { createAssetApi } from "./assets";
 import type { ApiResult, HttpClient } from "./http";
+import type { ReferenceFileLike } from "./reference";
 
 export interface TeacherApi {
   readonly login: (request: LoginRequest) => Promise<ApiResult<LoginResponse>>;
@@ -81,6 +84,11 @@ export interface TeacherApi {
     submissionId: string,
     request: AiGradeRequest,
   ) => Promise<ApiResult<AiGradeResponse>>;
+  /** 上传题目配图；成功后拿到 assetId，再随 `setImage` 落进版本。 */
+  readonly uploadAsset: (
+    formId: string,
+    file: ReferenceFileLike,
+  ) => Promise<ApiResult<AssetUploadResponse>>;
   /** 表单详情：编辑页拿它的 `version.id` 当乐观锁的 `baseVersionId`。 */
   readonly getForm: (formId: string) => Promise<ApiResult<FormDetailResponse>>;
   /**
@@ -128,6 +136,7 @@ export interface TeacherApi {
 }
 
 export function createTeacherApi(client: HttpClient): TeacherApi {
+  const assetApi = createAssetApi(client);
   return {
     login: (request) =>
       client.request<LoginResponse>(API_PATHS.login, { method: "POST", body: request, csrf: true }),
@@ -167,6 +176,7 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
         body: request,
         csrf: true,
       }),
+    uploadAsset: (formId, file) => assetApi.upload(formId, file),
     getForm: (formId) => client.request<FormDetailResponse>(API_PATHS.form(formId)),
     getSettings: (formId) => client.request<FormSettingsResponse>(API_PATHS.formSettings(formId)),
     updateSettings: (formId, request) =>

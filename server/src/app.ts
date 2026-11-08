@@ -18,6 +18,7 @@ import { handleSubmissions, handleSubmissionsCsv } from "./analytics-route.ts";
 import { handleClarify } from "./clarify-route.ts";
 import { handlePlan } from "./plan-route.ts";
 import { handleExtractReference } from "./reference-route.ts";
+import { handleGetAsset, handleUploadAsset } from "./asset-route.ts";
 import { checkCsrf, corsHeadersFor } from "./csrf.ts";
 import type { Db } from "./db/index.ts";
 import { isMutatingMethod, type ServerEnv } from "./env.ts";
@@ -81,6 +82,14 @@ export const ROUTES: readonly RouteDef[] = [
   { method: "POST", pattern: "/api/forms", handler: handleCreateForm },
   { method: "GET", pattern: "/api/forms", handler: handleListForms },
   { method: "GET", pattern: "/api/forms/:id", handler: handleGetForm },
+  // 题目配图：上传要 owner；读取对已发布表单公开、草稿仅 owner。
+  {
+    method: "POST",
+    pattern: "/api/forms/:id/assets",
+    handler: handleUploadAsset,
+    rateLimit: { name: "asset-upload", limitPerWindow: (env) => env.rateSuggestPerMin },
+  },
+  { method: "GET", pattern: "/api/assets/:id", handler: handleGetAsset },
   // 逻辑删除：写 tombstone，不删版本/提交（历史判分依据必须留着）。
   { method: "DELETE", pattern: "/api/forms/:id", handler: handleDeleteForm },
   // 省赛附加 A-18：表单级展示设置（提交后是否展示答案解析）。不进版本快照。

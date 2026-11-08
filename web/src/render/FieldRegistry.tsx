@@ -14,6 +14,7 @@
 import { BLOOM_LEVELS, type FormItem } from "@intentform/schema";
 
 import { MathText } from "./Latex";
+import { QuestionImage } from "./QuestionImage";
 import {
   toFillItem,
   toFillRenderPlan,
@@ -258,6 +259,7 @@ export function EditField({ item }: { readonly item: FormItem }): JSX.Element {
         <h3 className="m-0 border-b border-line pb-1 text-lg font-semibold">
           <MathText text={item.title} />
         </h3>
+        <QuestionImage image={item.image} />
         {EDIT_REGISTRY.section(item)}
       </section>
     );
@@ -285,6 +287,7 @@ export function EditField({ item }: { readonly item: FormItem }): JSX.Element {
       <p className="mb-1 mt-1 text-base font-medium">
         <MathText text={item.title} />
       </p>
+      <QuestionImage image={item.image} />
 
       {renderEditBody(item)}
 

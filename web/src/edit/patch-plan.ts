@@ -26,6 +26,7 @@ import {
   type FormItem,
   type FormKind,
   type FormSchema,
+  type ItemImage,
   type PatchChange,
   type PatchError,
   type PatchFormRequest,
@@ -78,6 +79,8 @@ export interface ItemDraft {
   readonly knowledgePoint: string | null;
   /** 简答的字数上限；其它题型为 `null`。 */
   readonly maxLength: number | null;
+  /** 配图；`null` 表示没有图（或教师刚移除）。 */
+  readonly image: ItemImage | null;
 }
 
 /**
@@ -100,6 +103,8 @@ type DraftPatch = {
   readonly bloom?: BloomLevel | null;
   readonly knowledgePoint?: string | null;
   readonly maxLength?: number;
+  /** `null` 表示移除配图；字段缺省表示「没碰过」。 */
+  readonly image?: ItemImage | null;
 };
 
 export interface EditState {
@@ -253,6 +258,7 @@ export function draftOf(state: EditState, item: FormItem): ItemDraft {
           : item.knowledgePoint ?? null
         : null,
     maxLength: item.type === "short" ? (draft?.maxLength ?? item.maxLength) : null,
+    image: draft?.image !== undefined ? draft.image : (item.image ?? null),
   };
 }
 
@@ -310,6 +316,10 @@ export function withMeta(
 
 export function withMaxLength(state: EditState, itemId: string, maxLength: number): EditState {
   return mergeDraft(state, itemId, { maxLength });
+}
+
+export function withImage(state: EditState, itemId: string, image: ItemImage | null): EditState {
+  return mergeDraft(state, itemId, { image });
 }
 
 /**
@@ -448,6 +458,12 @@ export function planPatch(state: EditState): PatchPlan {
         const failure = advance({ op: "setStem", itemId: item.id, title });
         if (failure !== null) return { ok: false, ...failure };
       }
+    }
+
+    /* -------------------------------- 配图 -------------------------------- */
+    if (draft.image !== undefined && JSON.stringify(draft.image) !== JSON.stringify(item.image ?? null)) {
+      const failure = advance({ op: "setImage", itemId: item.id, image: draft.image });
+      if (failure !== null) return { ok: false, ...failure };
     }
 
     /* -------------------------------- 选项 -------------------------------- */

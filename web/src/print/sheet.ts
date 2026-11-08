@@ -9,7 +9,7 @@
  * 选项字母用 A、B、C…（超过 26 个用 A1、B1 兜底）：印刷体里题号+字母比 `op1` 好认。
  */
 
-import type { FormItem, FormSchema } from "@intentform/schema";
+import type { FormItem, FormSchema, ItemImage } from "@intentform/schema";
 
 export interface PrintOption {
   readonly letter: string;
@@ -21,6 +21,7 @@ export interface PrintSectionRow {
   readonly id: string;
   readonly title: string;
   readonly description?: string;
+  readonly image: ItemImage | null;
 }
 
 export interface PrintQuestionRow {
@@ -30,6 +31,7 @@ export interface PrintQuestionRow {
   readonly type: FormItem["type"];
   readonly title: string;
   readonly options: readonly PrintOption[];
+  readonly image: ItemImage | null;
   readonly score?: number;
   /** 只有 `withAnswers` 为真时才存在。 */
   readonly answer?: string;
@@ -83,6 +85,7 @@ export function buildPrintSheet(
         kind: "section",
         id: item.id,
         title: item.title,
+        image: item.image ?? null,
         ...(item.description === undefined ? {} : { description: item.description }),
       });
       continue;
@@ -98,6 +101,7 @@ export function buildPrintSheet(
         item.type === "single" || item.type === "multi"
           ? item.options.map((option, index) => ({ letter: optionLetter(index), text: option.text }))
           : [],
+      image: item.image ?? null,
       ...("score" in item && item.score !== undefined ? { score: item.score } : {}),
     };
     if (!options.withAnswers) {

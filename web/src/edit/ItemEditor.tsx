@@ -25,10 +25,13 @@ import {
   type BloomLevel,
   type ChoiceOption,
   type FormItem,
+  type ItemImage,
   type Objective,
 } from "@intentform/schema";
 
+import type { TeacherApi } from "../api/teacher";
 import { TYPE_LABELS } from "../render/FieldRegistry";
+import { ItemImageEditor } from "./ItemImageEditor";
 import { MathText } from "../render/Latex";
 import type { AnswerDraft } from "./answer-input";
 import { scoreOfItem, type ItemDraft } from "./patch-plan";
@@ -91,6 +94,9 @@ export interface ItemEditorProps {
   readonly draft: ItemDraft;
   readonly hasDraft: boolean;
   readonly index: number;
+  readonly formId: string;
+  readonly api: TeacherApi;
+  readonly onImage: (image: ItemImage | null) => void;
   readonly objectives: readonly Objective[];
   /** 上移/下移的**绝对**目标下标；`null` 表示到头了。 */
   readonly upTarget: number | null;
@@ -117,6 +123,9 @@ export function ItemEditor({
   draft,
   hasDraft,
   index,
+  formId,
+  api,
+  onImage,
   objectives,
   upTarget,
   downTarget,
@@ -224,6 +233,10 @@ export function ItemEditor({
             </div>
           ) : null}
         </div>
+      </Group>
+
+      <Group title="配图" hint="几何图形、实验装置等需要看图作答的题目">
+        <ItemImageEditor formId={formId} api={api} image={draft.image} onImage={onImage} />
       </Group>
 
       {isChoice ? (

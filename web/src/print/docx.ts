@@ -364,6 +364,86 @@ export function latexToOmml(tex: string): string {
   }
 }
 
+// ── 配图 ──────────────────────────────────────────────────────────────────
+
+export interface DocxImage {
+  readonly bytes: Uint8Array;
+  readonly mime: "image/png" | "image/jpeg";
+  readonly width: number;
+  readonly height: number;
+}
+
+/** 从 PNG/JPEG 文件头读像素尺寸；读不出就返回 null，Word 里跳过这张图。 */
+export function imageSize(
+  bytes: Uint8Array,
+  mime: "image/png" | "image/jpeg",
+): { readonly width: number; readonly height: number } | null {
+  if (mime === "image/png") {
+    if (bytes.length < 24) return null;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const width = view.getUint32(16);
+    const height = view.getUint32(20);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  // JPEG：扫描 SOF0/2/… 段，跳过其它段。
+  let offset = 2;
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = bytes[offset + 1] ?? 0;
+    const length = ((bytes[offset + 2] ?? 0) << 8) | (bytes[offset + 3] ?? 0);
+    const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isSof) {
+      const height = ((bytes[offset + 5] ?? 0) << 8) | (bytes[offset + 6] ?? 0);
+      const width = ((bytes[offset + 7] ?? 0) << 8) | (bytes[offset + 8] ?? 0);
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (length < 2) return null;
+    offset += 2 + length;
+  }
+  return null;
+}
+
+interface DocxMediaState {
+  readonly images: ReadonlyMap<string, DocxImage>;
+  readonly media: { readonly name: string; readonly bytes: Uint8Array }[];
+  readonly rels: string[];
+  next: number;
+}
+
+/** 12 cm 上限，够 A4 正文宽；按原图比例缩放，不拉伸。 */
+const MAX_IMAGE_EMU = 4_320_000;
+const EMU_PER_PIXEL = 9_525;
+
+function imageParagraph(state: DocxMediaState, assetId: string): string {
+  const image = state.images.get(assetId);
+  if (image === undefined) return "";
+  const index = state.next;
+  state.next += 1;
+  const extension = image.mime === "image/png" ? "png" : "jpeg";
+  const name = `image${String(index)}.${extension}`;
+  const relationship = `rId${String(index + 2)}`; // rId1 留给 styles.xml
+
+  const naturalWidth = Math.max(1, image.width) * EMU_PER_PIXEL;
+  const naturalHeight = Math.max(1, image.height) * EMU_PER_PIXEL;
+  const scale = Math.min(1, MAX_IMAGE_EMU / naturalWidth);
+  const width = Math.round(naturalWidth * scale);
+  const height = Math.round(naturalHeight * scale);
+
+  state.media.push({ name, bytes: image.bytes });
+  state.rels.push(
+    `<Relationship Id="${relationship}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${name}"/>`,
+  );
+
+  return paragraph(
+    `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${String(width)}" cy="${String(height)}"/><wp:docPr id="${String(index + 1)}" name="Picture ${String(index + 1)}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${String(index + 1)}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relationship}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${String(width)}" cy="${String(height)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`,
+    undefined,
+    '<w:jc w:val="center"/>',
+  );
+}
+
 // ── WordprocessingML ───────────────────────────────────────────────────────
 
 function textRun(text: string): string {
@@ -419,7 +499,11 @@ function answerParagraph(label: string, text: string): string {
   return paragraph(`${textRun(label)}${inlineXml(text)}`, "Answer");
 }
 
-function documentBody(schema: FormSchema, rows: readonly PrintRow[]): string {
+function documentBody(
+  schema: FormSchema,
+  rows: readonly PrintRow[],
+  media: DocxMediaState,
+): string {
   const parts: string[] = [];
   parts.push(paragraph(inlineXml(schema.meta.title), "Title"));
   parts.push(paragraph(textRun(printHeaderText(schema)), "Subtitle"));
@@ -431,10 +515,18 @@ function documentBody(schema: FormSchema, rows: readonly PrintRow[]): string {
       if (row.description !== undefined) {
         parts.push(paragraph(inlineXml(row.description), "Note"));
       }
+      if (row.image !== null) {
+        const image = imageParagraph(media, row.image.assetId);
+        if (image !== "") parts.push(image);
+      }
       continue;
     }
 
     parts.push(questionParagraph(row));
+    if (row.image !== null) {
+      const image = imageParagraph(media, row.image.assetId);
+      if (image !== "") parts.push(image);
+    }
     for (const option of row.options) parts.push(optionParagraph(option));
     if (row.answer !== undefined) parts.push(answerParagraph("答案：", row.answer));
     if (row.explanation !== undefined) parts.push(answerParagraph("解析：", row.explanation));
@@ -450,6 +542,8 @@ const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="png" ContentType="image/png"/>
+<Default Extension="jpeg" ContentType="image/jpeg"/>
 <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
 <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>`;
@@ -459,10 +553,13 @@ const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>`;
 
-const DOCUMENT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+function documentRels(extra: readonly string[]): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+${extra.join("")}
 </Relationships>`;
+}
 
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -478,19 +575,30 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:style w:type="paragraph" w:styleId="Answer"><w:name w:val="Answer"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="40"/></w:pPr><w:rPr><w:color w:val="595959"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>
 </w:styles>`;
 
-function documentXml(schema: FormSchema, rows: readonly PrintRow[]): string {
+function documentXml(
+  schema: FormSchema,
+  rows: readonly PrintRow[],
+  media: DocxMediaState,
+): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body>${documentBody(schema, rows)}</w:body></w:document>`;
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>${documentBody(schema, rows, media)}</w:body></w:document>`;
 }
 
 /** 生成一份可直接用 Word 打开、可继续排版的 `.docx`。 */
-export function buildDocx(schema: FormSchema, rows: readonly PrintRow[]): Uint8Array {
+export function buildDocx(
+  schema: FormSchema,
+  rows: readonly PrintRow[],
+  images: ReadonlyMap<string, DocxImage> = new Map(),
+): Uint8Array {
+  const media: DocxMediaState = { images, media: [], rels: [], next: 0 };
+  const document = documentXml(schema, rows, media);
   return zipStore([
     { name: "[Content_Types].xml", data: encoder.encode(CONTENT_TYPES) },
     { name: "_rels/.rels", data: encoder.encode(ROOT_RELS) },
-    { name: "word/document.xml", data: encoder.encode(documentXml(schema, rows)) },
+    { name: "word/document.xml", data: encoder.encode(document) },
     { name: "word/styles.xml", data: encoder.encode(STYLES) },
-    { name: "word/_rels/document.xml.rels", data: encoder.encode(DOCUMENT_RELS) },
+    { name: "word/_rels/document.xml.rels", data: encoder.encode(documentRels(media.rels)) },
+    ...media.media.map((entry) => ({ name: `word/media/${entry.name}`, data: entry.bytes })),
   ]);
 }
 

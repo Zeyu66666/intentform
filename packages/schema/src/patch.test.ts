@@ -513,4 +513,26 @@ describe("patchOpSchema / patchOpsSchema", () => {
       patchOpSchema.safeParse({ op: "setMeta", itemId: "q-single", bloom: "apply" }).success,
     ).toBe(false);
   });
+
+  it("setImage 挂上、移除配图，并记一条人话差异", () => {
+    const image = { assetId: "a_0123456789abcdef", alt: "三角形 ABC" };
+    const added = apply(quiz(), [{ op: "setImage", itemId: "q-single", image }]);
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(added.schema.items[0]?.image).toEqual(image);
+    expect(added.changes[0]?.after).toBe("三角形 ABC");
+
+    const removed = apply(added.schema, [{ op: "setImage", itemId: "q-single", image: null }]);
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) return;
+    expect(removed.schema.items[0]?.image).toBeNull();
+    expect(removed.changes[0]?.after).toBe("（无配图）");
+  });
+
+  it("setImage 的 assetId 形状不合法时在线缆层被拒", () => {
+    expect(
+      patchOpSchema.safeParse({ op: "setImage", itemId: "q-single", image: { assetId: "bad" } })
+        .success,
+    ).toBe(false);
+  });
 });

@@ -41,6 +41,7 @@ describe("openDatabase / migrate", () => {
   it("建出 §3.5 要求的六张表 + 批改/设置/重做/删除墓碑", () => {
     const db = openDatabase(":memory:");
     expect(tableNames(db)).toEqual([
+      "form_assets",
       "form_deletions",
       "form_redo_stack",
       "form_settings",

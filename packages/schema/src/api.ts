@@ -111,6 +111,10 @@ export const API_PATHS = {
   referenceExtract: "/api/reference/extract",
   forms: "/api/forms",
   form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
+  /** 给某份表单上传题目配图。 */
+  formAssets: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/assets`,
+  /** 读取配图字节（`<img src>` 直接用）。已发布表单公开，草稿仅 owner。 */
+  asset: (assetId: string) => `/api/assets/${encodeURIComponent(assetId)}`,
   /**
    * 逻辑删除表单。路径与 `form` 相同，方法不同；单独命名是为了让前端调用点
    * 一眼看出这是破坏性操作，而不是又一次读取详情。
@@ -902,6 +906,36 @@ export interface ReferenceExtractResponse {
   readonly truncated: boolean;
   /** 可恢复的提示（如 PDF 部分字体无法映射）。不阻断使用。 */
   readonly warnings: readonly string[];
+}
+
+/* ------------------------------ 题目配图 ------------------------------ */
+
+/** 单张配图上限：5 MiB。像素尺寸不在这里卡，前端显示时按容器缩放。 */
+export const ASSET_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+export const ASSET_UPLOAD_MAX_BASE64_CHARS = Math.ceil(ASSET_UPLOAD_MAX_BYTES / 3) * 4;
+
+/**
+ * 只收这三种位图：它们能被所有浏览器直接显示，也不需要处理 SVG 的脚本/外链风险。
+ * 服务端还会按文件头再嗅探一次，扩展名和 MIME 都只是提示。
+ */
+export const ASSET_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+export type AssetMime = (typeof ASSET_MIME_TYPES)[number];
+
+export const assetUploadRequestSchema = z.object({
+  filename: z.string().trim().min(1, "缺少文件名").max(255, "文件名过长"),
+  data: z
+    .string()
+    .min(1, "图片内容为空")
+    .max(ASSET_UPLOAD_MAX_BASE64_CHARS, "图片超过 5 MiB"),
+});
+
+export type AssetUploadRequest = z.infer<typeof assetUploadRequestSchema>;
+
+export interface AssetUploadResponse {
+  readonly ok: true;
+  readonly assetId: string;
+  readonly mime: AssetMime;
+  readonly byteLength: number;
 }
 
 export const planRequestSchema = clarifyRequestSchema.extend({

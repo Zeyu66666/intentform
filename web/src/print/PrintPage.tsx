@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import type { FormSchema } from "@intentform/schema";
+import { API_PATHS, type FormSchema } from "@intentform/schema";
 
 import { createHttpClient, type ApiFailure } from "../api/http";
 import { createTeacherApi } from "../api/teacher";
@@ -22,11 +22,45 @@ import { describeFailure, isUnauthorized } from "../api/failures";
 import { Link } from "../Link";
 import { MathText } from "../render/Latex";
 import { TYPE_LABELS } from "../render/FieldRegistry";
-import { buildDocx, DOCX_MIME, docxFilename } from "./docx";
+import { QuestionImage } from "../render/QuestionImage";
+import { buildDocx, DOCX_MIME, docxFilename, imageSize, type DocxImage } from "./docx";
 import { buildPrintSheet, printHeaderText } from "./sheet";
 import { routeToPath } from "../router";
 
 const PAGE = "mx-auto w-full max-w-[800px] px-3 py-4";
+
+/**
+ * Word 里的配图要从资产接口取字节。
+ *
+ * 只收 PNG/JPEG：它们的文件头能直接读出像素尺寸，`docx` 不需要 canvas；
+ * WebP 在屏幕上照常显示，但 Word 版本可能认不出，导出时跳过（不阻塞整份文档）。
+ */
+async function loadWordImages(
+  rows: ReturnType<typeof buildPrintSheet>,
+): Promise<ReadonlyMap<string, DocxImage>> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.image !== null) ids.add(row.image.assetId);
+  }
+  const images = new Map<string, DocxImage>();
+  await Promise.all(
+    [...ids].map(async (assetId) => {
+      try {
+        const response = await fetch(API_PATHS.asset(assetId), { credentials: "include" });
+        if (!response.ok) return;
+        const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
+        if (mime !== "image/png" && mime !== "image/jpeg") return;
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const size = imageSize(bytes, mime);
+        if (size === null) return;
+        images.set(assetId, { bytes, mime, width: size.width, height: size.height });
+      } catch {
+        // 单张图取不到不阻止导出：正文与公式仍然可用，缺图在 Word 里表现为少一张。
+      }
+    }),
+  );
+  return images;
+}
 
 /**
  * 把刚生成的字节交给浏览器下载。
@@ -34,8 +68,12 @@ const PAGE = "mx-auto w-full max-w-[800px] px-3 py-4";
  * `URL.revokeObjectURL` 放到下一个任务：同一 tick 里撤销会让部分 Chromium
  * 版本拿不到数据，表现为「点了没反应」。
  */
-function downloadWord(schema: FormSchema, rows: ReturnType<typeof buildPrintSheet>): void {
-  const blob = new Blob([buildDocx(schema, rows)], { type: DOCX_MIME });
+async function downloadWord(
+  schema: FormSchema,
+  rows: ReturnType<typeof buildPrintSheet>,
+): Promise<void> {
+  const images = await loadWordImages(rows);
+  const blob = new Blob([buildDocx(schema, rows, images)], { type: DOCX_MIME });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -147,7 +185,7 @@ export function PrintPage({ formId }: { readonly formId: string }): JSX.Element 
           data-testid="print-docx"
           className="min-h-[44px] rounded-sm border border-line px-3 text-sm text-ink"
           onClick={() => {
-            downloadWord(schema, rows);
+            void downloadWord(schema, rows);
           }}
         >
           下载 Word
@@ -181,6 +219,7 @@ export function PrintPage({ formId }: { readonly formId: string }): JSX.Element 
                   <MathText text={row.description} />
                 </p>
               )}
+              <QuestionImage image={row.image} />
             </section>
           ) : (
             <section key={row.id} className="print-question mt-3" data-testid={`print-q-${row.id}`}>
@@ -192,6 +231,8 @@ export function PrintPage({ formId }: { readonly formId: string }): JSX.Element 
                 )}
                 <span className="ml-1 text-xs text-muted">{`[${TYPE_LABELS[row.type]}]`}</span>
               </p>
+
+              <QuestionImage image={row.image} />
 
               {row.options.length === 0 ? null : (
                 <ol className="m-0 mt-1 grid list-none grid-cols-1 gap-1 p-0 sm:grid-cols-2 print:grid-cols-2">
