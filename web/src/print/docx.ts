@@ -16,7 +16,7 @@
  */
 
 import katex from "katex";
-import { FIELD_TYPE_LABELS, type FormSchema } from "@intentform/schema";
+import { FIELD_TYPE_LABELS, normalizeMathBlanks, type FormSchema } from "@intentform/schema";
 
 import { splitMath } from "../render/katex";
 import { printHeaderText, type PrintRow } from "./sheet";
@@ -346,7 +346,7 @@ function ommlOf(node: XmlElement): string {
 /** 把一段 LaTeX 转成 OMML；失败或 KaTeX 不认时退回原始 TeX 文本。 */
 export function latexToOmml(tex: string): string {
   try {
-    const html = katex.renderToString(tex, {
+    const html = katex.renderToString(normalizeMathBlanks(tex), {
       output: "mathml",
       throwOnError: false,
       trust: false,

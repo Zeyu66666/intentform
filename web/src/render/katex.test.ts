@@ -60,6 +60,13 @@ describe("renderMathToHtml", () => {
     expect(renderMathToHtml("   ")).toBeNull();
   });
 
+  it("公式里的填空横线渲染成空白横线，而不是降级成错误码", () => {
+    const html = renderMathToHtml("72-___=45+18");
+    expect(html).not.toBeNull();
+    expect(html).toContain("katex");
+    expect(html).toContain("underline");
+  });
+
   it("trust:false —— \\href 不生成链接，降级为纯文本", () => {
     const html = renderMathToHtml("\\href{javascript:alert(1)}{click}");
     // 要么拒绝（null），要么不含可用链接；两者都不能出现 javascript: 协议。

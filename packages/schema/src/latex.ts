@@ -43,10 +43,28 @@ export function findFormulas(text: string): readonly FormulaSegment[] {
  * 校验一段文本里的公式。返回 `null` 表示全部可解析，否则返回首个失败原因。
  * 原因截断到 120 字符：它会被拼进 repair 文本再喂给模型，太长只会挤占有效上下文。
  */
+
+/**
+ * 填空横线在公式里的归一化。
+ *
+ * 模型常把整段算式包进 `$...$`，把空位写成 `___`（例如 `$72-___=45+18$`）。
+ * 在 LaTeX 里 `_` 是下标，`___` 必然解析失败——但教师/学生看到的只是「空位」，
+ * 不该因此把整道题判成坏公式。两个及以上连续下划线一律当成一个空白横线，
+ * 渲染与校验共用这一份归一化，避免「校验过了、显示还是坏」。
+ *
+ * 单个 `_` 不动：它可能是合法的下标（如 `a_1`）。
+ */
+export function normalizeMathBlanks(tex: string): string {
+  return tex.replace(/_{2,}/gu, (run) => {
+    const width = Math.min(6, Math.max(1, run.length * 0.5));
+    return `\\underline{\\hspace{${width.toFixed(1)}em}}`;
+  });
+}
+
 export function checkLatex(text: string): string | null {
   for (const formula of findFormulas(text)) {
     try {
-      katex.renderToString(formula.body, {
+      katex.renderToString(normalizeMathBlanks(formula.body), {
         displayMode: formula.display,
         throwOnError: true,
         strict: "ignore",

@@ -322,15 +322,17 @@ export function mockLines(requirement: string, kind: "quiz" | "survey" = "quiz")
       answer: "c",
       explanation: "bloom 与答案都是错的，用来演示修复环。",
     },
+    // 空位必须能在公式里正常显示：模型常把整段算式包进 `$...$`，空位写成
+    // `___`。KaTeX 会把连续下划线当坏下标，这里用它做回归素材。
     {
       type: "fill",
       id: "q_fill",
-      title: "示例填空题：水的化学式是 ____。",
+      title: "示例填空题：$12-___=7$ 中填什么？",
       required: true,
       score: 5,
       bloom: "understand",
       knowledgePoint: "kp_basic",
-      answer: ["H2O"],
+      answer: ["5"],
     },
     {
       type: "number",

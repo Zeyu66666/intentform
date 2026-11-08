@@ -53,6 +53,12 @@ describe("latexToOmml", () => {
     expect(latexToOmml("a_{n+1}")).toContain("<m:sSub>");
   });
 
+  it("公式里的填空横线也进 OMML，而不是退回 ___ 源码", () => {
+    const omml = latexToOmml("12-___=7");
+    expect(omml).toContain("<m:");
+    expect(omml).not.toContain("___");
+  });
+
   it("KaTeX 不认的公式退回原始 TeX，不抛错也不丢题面", () => {
     const omml = latexToOmml("\\notARealCommand{");
     expect(omml).toContain("m:t");

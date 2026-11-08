@@ -165,6 +165,16 @@ function AnswerLine({ label, children }: { readonly label: string; readonly chil
   );
 }
 
+/**
+ * 填空答案的显示：有的模型写 `$-F'(s)$`，有的直接写 `-\frac{d}{ds}F(s)`。
+ * 带 `$` 的走 `MathText`；不带定界符但含 LaTeX 命令的补一对 `$` 再渲染，
+ * 否则教师会看到一串裸露的反斜杠。纯文本（`9`、`H2O`、中文）不动。
+ */
+function FillAnswerValue({ text }: { readonly text: string }): JSX.Element {
+  const needsWrap = !text.includes("$") && /\\[A-Za-z]+/u.test(text);
+  return <MathText text={needsWrap ? `$${text}$` : text} />;
+}
+
 /** edit 注册表：键 = 题型，值是"这个题型在教师视角要显示的东西"。 */
 const EDIT_REGISTRY: {
   readonly [K in FormItem["type"]]: (item: Extract<FormItem, { readonly type: K }>) => JSX.Element;
@@ -198,7 +208,14 @@ const EDIT_REGISTRY: {
       <AnswerLine label="答案">未设置</AnswerLine>
     ) : (
       <>
-        <AnswerLine label="答案">{item.answer.join(" ／ ")}</AnswerLine>
+        <AnswerLine label="答案">
+          {item.answer.map((entry, index) => (
+            <span key={`${String(index)}-${entry}`}>
+              {index === 0 ? null : " ／ "}
+              <FillAnswerValue text={entry} />
+            </span>
+          ))}
+        </AnswerLine>
         <p className="mt-1 text-xs text-muted">共 {item.answer.length} 个空，按空序作答。</p>
       </>
     ),

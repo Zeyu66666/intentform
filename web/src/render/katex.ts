@@ -13,6 +13,7 @@
  */
 
 import katex from "katex";
+import { normalizeMathBlanks } from "@intentform/schema";
 
 export type MathSegment =
   | { readonly kind: "text"; readonly text: string }
@@ -90,7 +91,7 @@ export function renderMathToHtml(tex: string, options: KatexRenderOptions = {}):
   if (tex.trim() === "") return null;
 
   try {
-    const html = katex.renderToString(tex, {
+    const html = katex.renderToString(normalizeMathBlanks(tex), {
       throwOnError: false,
       trust: false,
       strict: "ignore",

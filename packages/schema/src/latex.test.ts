@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkLatex, findFormulas } from "./latex.ts";
+import { checkLatex, findFormulas, normalizeMathBlanks } from "./latex.ts";
 import { validateForm } from "./index.ts";
 
 describe("findFormulas", () => {
@@ -37,6 +37,18 @@ describe("findFormulas", () => {
 describe("checkLatex", () => {
   it("合法公式返回 null", () => {
     expect(checkLatex("求 $\\frac{1}{2}$ 与 $$\\sqrt{x}$$ 的值")).toBeNull();
+  });
+
+  it("公式里的填空横线按空白处理，不再误报 E_LATEX_INVALID", () => {
+    expect(checkLatex("在 $72-___=45+18$ 里填数")).toBeNull();
+    expect(checkLatex("$36+___=52-___$")).toBeNull();
+  });
+
+  it("只归一化两个及以上连续下划线，单个下标不动", () => {
+    expect(normalizeMathBlanks("a_1 + b_2")).toBe("a_1 + b_2");
+    const normalized = normalizeMathBlanks("72-___=45+18");
+    expect(normalized).toContain("\\underline");
+    expect(normalized).not.toContain("___");
   });
 
   it("未定义的命令会被 KaTeX 拒绝，并指出是哪条公式", () => {

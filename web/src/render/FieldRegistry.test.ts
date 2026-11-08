@@ -52,4 +52,22 @@ describe("EditField 的公式渲染", () => {
     expect(markup).toContain("<br/>（1）");
     expect(markup).toContain("<br/>（2）");
   });
+
+  it("填空答案里的公式走 MathText：带 $ 的与裸 LaTeX 都不显示源码", () => {
+    const item = {
+      id: "q_fill",
+      type: "fill",
+      title: "求导数。",
+      required: true,
+      score: 10,
+      answer: ["$-F'(s)$", "-\\frac{d}{ds}F(s)"],
+    } as const satisfies FormItem;
+
+    const markup = renderToStaticMarkup(createElement(EditField, { item }));
+
+    // 两段答案各自渲染出一个 KaTeX 块；原始 TeX 只留在 MathML 的 annotation 里，
+    // 不在可见文本中，所以这里数 katex 块而不是 grep 源码。
+    expect(markup.match(/class="katex"/gu)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(markup).not.toContain("$-F'(s)$");
+  });
 });
