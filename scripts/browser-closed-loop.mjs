@@ -44,6 +44,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { deflateSync } from "node:zlib";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SERVER_ENTRY = join(ROOT, "server", "src", "main.ts");
@@ -651,6 +652,57 @@ function makeReferenceDocx(marker) {
   end.writeUInt32LE(central.length, 12);
   end.writeUInt32LE(local.length + data.length, 16);
   return Buffer.concat([local, data, central, end]);
+}
+
+/** 生成一张带边框和斜线的 PNG（160×100），让截图里真的看得见「配图」。 */
+function makePng(width = 160, height = 100) {
+  const crcTable = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value & 1) === 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    crcTable[index] = value >>> 0;
+  }
+  const crc32 = (buffer) => {
+    let crc = 0xffffffff;
+    for (const byte of buffer) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xff];
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  const raw = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width * 3 + 1);
+    raw[row] = 0;
+    for (let x = 0; x < width; x += 1) {
+      const at = row + 1 + x * 3;
+      const border = x < 4 || y < 4 || x >= width - 4 || y >= height - 4;
+      const diagonal = Math.abs(y - (height / width) * x) < 3;
+      const blue = border || diagonal;
+      raw[at] = blue ? 30 : 245;
+      raw[at + 1] = blue ? 90 : 245;
+      raw[at + 2] = blue ? 200 : 245;
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
@@ -2688,6 +2740,121 @@ async function main() {
       };
     });
 
+    // 21) 题目配图：编辑器上传 → 保存新草稿 → 发布 → 学生页与打印页都能看到图。
+    // 这是「几何/实验题需要看图作答」的端到端证据；配图不能靠模型生成，由教师上传。
+    const imageStep = await step("题目配图：上传 → 保存 → 发布 → 学生页可见", async () => {
+      const pngPath = join(runDir, "question-image.png");
+      writeFileSync(pngPath, makePng());
+
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/forms/${publish.formId}/edit`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-item-editor') !== null")),
+        "编辑页渲染出单题面板",
+        20_000,
+      );
+      const selected = await page.tap('[data-testid="edit-item-q_single"]');
+      must(selected.ok === true, `没选中第一题：${JSON.stringify(selected)}`);
+      await waitFor(
+        async () => (await page.evaluate("return byTestId('edit-image-file') !== null")),
+        "配图上传控件出现",
+        10_000,
+      );
+      const fileSet = await page.setFiles('[data-testid="edit-image-file"]', [pngPath]);
+      must(fileSet.ok === true, `配图文件没选上：${JSON.stringify(fileSet)}`);
+      const assetId = await waitFor(
+        async () =>
+          (await page.evaluate(`
+            var img = document.querySelector('[data-testid^="question-image-"]');
+            if (img === null || img.naturalWidth < 1) return null;
+            return img.getAttribute('data-testid').replace('question-image-', '');
+          `)),
+        "配图上传并在编辑器里显示",
+        20_000,
+      );
+
+      await waitFor(
+        async () => (await page.evaluate("var b = byTestId('edit-save'); return b !== null && b.disabled === false;")),
+        "保存按钮因配图改动变为可用",
+        10_000,
+      );
+      const saved = await page.tap('[data-testid="edit-save"]');
+      must(saved.ok === true, `点不到保存：${JSON.stringify(saved)}`);
+      await waitFor(
+        async () => (await page.text()).includes("已生成 v"),
+        "配图随新草稿保存",
+        20_000,
+      );
+      await waitFor(
+        async () => (await page.evaluate("var b = byTestId('edit-publish'); return b !== null && b.disabled === false;")),
+        "发布按钮可用",
+        10_000,
+      );
+      const published = await page.tap('[data-testid="edit-publish"]');
+      must(published.ok === true, `点不到发布：${JSON.stringify(published)}`);
+      await waitFor(
+        async () => (await page.text()).includes("已发布 v"),
+        "配图版本发布成功",
+        20_000,
+      );
+
+      await page.viewport(MOBILE_VIEWPORT);
+      await page.goto(`${webBase}/f/${publish.slug}`);
+      const studentImage = await waitFor(
+        async () =>
+          (await page.evaluate(`
+            var img = document.querySelector('[data-testid^="question-image-"]');
+            return img !== null && img.naturalWidth > 0 ? img.naturalWidth : null;
+          `)),
+        "学生页加载出配图",
+        20_000,
+      );
+      artifacts.push(await page.screenshot(nextArtifactName("image-question")));
+
+      await page.viewport(DESKTOP_VIEWPORT);
+      await page.goto(`${webBase}/forms/${publish.formId}/print`);
+      const printImage = await waitFor(
+        async () =>
+          (await page.evaluate(`
+            var img = document.querySelector('[data-testid^="question-image-"]');
+            return img !== null && img.naturalWidth > 0 ? img.naturalWidth : null;
+          `)),
+        "打印页加载出配图",
+        20_000,
+      );
+
+      // Word 导出要把配图作为 media 部件带进去，而不只是页面上的 <img>。
+      const downloadDir = join(runDir, "downloads-image");
+      mkdirSync(downloadDir, { recursive: true });
+      await page.cdp.send("Page.setDownloadBehavior", {
+        behavior: "allow",
+        downloadPath: downloadDir,
+      });
+      const docxTap = await page.tap('[data-testid="print-docx"]');
+      must(docxTap.ok === true, `点不到「下载 Word」：${JSON.stringify(docxTap)}`);
+      const docxName = await waitFor(
+        () => {
+          const name = readdirSync(downloadDir).find((entry) => entry.endsWith(".docx"));
+          if (name === undefined) return null;
+          return statSync(join(downloadDir, name)).size > 2_000 ? name : null;
+        },
+        "带配图的 Word 下载完成",
+        15_000,
+      );
+      const docxBytes = readFileSync(join(downloadDir, docxName));
+      must(
+        docxBytes.toString("latin1").includes("word/media/image0.png"),
+        "Word 文件没有带配图 media 部件",
+      );
+
+      return {
+        assetId,
+        studentImageWidth: studentImage,
+        printImageWidth: printImage,
+        wordHasMedia: true,
+      };
+    });
+
     const summary = {
       ok: true,
       chrome,
@@ -2714,6 +2881,7 @@ async function main() {
       llmSettings,
       reference: referenceStep,
       deletedForm,
+      image: imageStep,
       dashboard,
       graded,
       steps,
