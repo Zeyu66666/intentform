@@ -77,6 +77,7 @@ docs/prompt-log/
 | `P31` | 参考试卷改为上传 | 已归档 | textarea → `.docx`/`.pdf` 文件上传；零依赖 DOCX/PDF（FlateDecode + ToUnicode）解析、10 MiB 与 20k 字上限、扫描件明确报错；闭环第 19 步真文件上传 |
 | `P32` | 删除按钮卡在删除中 | 已归档 | 删除当前表单后 React 复用 `DeleteFormAction` 导致 `busy` 残留；`key={form.id}` + 成功回调复位；闭环第 20 步断言下一份表单按钮恢复 |
 | `P33` | 填空公式误报与答案渲染 | 已归档 | `___` 空位在公式里归一成 `\underline`，校验/页面/Word 同源；填空答案逐项走 `MathText`，裸 LaTeX 自动补定界符；闭环第 6/11 步断言 |
+| `P34` | 题目配图 | 已归档 | 教师上传 PNG/JPEG/WebP（5 MiB）；版本只存 assetId，资产按表单鉴权；学生页/预览/打印/Word 都显示；`setImage` 补丁与闭环第 21 步 |
 | `P06` | I6 | 未开始 | Prompt v1→v3 |
 
 > 编号说明：v3.0 曾把 `P09`/`P10` 预留给 I8 安全审计与 I9 设计评审；省赛迭代按发生顺序占用了这两个编号（R-04/R-05），I8 已并入 R-08，I9 文档终稿尚未开链。以本表为准。
