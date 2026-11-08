@@ -1444,11 +1444,13 @@ async function main() {
         });
         return {
           hasKatex: rows.some(function (row) { return row.querySelector('.katex') !== null; }),
-          rawDollar: firstCells.some(function (text) { return text.indexOf('$') >= 0; })
+          rawDollar: firstCells.some(function (text) { return text.indexOf('$') >= 0; }),
+          rawBlank: firstCells.some(function (text) { return text.indexOf('___') >= 0; })
         };
       `);
       must(itemMath.hasKatex === true, `每题正确率的题干没有渲染 KaTeX：${JSON.stringify(itemMath)}`);
       must(itemMath.rawDollar === false, `每题正确率仍显示 $...$ 源码：${JSON.stringify(itemMath)}`);
+      must(itemMath.rawBlank === false, `公式里的填空横线仍显示 ___：${JSON.stringify(itemMath)}`);
       const coverage = await coverageMatrixRows(page);
       must(coverage.length > 0, "看板上没有覆盖矩阵行");
       must(
@@ -1807,6 +1809,15 @@ async function main() {
       must(/1\./.test(plainText), `打印页没有题号：${plainText.slice(0, 120)}`);
       must(!plainText.includes("答案："), `打印页默认不应出现答案：${plainText.slice(0, 200)}`);
       must(!plainText.includes("解析："), "打印页默认不应出现解析");
+      // 只看题干：卷头的「姓名 __________」本来就是下划线，不能拿来判断公式空位。
+      const rawBlankSource = await page.evaluate(`
+        var questions = document.querySelectorAll('.print-question');
+        return Array.prototype.some.call(questions, function (question) {
+          var stem = question.querySelector('p');
+          return stem !== null && stem.textContent.indexOf('___') >= 0;
+        });
+      `);
+      must(rawBlankSource === false, "打印卷面的题干仍显示填空源码 ___");
 
       // 换行必须是结构（<br>），不是只靠某个页面恰好生效的 CSS；mock 的简答题
       // 现在带两处换行，卷面上应当出现两个 <br>。
