@@ -57,5 +57,15 @@ export default defineConfig({
     outDir: "dist",
     sourcemap: true,
     target: "es2022",
+    rollupOptions: {
+      output: {
+        // KaTeX carries the full math font/rendering table. Keep it in a
+        // named shared chunk so the application entry remains reviewably
+        // small without changing the synchronous rendering contract.
+        manualChunks: {
+          katex: ["katex"],
+        },
+      },
+    },
   },
 });
