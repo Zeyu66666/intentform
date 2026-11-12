@@ -1,0 +1,62 @@
+# 意卷 IntentForm · 单实例部署
+#
+# SQLite 是单写者，**不要**把 replicas 调大：多个容器同时写同一个库会锁表，
+# 也会让内存里的限流计数各自为政。要横向扩展得先换 PostgreSQL，不是加副本。
+#
+# 密钥不写在这个文件里：`SESSION_SECRET`、`LLM_API_KEY` 由宿主环境注入。
+# 示例：
+#   export SESSION_SECRET="$(openssl rand -hex 32)"
+#   docker compose up -d --build
+#
+# HTTPS 部署放在 Caddy/Nginx 后面时，再设置：
+#   COOKIE_SECURE=true
+#   APP_ORIGIN=https://你的域名
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: intentform:local
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8787:8787"
+    environment:
+      NODE_ENV: production
+      PORT: "8787"
+      DATABASE_PATH: /app/data/intentform.db
+      WEB_INDEX_HTML: /app/web/dist/index.html
+      # 必填；`:?` 会在变量为空时直接拒绝启动，而不是生成一次性密钥后静默重启失效。
+      SESSION_SECRET: ${SESSION_SECRET:?请先在宿主环境设置 SESSION_SECRET（openssl rand -hex 32）}
+      # 生产同源部署留空；放在反向代理后时填真实外部地址。
+      APP_ORIGIN: ${APP_ORIGIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # 默认 replay：零外部调用、不要 Key，适合先验证部署。
+      LLM_MODE: ${LLM_MODE:-replay}
+      LLM_REPLAY_SPEED: ${LLM_REPLAY_SPEED:-instant}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      LLM_CHAT_MODEL: ${LLM_CHAT_MODEL:-deepseek-chat}
+      LLM_REASONING_MODEL: ${LLM_REASONING_MODEL:-deepseek-reasoner}
+      # live/record 才需要；空值会被服务端当成“没有 Key”，启动期直接报错而不是静默降级。
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      SEARCH_BASE_URL: ${SEARCH_BASE_URL:-}
+      SEARCH_API_KEY: ${SEARCH_API_KEY:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+    volumes:
+      # 唯一需要持久化的东西：SQLite 库（含题目配图的 BLOB）。
+      - intentform-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  intentform-data:
+    name: intentform-data

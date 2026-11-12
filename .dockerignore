@@ -1,0 +1,19 @@
+# 构建上下文只留源码、锁文件与回放 fixture。
+.git
+.gitignore
+node_modules
+.pnpm-store
+data
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+web/dist
+docs
+.tmp
+eval/runs
+*.log
+.env
+.env.*
+!.env.example
