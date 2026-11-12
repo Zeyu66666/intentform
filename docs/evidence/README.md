@@ -16,6 +16,8 @@
 **不调用任何模型**。这样截图每次一致，但也就意味着——它证明的是"链路通电"，不是"模型答得好"。
 需要后者时看 `fixtures/replays/` 的三条回放（`LLM_MODE=replay`，同样不调模型）与《计划 v3.0》§7 的 live 说明。
 
+评委要快速看 live 结论、token 与对抗输入结果，可直接打开 [`eval/live-quality-summary-2026-11-12.md`](eval/live-quality-summary-2026-11-12.md)。它把历史 30 条需求评测和本轮 7 次 live 调用分开列出，不把 replay/mock 数字混进模型质量结论。
+
 从 R-08 起，浏览器脚本会先构建 `web/dist`，再用 `NODE_ENV=production` 的同源 Node 服务托管页面与 `/assets/*`；启动浏览器前先断言首页响应头含 `script-src 'self'`、`style-src-attr 'unsafe-inline'`，且没有 `script-src 'unsafe-inline'`。开发期 Vite 不使用这条严格 CSP。
 
 ## 怎么跑

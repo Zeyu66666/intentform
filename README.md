@@ -352,6 +352,7 @@ AI 辅助评分（A-23）是**教师侧**的另一个数据出口：只有教师
 - `AGENTS.md` —— 模块边界、类型契约、提交纪律、安全红线（改代码前先读）
 - `docs/evidence/README.md` —— 两种证据的边界、怎么重跑、最近一次运行的 commit 戳
 - `docs/evidence/video-script.md` —— 七段演示视频的录制清单
+- `docs/evidence/eval/live-quality-summary-2026-11-12.md` —— 历史 live 评测 + 本轮 live 主生成/对抗的单页摘要（含来源、样本、tokens 与口径边界）
 - `docs/prompt-log/` —— 每个迭代的提问记录与 summary（含被否决的 AI 建议、真实 bug、偏离计划项）
 - `docs/deliverables/` —— 作品介绍 PDF（23 页）与生成脚本
 - `fixtures/replays/README.md` —— 回放文件格式与录制约定
