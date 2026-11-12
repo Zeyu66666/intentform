@@ -126,12 +126,16 @@ export async function* generateForm(
   deps: GeneratorDeps,
   options: GenerateOptions,
 ): AsyncGenerator<SseEventBody, void, undefined> {
-  const clock = deps.clock ?? Date.now;
   const logger = deps.logger ?? silentLogger;
-  const startedAt = clock();
   const requirement = options.requirement;
   const kind = options.kind ?? inferFormKind(requirement);
-  const source = deps.source ?? resolveSource(deps.config, clock);
+  const wallClock = deps.clock ?? Date.now;
+  // Replay is a recorded artifact, not a live stopwatch. Keep its absolute and
+  // aggregate timing fields deterministic so a reviewer can diff two runs
+  // directly; the recorded chunk delays still drive the visible field tMs.
+  const source = deps.source ?? resolveSource(deps.config, wallClock);
+  const clock = source.label === "replay" ? (): number => 0 : wallClock;
+  const startedAt = clock();
   const repair = deps.repair ?? defaultRepairFor(deps.config);
 
   const streamInput: {

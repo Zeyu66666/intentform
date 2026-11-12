@@ -4,8 +4,7 @@
  * 三条边界：
  * 1. **教师专属**：数据来自 `GET /api/forms/:id`（带答案的教师视图），未登录时
  *    与编辑页同一套失败提示，不做匿名打印。
- * 2. **打印的是草稿版**：就是编辑器里正在改的那一版；要打印已发布版，先发布
- *    （发布会把草稿指针跟到那一版），页面顶部如实写出「当前草稿 vN」。
+ * 2. 默认打印草稿版；已发布表单可以显式切换到发布快照，避免把未发布改稿误印出去。
  * 3. **「含答案」是本地开关**：勾上才渲染答案与解析，且屏幕上的开关在打印时
  *    由 `.no-print` 隐藏——纸上不会出现「拖动开关」这种界面文字。
  *
@@ -94,28 +93,57 @@ type LoadState =
       /** 原始 schema 留着：开关切换时用它重建卷面，不再发一次请求。 */
       readonly schema: FormSchema;
       readonly versionN: number;
+      readonly draftVersionN: number;
+      readonly versionId: string;
+      readonly publishedVersionId?: string;
+      readonly formStatus: "draft" | "published";
     };
 
 export function PrintPage({ formId }: { readonly formId: string }): JSX.Element {
   const api = useMemo(() => createTeacherApi(createHttpClient()), []);
   const [withAnswers, setWithAnswers] = useState(false);
+  const [printVersion, setPrintVersion] = useState<"draft" | "published">("draft");
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
     setLoad({ status: "loading" });
-    void api.getForm(formId).then((outcome) => {
+    const loadVersion = async (): Promise<void> => {
+      const initial = await api.getForm(formId);
+      if (!initial.ok) {
+        if (!cancelled) setLoad({ status: "error", failure: initial.failure });
+        return;
+      }
+      const requestedVersionId = printVersion === "published" ? initial.data.form.publishedVersionId : undefined;
+      if (printVersion === "published" && requestedVersionId === undefined) {
+        if (!cancelled) {
+          setLoad({ status: "error", failure: { status: 404, code: "not_found", message: "这份表单尚未发布" } });
+        }
+        return;
+      }
+      const outcome = requestedVersionId === undefined ? initial : await api.getForm(formId, requestedVersionId);
       if (cancelled) return;
       if (!outcome.ok) {
         setLoad({ status: "error", failure: outcome.failure });
         return;
       }
-      setLoad({ status: "ready", schema: outcome.data.schema, versionN: outcome.data.version.n });
-    });
+      setLoad({
+        status: "ready",
+        schema: outcome.data.schema,
+        versionN: outcome.data.version.n,
+        draftVersionN: initial.data.version.n,
+        versionId: outcome.data.version.id,
+        ...(outcome.data.form.publishedVersionId === undefined
+          ? {}
+          : { publishedVersionId: outcome.data.form.publishedVersionId }),
+        formStatus: outcome.data.form.status,
+      });
+    };
+    void loadVersion();
     return () => {
       cancelled = true;
     };
-  }, [api, formId]);
+  }, [api, formId, printVersion]);
 
   if (load.status === "loading") {
     return (
@@ -156,7 +184,22 @@ export function PrintPage({ formId }: { readonly formId: string }): JSX.Element 
   return (
     <main className={`${PAGE} text-ink`}>
       <div className="no-print mb-3 flex flex-wrap items-center gap-2 rounded-md border border-line bg-surface p-2">
-        <span className="text-sm text-muted">{`当前草稿 v${String(load.versionN)}`}</span>
+        <label className="flex min-h-[44px] items-center gap-2 text-sm text-ink">
+          版本
+          <select
+            data-testid="print-version"
+            className="min-h-[36px] rounded-sm border border-line bg-surface px-2"
+            value={printVersion}
+            onChange={(event) => {
+              setPrintVersion(event.target.value === "published" ? "published" : "draft");
+            }}
+          >
+            <option value="draft">当前草稿 v{String(load.draftVersionN)}</option>
+            <option value="published" disabled={load.publishedVersionId === undefined}>
+              已发布版{load.publishedVersionId === undefined ? "（尚未发布）" : ""}
+            </option>
+          </select>
+        </label>
         <label className="flex min-h-[44px] items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"

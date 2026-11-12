@@ -110,7 +110,8 @@ export const API_PATHS = {
   /** 上传参考试卷（.docx / .pdf）并提取纯文本；只读，不写库。 */
   referenceExtract: "/api/reference/extract",
   forms: "/api/forms",
-  form: (formId: string) => `/api/forms/${encodeURIComponent(formId)}`,
+  form: (formId: string, versionId?: string) =>
+    `/api/forms/${encodeURIComponent(formId)}${versionId === undefined ? "" : `?versionId=${encodeURIComponent(versionId)}`}`,
   /** 给某份表单上传题目配图。 */
   formAssets: (formId: string) => `/api/forms/${encodeURIComponent(formId)}/assets`,
   /** 读取配图字节（`<img src>` 直接用）。已发布表单公开，草稿仅 owner。 */

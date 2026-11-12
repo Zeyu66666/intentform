@@ -90,7 +90,7 @@ export interface TeacherApi {
     file: ReferenceFileLike,
   ) => Promise<ApiResult<AssetUploadResponse>>;
   /** 表单详情：编辑页拿它的 `version.id` 当乐观锁的 `baseVersionId`。 */
-  readonly getForm: (formId: string) => Promise<ApiResult<FormDetailResponse>>;
+  readonly getForm: (formId: string, versionId?: string) => Promise<ApiResult<FormDetailResponse>>;
   /**
    * 表单展示设置（A-18）：目前只有「提交后向学生展示答案解析」，默认关闭。
    * 它不进版本快照，所以改它不产生新版本，也不用重新发布。
@@ -177,7 +177,7 @@ export function createTeacherApi(client: HttpClient): TeacherApi {
         csrf: true,
       }),
     uploadAsset: (formId, file) => assetApi.upload(formId, file),
-    getForm: (formId) => client.request<FormDetailResponse>(API_PATHS.form(formId)),
+    getForm: (formId, versionId) => client.request<FormDetailResponse>(API_PATHS.form(formId, versionId)),
     getSettings: (formId) => client.request<FormSettingsResponse>(API_PATHS.formSettings(formId)),
     updateSettings: (formId, request) =>
       client.request<FormSettingsResponse>(API_PATHS.formSettings(formId), {

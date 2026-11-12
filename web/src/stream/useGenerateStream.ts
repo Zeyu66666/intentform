@@ -104,6 +104,13 @@ export function useGenerateStream(source: StreamSource): UseGenerateStreamResult
 
       const pump = async (): Promise<void> => {
         const parser = createSseFrameParser();
+        let terminalSeen = false;
+        const applyParsedFrame = (frame: ReturnType<typeof parser.push>[number]): void => {
+          if (frame.kind === "event" && (frame.event.type === "done" || frame.event.type === "error")) {
+            terminalSeen = true;
+          }
+          applyFrame(frame);
+        };
         try {
           for await (const chunk of source({
             requirement: trimmed,
@@ -113,17 +120,20 @@ export function useGenerateStream(source: StreamSource): UseGenerateStreamResult
             signal: controller.signal,
           })) {
             if (runId !== runIdRef.current) return;
-            for (const frame of parser.push(chunk)) applyFrame(frame);
+            for (const frame of parser.push(chunk)) applyParsedFrame(frame);
           }
           if (runId !== runIdRef.current) return;
-          for (const frame of parser.flush()) applyFrame(frame);
-          // 流结束却没有终态事件：这条链路不算成功，必须明确报错，
-          // 否则界面会永远停在"生成中"（比报错更难排查）。
-          dispatch({
-            type: "fail",
-            code: "internal",
-            message: "生成链路在收到 done/error 之前就结束了（终态事件缺失）",
-          });
+          for (const frame of parser.flush()) applyParsedFrame(frame);
+          // 服务端的 SSE 合同要求 done/error 收尾。错误终态已经由 reducer
+          // 写入 status=error；只有真正缺终态时才补一个传输层错误，避免
+          // replay miss（HTTP 200 + SSE error）被误报成成功。
+          if (!terminalSeen) {
+            dispatch({
+              type: "fail",
+              code: "internal",
+              message: "生成链路在收到 done/error 之前就结束了（终态事件缺失）",
+            });
+          }
         } catch (error) {
           if (runId !== runIdRef.current) return;
           if (isAbortError(error)) {

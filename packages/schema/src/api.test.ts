@@ -52,6 +52,10 @@ describe("API_PATHS", () => {
     expect(API_PATHS.publish("f_1")).toBe("/api/forms/f_1/publish");
     expect(API_PATHS.submissionsCsv("f_1")).toBe("/api/forms/f_1/submissions.csv");
     expect(API_PATHS.form("a b/c")).toBe("/api/forms/a%20b%2Fc");
+    expect(API_PATHS.form("f_1", "v_2")).toBe("/api/forms/f_1?versionId=v_2");
+    expect(API_PATHS.form("a b/c", "v 2/x")).toBe(
+      "/api/forms/a%20b%2Fc?versionId=v%202%2Fx",
+    );
     expect(API_PATHS.fill("k3x9")).toBe("/f/k3x9");
   });
 });

@@ -221,10 +221,14 @@ export async function handleGetForm(ctx: RouteContext): Promise<void> {
   }
   const form = requireOwnedForm(ctx, formId);
   if (form === undefined) return;
-  // 详情默认给草稿指针指向的版本（老师要看的是「我现在编辑的这版」）。
-  const version = findVersion(ctx.db, form.id, form.draft_version_id);
+  // 编辑器默认看草稿；打印页可以显式请求发布快照，避免把尚未发布的改稿印出去。
+  const requestedVersionId = ctx.url.searchParams.get("versionId");
+  const versionId = requestedVersionId === null || requestedVersionId === ""
+    ? form.draft_version_id
+    : requestedVersionId;
+  const version = findVersion(ctx.db, form.id, versionId);
   if (version === undefined) {
-    sendApiError(ctx.res, "internal", "草稿版本缺失");
+    sendApiError(ctx.res, "not_found", "该版本不存在，或不属于这份表单");
     return;
   }
   let raw: unknown;

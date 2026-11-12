@@ -7,13 +7,13 @@ import { REPLAY_MISS_HINT } from "./fixtures.ts";
 import { generateForm, inferFormKind, placeholderVersionId } from "./generate.ts";
 import type { LlmRuntimeConfig } from "./config.ts";
 import { resolveLlmRuntimeConfig } from "./config.ts";
-import type { DeltaSource, SourceDelta } from "./sources.ts";
+import type { DeltaSource, SourceDelta, SourceLabel } from "./sources.ts";
 import { MOCK_BROKEN_LINE_ID, mockLines } from "./sources.ts";
 
 const MOCK_CONFIG: LlmRuntimeConfig = resolveLlmRuntimeConfig("mock", {}, {});
 
 /** 用一个固定脚本替代真实来源：测试只关心「编排怎么处理这些 delta」。 */
-function scriptedSource(deltas: readonly string[], label = "mock" as const): DeltaSource {
+function scriptedSource(deltas: readonly string[], label: SourceLabel = "mock"): DeltaSource {
   return {
     label,
     async *stream(): AsyncGenerator<SourceDelta, void, undefined> {
@@ -135,6 +135,39 @@ describe("generateForm · mock 模式", () => {
     const first = strip(await collect({ config: MOCK_CONFIG }, "同一份需求"));
     const second = strip(await collect({ config: MOCK_CONFIG }, "同一份需求"));
     expect(first).toBe(second);
+  });
+});
+
+describe("generateForm · replay timing", () => {
+  it("回放输出的运行时字段可直接逐字节比较", async () => {
+    const replayConfig = resolveLlmRuntimeConfig("replay", {}, {});
+    const deltas: readonly SourceDelta[] = [
+      {
+        kind: "content",
+        delta: `${JSON.stringify({
+          type: "single",
+          id: "q_replay",
+          title: "回放题",
+          required: true,
+          score: 5,
+          bloom: "remember",
+          knowledgePoint: "kp_basic",
+          options: [{ id: "a", text: "甲" }, { id: "b", text: "乙" }],
+          answer: "a",
+        })}\n`,
+        tMs: 12,
+      },
+    ];
+    const source = scriptedSource(deltas.map((delta) => delta.kind === "content" ? delta.delta : ""), "replay");
+    const collectReplay = async (): Promise<SseEventBody[]> => {
+      const bodies: SseEventBody[] = [];
+      for await (const body of generateForm({ config: replayConfig, source }, { requirement: "回放测试" })) {
+        bodies.push(body);
+      }
+      return bodies;
+    };
+    expect(JSON.stringify(await collectReplay())).toBe(JSON.stringify(await collectReplay()));
+    expect((await collectReplay()).at(-1)).toMatchObject({ type: "done", stats: { ms: 0 } });
   });
 });
 

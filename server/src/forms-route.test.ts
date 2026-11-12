@@ -190,6 +190,15 @@ describe("POST /api/forms/:id/publish", () => {
     expect(detailBefore.json.form.publishedVersionId).toBe(created.version.id);
     expect(detailBefore.json.version.id).toBe(created.version.id);
 
+    const selected = await call<FormDetailResponse>(
+      app,
+      "GET",
+      `/api/forms/${created.form.id}?versionId=${encodeURIComponent(created.version.id)}`,
+      { cookie },
+    );
+    expect(selected.status).toBe(200);
+    expect(selected.json.version.id).toBe(created.version.id);
+
     const rowCount = app.db
       .prepare<[string], { c: number }>("SELECT COUNT(*) AS c FROM form_versions WHERE form_id = ?")
       .get(created.form.id);
