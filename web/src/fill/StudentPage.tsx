@@ -188,6 +188,9 @@ export function StudentPage({ slug }: { readonly slug: string }): JSX.Element {
               : `判分测验 · 满分 ${String(meta.totalScore)} 分`
             : "问卷 · 不计分"}
         </p>
+        <p className="m-0 mt-1 text-xs text-muted">
+          匿名填写 · 提交后老师只能看到答卷内容与统计，不能对应到个人
+        </p>
       </header>
 
       <form

@@ -146,6 +146,12 @@ export function App(): JSX.Element {
 
   const { state, start, cancel, reset } = useGenerateStream(source);
 
+  const lastGenerationRef = useRef<{
+    readonly requirement: string;
+    readonly clarifications: readonly Clarification[];
+    readonly blueprint?: FormBlueprint;
+  } | null>(null);
+
   const [requirement, setRequirement] = useState("");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("edit");
   const [kind, setKind] = useState<FormKind>("quiz");
@@ -249,6 +255,11 @@ export function App(): JSX.Element {
       setClarify({ status: "idle" });
       setPlan({ status: "idle" });
       setDrafts(EMPTY_DRAFTS);
+      lastGenerationRef.current = {
+        requirement: requirementText,
+        clarifications,
+        ...(blueprint === undefined ? {} : { blueprint }),
+      };
       start(requirementText, clarifications, blueprint, kind);
     },
     [start, kind],
@@ -349,6 +360,11 @@ export function App(): JSX.Element {
   );
   const fieldNodes = useMemo(() => editedFields.map((entry) => entry.node), [editedFields]);
   const errors = selectUnresolvedErrors(state);
+  const retryGeneration = useCallback((): void => {
+    const last = lastGenerationRef.current;
+    if (last === null) return;
+    beginGeneration(last.requirement, last.clarifications, last.blueprint);
+  }, [beginGeneration]);
   /** 追问块：只在后端真的回了追问时出现；「跳过」永远在旁边。 */
   const clarifySlot =
     clarify.status === "ready" ? (
@@ -563,7 +579,7 @@ export function App(): JSX.Element {
           aria-label="思考时间线"
           className="min-h-0 min-w-0 overflow-hidden rounded-md border border-line bg-surface"
         >
-          <TimelinePanel state={state} />
+          <TimelinePanel state={state} onRetry={retryGeneration} />
         </section>
       </main>
     </div>

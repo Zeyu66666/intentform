@@ -15,6 +15,7 @@ import type { GenerateState, RunStatus } from "../stream/generate-machine";
 
 export interface TimelinePanelProps {
   readonly state: GenerateState;
+  readonly onRetry?: () => void;
 }
 
 const STATUS_LABEL: Record<RunStatus, string> = {
@@ -33,7 +34,7 @@ const STATUS_CLASS: Record<RunStatus, string> = {
   cancelled: "text-muted",
 };
 
-export function TimelinePanel({ state }: TimelinePanelProps): JSX.Element {
+export function TimelinePanel({ state, onRetry }: TimelinePanelProps): JSX.Element {
   const timeline = buildTimeline(state);
 
   return (
@@ -81,6 +82,16 @@ export function TimelinePanel({ state }: TimelinePanelProps): JSX.Element {
             {timeline.stats.repairs} 轮 · 端到端 {formatMs(timeline.stats.ms)}
           </p>
         )}
+
+        {state.status === "error" && state.terminal?.kind === "error" && state.terminal.retryable && onRetry !== undefined ? (
+          <button
+            type="button"
+            className="mt-2 w-full rounded-sm border border-accent px-2 py-2 text-sm font-semibold text-accent hover:bg-bg"
+            onClick={onRetry}
+          >
+            重试这次生成
+          </button>
+        ) : null}
       </div>
     </div>
   );

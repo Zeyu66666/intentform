@@ -33,6 +33,17 @@
   }
 }
 
+/* KaTeX inherits the page text color in light mode. In dark mode its internal
+   fraction rules and error fallback need an explicit readable color too. */
+:root[data-theme="dark"] .katex,
+:root[data-theme="dark"] .katex-display {
+  color: var(--color-text);
+}
+
+:root[data-theme="dark"] .katex .katex-mathml {
+  color: var(--color-text);
+}
+
 /*
  * 字段淡入：流式生成时卡片是一个接一个出现的，硬切会让人以为"闪了一下"。
  * 只动 opacity + 极小的位移，不做缩放（缩放会让长题干的行高抖动）。
