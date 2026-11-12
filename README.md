@@ -122,6 +122,20 @@ teacher@example.com / intentform-demo
 
 `pnpm seed` 会重建 `data/intentform.db`，生成 1 份「初二数学 · 二次函数随堂测」、1 份「课程反馈 · 第 3 周」问卷与 30 条虚构提交（24 条测验 + 6 条问卷）。所有内容均为虚构：邮箱用 `example.com` 保留域，学生 IP 用 `192.0.2.0/24`（RFC 5737 文档专用段）。
 
+### Docker 部署
+
+需要一台装了 Docker 的机器；镜像固定 Node 24 + pnpm 11.24.0，Linux 原生依赖用预编译包。
+
+```bash
+export SESSION_SECRET="$(openssl rand -hex 32)"
+docker compose up -d --build
+# http://<主机>:8787
+```
+
+默认 `LLM_MODE=replay`，不需要任何模型 Key。数据落在 `intentform-data` volume；
+live 模式的 `LLM_API_KEY` 从宿主环境注入，不要写进 `compose.yaml` 或 `.env`。
+完整边界（备份、HTTPS、单副本原因）见 [`docs/deploy-docker.md`](docs/deploy-docker.md)。
+
 ### 关于 `.env`
 
 服务端**不会自动读取 `.env`**：仓库里没有 dotenv，`server/src/env.ts` 只认进程环境变量。`cp .env.example .env` 拷了也不生效。要使用配置文件请显式指定：
