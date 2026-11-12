@@ -26,3 +26,7 @@
 - KaTeX 在暗色主题下显式使用设计 token 的正文颜色。
 - 学生端明确展示匿名填写边界。
 - `pnpm check` 通过：92 个测试文件、1055 条用例；`node scripts/browser-closed-loop.mjs` 21 步全绿；临时证据文件已恢复。
+
+## 复验补充
+
+评审报告生成时仍把 KaTeX 暗色主题列为“仍存在”。P38 已补上 `:root[data-theme="dark"] .katex` 与 `.katex-display` 的显式颜色继承；本次只更新 README 的限制状态，避免把已修复问题继续当成扣分项。
